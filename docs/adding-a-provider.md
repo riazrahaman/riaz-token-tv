@@ -20,9 +20,9 @@ own signed-in CLI or a documented API. If it does not, it cannot be added honest
 | `tests/` | a payload → windows test with sample JSON, never real account data |
 
 If a service reports spend in dollars against a paid plan instead of a percentage, derive the
-allowance from the plan rather than asking the user for a number — Ollama does this in
-`ollama_allowance()` (plan credits × the window share), and keeps `ollama_allowance_usd` as an
-optional override.
+budget from the plan rather than asking the user for a number — Ollama does this in
+`ollama_allowance()` (the plan's monthly credit budget, which spend is measured against), and
+keeps `ollama_allowance_usd` as an optional override.
 
 Limits: every clock face shows at most three rows. With more than three services configured, the
 first three in `PROVIDERS` order are shown. Missing readings must stay a dash, never 0%.

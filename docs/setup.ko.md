@@ -9,7 +9,7 @@
 ![실제 시계에 띄운 Digital, Pixel Retro, Sci-Fi HUD 화면](images/real-clock.jpg)
 
 **AI 사용 한도를 작은 책상 시계에.** Claude·Ollama·Antigravity 사용량을 여러 계정으로, 시계 펌웨어를 바꾸지 않고 보여줍니다.
-Ollama Cloud는 설정한 주간 허용액 대비 지출을 보여주고, Antigravity는 CLI 사용량 명령으로 Gemini 한도를 보여주는 실험적 기능입니다. 제작자의 시계 구매 영수증은 5,650원(한국 알리익스프레스 할인가)이며 가격은 지역마다 다릅니다. 다른 기기는 확인하지 않았습니다. 켜 두는 컴퓨터(호스트)가 필요합니다.
+Ollama Cloud는 플랜의 월 크레딧 예산(또는 설정한 `ollama_allowance_usd`) 대비 최근 7일 지출을 보여주고, Antigravity는 CLI 사용량 명령으로 Gemini 한도를 보여주는 실험적 기능입니다. 제작자의 시계 구매 영수증은 5,650원(한국 알리익스프레스 할인가)이며 가격은 지역마다 다릅니다. 다른 기기는 확인하지 않았습니다. 켜 두는 컴퓨터(호스트)가 필요합니다.
 
 사용량은 240×240 책상 시계에 띄우고, 계정별 세부는 브라우저에서 봅니다. 계정별 인증 홈을 분리하고 실제 조회 실패와 오래된 값을 표시합니다.
 
@@ -82,7 +82,7 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 | 공급자 | 조회 경로 | 수치의 의미 |
 |---|---|---|
 | Claude | CLI 소유 OAuth의 profile/usage | 5시간 및 주간 **사용한 비율** |
-| Ollama | Ollama Cloud `GET /api/usage?range=7d`(API 키)와 `POST /api/me`(플랜) | 플랜에서 계산한 허용액(또는 `ollama_allowance_usd`) 대비 이번 주 **지출 비율** |
+| Ollama | Ollama Cloud `GET /api/usage?range=7d`(API 키)와 `POST /api/me`(플랜) | 플랜에서 계산한 월 크레딧 예산(또는 `ollama_allowance_usd`) 대비 최근 7일 **지출 비율** |
 | Antigravity | Antigravity CLI의 `agy -p "/usage"` 명령(Gemini Flash·Pro), 실험 단계 | Gemini 5시간·주간 한도의 **사용한 비율** |
 
 Claude는 예상 이메일과 인증된 이메일을 대조합니다.
