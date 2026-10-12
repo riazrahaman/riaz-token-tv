@@ -6,6 +6,7 @@
     token-tv demo      render every clock face with sample data
     token-tv connect   sign an account in with its official CLI
     token-tv run       start the dashboard and drive the clock
+    token-tv stocks    draw a stock watchlist and push it to the clock
 """
 import argparse
 import io
@@ -167,6 +168,22 @@ def read_config(path):
     return None
 
 
+def read_stock_config(path):
+    """The validated stock watchlist config, or None after printing a one-line reason."""
+    from token_tv.stocks import load_stock_config
+    path = Path(path).expanduser()
+    if not path.is_file():
+        print(f'No stock config at {path}. Create one with symbols and device_url, or pass --config.', file=sys.stderr)
+        return None
+    try:
+        return load_stock_config(path)
+    except OSError as error:
+        print(f'Could not read {path}: {error.strerror or error}', file=sys.stderr)
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        print(f'{path} is not a valid stock config ({error}).', file=sys.stderr)
+    return None
+
+
 def doctor(args):
     config = read_config(args.config)
     if config is None:
@@ -321,9 +338,9 @@ def start(args):
     return 0
 
 
-def passthrough(module, args, extra):
+def passthrough(module, args, extra, read=read_config):
     sys.argv = [f'token-tv {args.command}', '--config', str(Path(args.config).expanduser()), *extra]
-    if not {'-h', '--help'} & set(extra) and read_config(args.config) is None:
+    if not {'-h', '--help'} & set(extra) and read(args.config) is None:
         return 1
     module.main()
     return 0
@@ -362,18 +379,28 @@ def main(argv=None):
                         add_help=False)
     commands.add_parser('run', parents=[config], help='start the dashboard and drive the clock',
                         add_help=False)
+    commands.add_parser('stocks', parents=[config], help='draw a stock watchlist and push it to the clock',
+                        add_help=False)
 
     args, extra = parser.parse_known_args(argv)
-    if args.command in ('connect', 'run'):
+    if args.command in ('connect', 'run', 'stocks'):
+        reader = read_config
         if args.command == 'run':
             from token_tv import live as module
             extra = extra or []
             state = Path(args.config).expanduser().parent / 'state'
             if '--state-dir' not in extra:
                 extra += ['--state-dir', str(state)]
+        elif args.command == 'stocks':
+            from token_tv import stocks as module
+            extra = extra or []
+            state = Path(args.config).expanduser().parent / 'state-stocks'
+            if '--state-dir' not in extra:
+                extra += ['--state-dir', str(state)]
+            reader = read_stock_config
         else:
             from token_tv import connect as module
-        return passthrough(module, args, extra)
+        return passthrough(module, args, extra, read=reader)
     if extra:
         parser.error('unrecognized arguments: ' + ' '.join(extra))
     if args.command is None:
