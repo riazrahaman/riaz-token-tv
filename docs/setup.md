@@ -68,8 +68,10 @@ See [docs/hardware-compatibility.md](hardware-compatibility.md) for what is veri
 | Ollama | Ollama Cloud `GET /api/usage?range=30d` with an API key, plus `POST /api/me` for the plan and account age | Spend in the current monthly credit period (from your account's creation day) against the monthly credit budget from your plan (or `ollama_allowance_usd`) |
 | Antigravity | Antigravity CLI's `agy -p "/usage"` command (Gemini Flash and Pro) | Share of the Gemini 5-hour and weekly limits **used** |
 
-Every login is checked against the email you configured, except Ollama and Antigravity, which report
-no email (their rows are marked unverified). The clock gets only a picture,
+Every login is checked against the email you configured. An Ollama account is checked against the
+email on its Ollama Cloud profile (`POST /api/me`) when you configure one and the profile can be
+read; it stays unverified when the account has no email configured or its profile cannot be read.
+Antigravity reports no email, so its row is always marked unverified. The clock gets only a picture,
 never a password, token or cookie. Polling runs every five minutes; old readings say OLD and
 missing data shows a dash, never a fake 0%. Claude accounts with `refresh_with_cli: true` may
 refresh an expired login through the CLI, which sends one tiny prompt.
@@ -111,7 +113,9 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
 - **macOS (untested on a real Mac):** Claude Code keeps its login in the Keychain, so TokenTV
   reads it there read-only with `security` when the CLI home has no `.credentials.json`.
   The login is still checked against the configured email. Antigravity reads its login from the
-  Keychain too, and Ollama reads its key from the environment or Keychain, so neither is email-checked.
+  Keychain too and reports no email, so it is never email-checked. Ollama reads its key from the
+  environment or Keychain; when you configure an email for the account it is checked against the
+  account profile, and it stays unverified when no email is configured or the profile cannot be read.
 </details>
 
 <details>

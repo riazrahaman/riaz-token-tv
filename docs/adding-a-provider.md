@@ -19,6 +19,10 @@ own signed-in CLI or a documented API. If it does not, it cannot be added honest
 | `token_tv/web/app.js` | `PROVIDERS`, `COMPANIES`, scene seed |
 | `tests/` | a payload → windows test with sample JSON, never real account data |
 
+Identity comes from the provider's own signed-in account. Some usage endpoints report no email;
+look for a profile endpoint that does, as Ollama reads `Email` from `POST /api/me` while usage
+comes from `GET /api/usage`, and falls back to unverified when that profile cannot be read.
+
 If a service reports spend in dollars against a paid plan instead of a percentage, derive the
 budget from the plan rather than asking the user for a number — Ollama does this in
 `ollama_allowance()` (the plan's monthly credit budget, which spend is measured against), and

@@ -13,7 +13,8 @@ from PIL import Image
 from token_tv.usage import (normalize_claude, normalize_ollama, normalize_antigravity,
                             ollama_allowance, credit_period_start, timestamp)
 from token_tv.sources import (fetch_account, load_config, antigravity_identity, ollama_identity,
-                              ollama_plan, imported_row, scoped_env, SourceError)
+                              ollama_plan, ollama_payload, logged_in_email, imported_row,
+                              scoped_env, SourceError)
 from token_tv.state import UsageStore
 from token_tv.display import render_page, pages, overview_rows, primary_window
 
@@ -116,7 +117,7 @@ class LiveTests(unittest.TestCase):
     def test_ollama_allowance_is_credential_free_metadata_for_ollama_only(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
-            # Allowed for ollama, and an ollama account needs no email (it reports none).
+            # Allowed for ollama, whose email is optional: when set it is checked against the profile.
             path.write_text(json.dumps({"accounts": [{"key": "o", "alias": "OLLAMA A", "provider": "ollama",
                                                       "ollama_allowance_usd": 25.0}]}))
             self.assertEqual(load_config(path)["accounts"][0]["ollama_allowance_usd"], 25.0)
@@ -196,8 +197,9 @@ class LiveTests(unittest.TestCase):
             self.assertIsNone(ollama_plan({"key": "o"}))
 
     def test_ollama_source_is_unverified_and_the_plan_sets_the_allowance(self):
-        # Identity: the API reports no email, so nothing is claimed, and the configured email is a label.
-        self.assertIsNone(ollama_identity({"source_home": "/unused"}))
+        # No profile is readable here, so there is no reported email to check and nothing is claimed.
+        with patch("token_tv.sources.ollama_me", return_value=None):
+            self.assertIsNone(ollama_identity({"source_home": "/unused"}))
         usage = {"range": "30d", "scope": "self", "granularity": "day",
                  "buckets": [{"from": "2026-09-26T00:00:00Z", "until": "2026-09-27T00:00:00Z",
                               "request_count": 100, "usage_usd": 68.84}]}
@@ -229,6 +231,89 @@ class LiveTests(unittest.TestCase):
             with patch("token_tv.sources.ollama_payload", return_value=dict(payload, plan=plan)):
                 row = fetch_account(account)
             self.assertEqual((row["status"], row["windows"]), ("quota_unavailable", []), plan)
+
+    def test_ollama_identity_and_payload_read_the_api_me_email(self):
+        # The usage endpoint reports no email, but `POST /api/me` does (`Email`).
+        with patch("token_tv.sources.ollama_token", return_value="key"), \
+                patch("token_tv.sources.json_get", return_value={"buckets": []}), \
+                patch("token_tv.sources.json_post", return_value={"Plan": "max",
+                                                                 "CreatedAt": "2026-04-26T12:49:20Z",
+                                                                 "Email": " Me@Example.com "}):
+            self.assertEqual(ollama_payload({"key": "o"})["email"], "Me@Example.com")
+        with patch("token_tv.sources.ollama_me", return_value={"Email": "me@example.com"}):
+            self.assertEqual(ollama_identity({"key": "o"}), "me@example.com")
+        # A missing, blank or non-string Email (or an unreadable profile) means no identity.
+        for body in (None, {}, {"Email": ""}, {"Email": "   "}, {"Email": 42}):
+            with patch("token_tv.sources.ollama_me", return_value=body):
+                self.assertIsNone(ollama_identity({"key": "o"}), body)
+        with patch("token_tv.sources.ollama_token", return_value="key"), \
+                patch("token_tv.sources.json_get", return_value={"buckets": []}), \
+                patch("token_tv.sources.json_post", side_effect=OSError("api/me down")):
+            self.assertIsNone(ollama_payload({"key": "o"})["email"])
+
+    def test_ollama_matching_email_is_verified_with_numbers(self):
+        payload = {"usage": {"buckets": []}, "plan": "max",
+                   "created_at": "2026-04-26T12:49:20Z", "email": "me@example.com"}
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "ME@Example.com"}
+        windows = [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200}]
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama", return_value=windows):
+            row = fetch_account(account)
+        self.assertEqual(row["status"], "ok")
+        self.assertTrue(row["identity_verified"])
+        self.assertEqual(row["windows"], windows)
+        self.assertNotIn("me@example.com", json.dumps(row).lower())
+
+    def test_ollama_mismatching_email_keeps_the_row_empty(self):
+        payload = {"usage": {"buckets": []}, "plan": "max",
+                   "created_at": "2026-04-26T12:49:20Z", "email": "someone@example.com"}
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "me@example.com"}
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama") as normalize:
+            row = fetch_account(account)
+        self.assertEqual(row["status"], "identity_mismatch")
+        self.assertEqual(row["windows"], [])
+        self.assertFalse(row["identity_verified"])
+        normalize.assert_not_called()  # no numbers are read for a mismatched identity
+        self.assertNotIn("someone@example.com", json.dumps(row))
+        self.assertNotIn("me@example.com", json.dumps(row))
+
+    def test_ollama_without_a_configured_email_stays_unverified(self):
+        payload = {"usage": {"buckets": []}, "plan": "max",
+                   "created_at": "2026-04-26T12:49:20Z", "email": "me@example.com"}
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama"}
+        windows = [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200}]
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama", return_value=windows):
+            row = fetch_account(account)
+        self.assertEqual(row["status"], "ok")
+        self.assertFalse(row["identity_verified"])
+        self.assertEqual(row["windows"], windows)
+
+    def test_ollama_profile_without_an_email_does_not_blank_the_numbers(self):
+        # The optional /api/me enrichment gave no email: stay unverified rather than invent a
+        # mismatch, and still show the usage numbers.
+        payload = {"usage": {"buckets": []}, "plan": "max",
+                   "created_at": "2026-04-26T12:49:20Z", "email": None}
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "me@example.com"}
+        windows = [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200}]
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama", return_value=windows):
+            row = fetch_account(account)
+        self.assertEqual(row["status"], "ok")
+        self.assertFalse(row["identity_verified"])
+        self.assertEqual(row["windows"], windows)
+
+    def test_ollama_logged_in_email_reads_api_me_and_never_raises(self):
+        # setup/start auto-detection: /api/me reports the signed-in account; Antigravity does not.
+        with patch("token_tv.sources.ollama_me", return_value={"Email": "me@example.com"}):
+            self.assertEqual(logged_in_email("ollama", "/a/home"), "me@example.com")
+        with patch("token_tv.sources.ollama_me", return_value={"Email": "   "}):
+            self.assertIsNone(logged_in_email("ollama", "/a/home"))
+        for failure in (OSError("down"), ValueError("bad")):
+            with patch("token_tv.sources.ollama_me", side_effect=failure):
+                self.assertIsNone(logged_in_email("ollama", "/a/home"))
+        self.assertIsNone(logged_in_email("antigravity", "/a/home"))
 
     def test_snapshot_import_accepts_dollar_spend_labels_but_not_junk(self):
         with tempfile.TemporaryDirectory() as directory:

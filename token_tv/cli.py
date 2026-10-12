@@ -90,7 +90,8 @@ def setup(args):
             emails = [ANTIGRAVITY_EMAIL]  # a bare --antigravity-email means "use the default label"
         if interactive and not emails:
             if provider == 'ollama':
-                print('\nOllama Cloud: usage is read from OLLAMA_API_KEY, not a CLI; the email is a label only.')
+                print('\nOllama Cloud: usage is read from OLLAMA_API_KEY, not a CLI; when you give an '
+                      'email it is checked against the account profile.')
             else:
                 print(f'\n{provider.title()}: CLI {"found" if cli_path(provider) else "not found"}')
             for letter in 'ABC':
@@ -187,7 +188,8 @@ def doctor(args):
             good = row['status'] in ('ok', 'quota_unavailable') and verified
             line += f'live check {"ok" if good else row["status"].upper()}'
             if good and not row.get('identity_verified'):
-                line += f' ({provider.title()} reports no email)'
+                line += (' (Antigravity reports no email)' if provider == 'antigravity'
+                         else ' (no email to compare)')
                 unlabeled.append(account['alias'])
             ready &= bool(good)
             if not good:
@@ -217,7 +219,7 @@ def doctor(args):
     if not ready:
         print(f'Fix the lines above, then run token-tv doctor{flag} again.')
     elif args.live and unlabeled:
-        print(f'Ready, but Ollama and Antigravity report no email to compare for {", ".join(unlabeled)}. '
+        print(f'Ready, but there is no email to compare for {", ".join(unlabeled)}. '
               f'Check each reads the account you expect, then start with: token-tv run{flag}')
     elif args.live:
         print(f'Ready: every account answered with the expected email. Start with: token-tv run{flag}')
