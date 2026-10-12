@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from token_tv.usage import normalize_claude, normalize_ollama, normalize_antigravity, timestamp
-from token_tv.sources import fetch_account, load_config, antigravity_identity, ollama_identity, scoped_env
+from token_tv.usage import normalize_claude, normalize_ollama, normalize_antigravity, ollama_allowance, timestamp
+from token_tv.sources import (fetch_account, load_config, antigravity_identity, ollama_identity,
+                              ollama_plan, scoped_env, SourceError)
 from token_tv.state import UsageStore
 from token_tv.display import render_page, pages, overview_rows, primary_window
 
@@ -108,28 +109,86 @@ class LiveTests(unittest.TestCase):
             self.assertNotIn("NEVER-EXPORT", json.dumps(row))
             self.assertNotIn("owner@example.com", json.dumps(row))
 
-    def test_ollama_source_is_unverified_and_spends_are_weekly(self):
+    def test_ollama_allowance_is_the_weekly_share_of_the_plan_credits(self):
+        # Monthly plan credits (pricing) become a 7-day share because the API only reports
+        # dollars for windows up to 7 days.
+        self.assertEqual(ollama_allowance("max"), 70.0)
+        self.assertEqual(ollama_allowance("pro"), 14.0)
+        self.assertEqual(ollama_allowance("team"), 233.33)
+        self.assertEqual(ollama_allowance(" MAX "), 70.0)  # case-insensitive, stripped
+        # free / unknown / missing plans stay unknown, never a fake allowance of 0.
+        for plan in ("free", "something-else", "", None, 42):
+            self.assertIsNone(ollama_allowance(plan), plan)
+        # An explicit override wins while it is a finite number > 0.
+        self.assertEqual(ollama_allowance("max", 25.0), 25.0)
+        self.assertEqual(ollama_allowance("free", 25.0), 25.0)
+        # A missing or invalid override falls back to the plan.
+        for bad in (None, 0, -5, True, float("inf"), float("nan"), "25"):
+            self.assertEqual(ollama_allowance("max", bad), 70.0, bad)
+
+    def test_ollama_plan_posts_to_api_me_and_is_optional(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *error):
+                return False
+
+            def read(self):
+                return b'{"Plan": "max", "Email": "DO-NOT-EXPORT"}'
+
+        seen = []
+
+        def fake_urlopen(request, timeout=None):
+            seen.append(request)
+            return Response()
+
+        with patch("token_tv.sources.ollama_token", return_value="DO-NOT-EXPORT"), \
+                patch("token_tv.sources.urlopen", side_effect=fake_urlopen):
+            self.assertEqual(ollama_plan({"key": "o"}), "max")
+        self.assertEqual(seen[0].get_method(), "POST")
+        self.assertEqual(seen[0].full_url, "https://ollama.com/api/me")
+        self.assertEqual(seen[0].get_header("Authorization"), "Bearer DO-NOT-EXPORT")
+        # The plan is optional enrichment: every failure becomes None, never a provider error.
+        with patch("token_tv.sources.ollama_token", side_effect=SourceError("auth_required")):
+            self.assertIsNone(ollama_plan({"key": "o"}))
+        with patch("token_tv.sources.ollama_token", return_value="key"), \
+                patch("token_tv.sources.json_post", side_effect=OSError("boom")):
+            self.assertIsNone(ollama_plan({"key": "o"}))
+        with patch("token_tv.sources.ollama_token", return_value="key"), \
+                patch("token_tv.sources.json_post", return_value={"Email": "only@example.com"}):
+            self.assertIsNone(ollama_plan({"key": "o"}))
+
+    def test_ollama_source_is_unverified_and_the_plan_sets_the_allowance(self):
         # Identity: the API reports no email, so nothing is claimed, and the configured email is a label.
         self.assertIsNone(ollama_identity({"source_home": "/unused"}))
-        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "label-only@example.com",
-                   "ollama_allowance_usd": 40.0}
-        payload = {"range": "7d", "scope": "self", "granularity": "day",
-                   "totals": {"request_count": 7763, "usage_usd": 27.48072,
-                              "input_tokens": 900000, "cached_input_tokens": 500000, "output_tokens": 120000},
-                   "buckets": [{"from": "2026-10-05T00:00:00Z", "until": "2026-10-06T00:00:00Z",
-                                "request_count": 100, "usage_usd": 3.5}]}
-        with patch("token_tv.sources.ollama_payload", return_value=payload):
+        usage = {"range": "7d", "scope": "self", "granularity": "day",
+                 "totals": {"request_count": 7763, "usage_usd": 27.48072,
+                            "input_tokens": 900000, "cached_input_tokens": 500000, "output_tokens": 120000},
+                 "buckets": [{"from": "2026-10-05T00:00:00Z", "until": "2026-10-06T00:00:00Z",
+                              "request_count": 100, "usage_usd": 3.5}]}
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "label-only@example.com"}
+        # Max = $70/week, so $27.48072 spent is 39.26%.
+        with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):
             row = fetch_account(account)
         self.assertEqual(row["status"], "ok")
         self.assertFalse(row["identity_verified"])
-        self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 68.7, "resets_at": None, "duration_minutes": 10080}])
+        self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 39.26, "resets_at": None, "duration_minutes": 10080}])
         self.assertNotIn("label-only@example.com", json.dumps(row))
-        # No allowance means no honest percentage: the row stays unknown, never a fake 0%.
-        without = dict(account)
-        del without["ollama_allowance_usd"]
-        with patch("token_tv.sources.ollama_payload", return_value=payload):
-            row = fetch_account(without)
-        self.assertEqual((row["status"], row["windows"]), ("quota_unavailable", []))
+        # An explicit ollama_allowance_usd wins over the plan.
+        with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):
+            row = fetch_account(dict(account, ollama_allowance_usd=40.0))
+        self.assertEqual(row["windows"][0]["used_percent"], 68.7)
+        # A free / unknown / missing plan means no honest percentage: unknown, never a fake 0%.
+        for plan in ("free", "something-else", None):
+            with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": plan}):
+                row = fetch_account(account)
+            self.assertEqual((row["status"], row["windows"]), ("quota_unavailable", []), plan)
+        # Spend above the allowance clamps to 100.0.
+        over = {"totals": {"usage_usd": 999.0}}
+        with patch("token_tv.sources.ollama_payload", return_value={"usage": over, "plan": "pro"}):
+            row = fetch_account(account)
+        self.assertEqual(row["windows"][0]["used_percent"], 100.0)
 
     def test_cache_is_per_account_and_failure_preserves_stale_values(self):
         accounts = [{"key": "a", "alias": "A", "provider": "claude"}, {"key": "b", "alias": "B", "provider": "claude"}]

@@ -270,7 +270,8 @@ def start(args):
             print(f'{provider.title()}: {email}')
         if not accounts:
             print('No signed-in Claude or Antigravity CLI found. Sign in to one (for example `claude`, then /login).\n'
-                  'Ollama Cloud has no CLI: add its account by hand with OLLAMA_API_KEY and ollama_allowance_usd.\n'
+                  'Ollama Cloud has no CLI: add its account by hand with OLLAMA_API_KEY; its plan sets the\n'
+                  'allowance (ollama_allowance_usd overrides it).\n'
                   'Or look around first with: token-tv demo', file=sys.stderr)
             return 1
         device = args.device_url
