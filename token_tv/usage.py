@@ -1,18 +1,27 @@
 """Small, explicit usage windows. Missing measurements stay missing."""
+import calendar
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 
 
-def timestamp(value):
+def parse_time(value):
+    """A timezone-aware UTC datetime from a Unix timestamp or an ISO string, or None."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return int(value) if math.isfinite(value) and value > 0 else None
+        if not math.isfinite(value) or value <= 0:
+            return None
+        return datetime.fromtimestamp(value, tz=timezone.utc)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return int(parsed.timestamp()) if parsed.tzinfo else None
         except ValueError:
-            pass
+            return None
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo else None
     return None
+
+
+def timestamp(value):
+    parsed = parse_time(value)
+    return int(parsed.timestamp()) if parsed else None
 
 
 def window(label, percent, reset=None, duration=None):
@@ -44,13 +53,10 @@ def ollama_allowance(plan, override=None):
     """The Ollama Cloud MONTHLY credit budget in USD, from the plan or an override.
 
     Ollama's plan credits are a monthly budget that can be spent at any pace; they are not a
-    weekly quota. Its usage API reports dollars only for windows up to 7 days (`?range=7d`):
-    the `30d` totals expose request counts but no `usage_usd`, so a 30-day spend cannot be
-    read. The budget is therefore returned whole (the plan's monthly credits), rounded to
-    cents, and the reading measures the last 7 days of spend against it. An explicit `override`
-    (the user's `ollama_allowance_usd`) wins while it is a finite number > 0. The plan name is
-    matched case-insensitively; an unknown plan, or one with no credits (`free`), stays unknown
-    (None) rather than a fake 0.
+    weekly quota. The budget is returned whole (the plan's monthly credits), rounded to cents.
+    An explicit `override` (the user's `ollama_allowance_usd`) wins while it is a finite number
+    > 0. The plan name is matched case-insensitively; an unknown plan, or one with no credits
+    (`free`), stays unknown (None) rather than a fake 0.
     """
     if (not isinstance(override, bool) and isinstance(override, (int, float))
             and math.isfinite(override) and override > 0):
@@ -63,25 +69,66 @@ def ollama_allowance(plan, override=None):
     return round(float(credits), 2)
 
 
-def normalize_ollama(data, allowance):
-    """Read the JSON from `GET https://ollama.com/api/usage?range=7d`.
+def credit_period_start(created_at, now=None):
+    """UTC start of the current monthly credit period from the account's creation date.
 
-    Ollama Cloud reports only the spend of a rolling window; the plan-to-budget mapping lives
-    in `ollama_allowance`. The budget is MONTHLY and spend is not time-boxed, so the reading is
-    the last 7 days of `totals.usage_usd` measured against the full monthly credit budget: it
-    is a credit/spend budget, never a weekly quota. A missing or non-positive allowance, or a
-    missing/non-finite spend, stays unknown: the reading is never invented as 0%.
+    Ollama refills plan credits monthly on the day-of-month the account was created, so the
+    period runs from the most recent occurrence of that day at or before `now`, at 00:00 UTC.
+    Short months clamp the day (day 31 -> 28/29 in February). An unknown creation date (or an
+    explicit unusable `now`) returns None, so no window is invented.
+    """
+    created = parse_time(created_at)
+    current = parse_time(now) if now is not None else datetime.now(timezone.utc)
+    if created is None or current is None:
+        return None
+
+    def occurrence(year, month):
+        day = min(created.day, calendar.monthrange(year, month)[1])
+        return datetime(year, month, day, tzinfo=timezone.utc)
+
+    start = occurrence(current.year, current.month)
+    if start > current:
+        previous = (current.year - 1, 12) if current.month == 1 else (current.year, current.month - 1)
+        start = occurrence(*previous)
+    return start
+
+
+def normalize_ollama(data, allowance, created_at=None, now=None):
+    """Read the JSON from `GET https://ollama.com/api/usage?range=30d` for one credit period.
+
+    Ollama reports a bucket per day. Dollars (`usage_usd`) may be absent on a bucket, which
+    counts as 0 while the bucket is inside the period. The period starts on the day-of-month
+    the account was created (see `credit_period_start`); buckets before it are excluded, so the
+    reading is the current monthly credit spend measured against the plan's monthly budget,
+    never a rolling 7-day window. A missing/non-finite/unusable bucket, an unknown allowance,
+    an unknown period, or no in-period dollars at all stays unknown instead of a fake 0%.
     """
     if isinstance(allowance, bool) or not isinstance(allowance, (int, float)):
         return []
     if not math.isfinite(allowance) or allowance <= 0:
         return []
-    totals = data.get("totals") if isinstance(data, dict) else None
-    spent = totals.get("usage_usd") if isinstance(totals, dict) else None
-    if isinstance(spent, bool) or not isinstance(spent, (int, float)) or not math.isfinite(spent):
+    start = credit_period_start(created_at, now)
+    buckets = data.get("buckets") if isinstance(data, dict) else None
+    if start is None or not isinstance(buckets, list):
+        return []
+    spent, known = 0.0, False
+    for bucket in buckets:
+        if not isinstance(bucket, dict):
+            continue
+        when = parse_time(bucket.get("from"))
+        if when is None or when < start:
+            continue
+        value = bucket.get("usage_usd")
+        if value is None:
+            continue  # a bucket inside the period without dollars counts as 0
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return []  # malformed dollars: never guess a number
+        spent += value
+        known = True
+    if not known:
         return []
     percent = round(min(100.0, spent / allowance * 100.0), 2)
-    item = window("BUDGET", percent, None, 43200)
+    item = window("$" + str(int(spent)), percent, None, 43200)
     return [item] if item else []
 
 

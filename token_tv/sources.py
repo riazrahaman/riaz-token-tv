@@ -147,6 +147,15 @@ def identity_matches(expected, actual):
     return bool(actual and expected.strip().casefold() == actual.strip().casefold())
 
 
+def allowed_window_label(label):
+    """Window labels a snapshot row may carry: the fixed quota names or a `$`-prefixed spend."""
+    if not isinstance(label, str):
+        return False
+    if label in {"5H", "WEEK", "WINDOW", "BUDGET"}:
+        return True
+    return label.startswith("$") and label[1:].isdigit()
+
+
 def ollama_token():
     """Ollama Cloud API key from the environment, or on macOS from the login Keychain (read only).
 
@@ -164,12 +173,13 @@ def ollama_token():
     raise SourceError("auth_required")
 
 
-def ollama_plan(account):
-    """The account's Ollama Cloud plan name from `POST /api/me`, or None.
+def ollama_me(account):
+    """The account's `POST /api/me` body, or None.
 
-    The plan is optional enrichment, not a reading: any failure (no key, an HTTP error, a
-    body without `Plan`) means "no plan" instead of a provider error, so usage still works
-    and simply falls back to the configured allowance. The same key as `ollama_token`.
+    Optional enrichment, not a reading: any failure (no key, an HTTP error, a body that is not
+    an object) means "no profile", so usage still works and falls back to the configured
+    allowance. The same key as `ollama_token`; only the plan and `CreatedAt` (whose day-of-month
+    anchors the monthly credit period) are ever read from it.
     """
     try:
         token = ollama_token()
@@ -177,19 +187,35 @@ def ollama_plan(account):
         data = json_post("https://ollama.com/api/me", headers)
     except (SourceError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
         return None
-    plan = data.get("Plan") if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else None
+
+
+def ollama_plan(account):
+    """The account's Ollama Cloud plan name from `POST /api/me`, or None.
+
+    The plan is optional enrichment, not a reading: any failure (no key, an HTTP error, a
+    body without `Plan`) means "no plan" instead of a provider error, so usage still works
+    and simply falls back to the configured allowance. The same key as `ollama_token`.
+    """
+    data = ollama_me(account)
+    plan = data.get("Plan") if data else None
     return plan.strip() if isinstance(plan, str) and plan.strip() else None
 
 
 def ollama_payload(account):
-    """Ollama Cloud's own usage API: the 7-day spend plus the plan name when it is known.
+    """Ollama Cloud's own usage API: the current credit period's daily spend, plan and age.
 
-    The usage endpoint reports no email and no limit; the plan comes from `POST /api/me`.
+    The usage endpoint reports no email and no limit. Dollars are read over `range=30d`: a
+    7-day window can only see a fraction of a monthly credit period. The plan and the
+    account's `CreatedAt` both come from `POST /api/me`.
     """
     token = ollama_token()
     headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
-    usage = json_get("https://ollama.com/api/usage?range=7d", headers)
-    return {"usage": usage, "plan": ollama_plan(account)}
+    usage = json_get("https://ollama.com/api/usage?range=30d", headers)
+    profile = ollama_me(account) or {}
+    plan = profile.get("Plan")
+    return {"usage": usage, "plan": plan.strip() if isinstance(plan, str) and plan.strip() else None,
+            "created_at": profile.get("CreatedAt")}
 
 
 def antigravity_payload(account):
@@ -256,7 +282,7 @@ def imported_row(account):
     if last_success and last_success <= fetched:
         clean["last_success_at"] = last_success
     for value in row.get("windows", []):
-        if value.get("label") not in {"5H", "WEEK", "WINDOW", "BUDGET"}:
+        if not allowed_window_label(value.get("label")):
             continue
         item = window(value["label"], value.get("used_percent"), value.get("resets_at"),
                       value.get("duration_minutes"))
@@ -286,7 +312,7 @@ def fetch_account(account):
             # The allowance comes from the account's plan unless the config overrides it.
             data = ollama_payload(account)
             allowance = ollama_allowance(data.get("plan"), account.get("ollama_allowance_usd"))
-            row["windows"] = normalize_ollama(data.get("usage"), allowance)
+            row["windows"] = normalize_ollama(data.get("usage"), allowance, data.get("created_at"))
         else:
             # Antigravity's CLI reports no email, so this source is always unverified.
             row["windows"] = normalize_antigravity(antigravity_payload(account))

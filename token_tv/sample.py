@@ -5,8 +5,8 @@ SAMPLE = [
     ('claude_a', 'CLAUDE A', 'claude', [('WEEK', 86, 3 * D), ('5H', 41, 2 * H)]),
     ('claude_b', 'CLAUDE B', 'claude', [('5H', 52, 3 * H + 41 * 60), ('WEEK', 30, 5 * D)]),
     ('claude_c', 'CLAUDE C', 'claude', [('5H', 97, 38 * 60), ('WEEK', 64, 4 * D)]),
-    ('ollama_a', 'OLLAMA A', 'ollama', [('BUDGET', 34, None)]),
-    ('ollama_b', 'OLLAMA B', 'ollama', [('BUDGET', 91, None)]),
+    ('ollama_a', 'OLLAMA A', 'ollama', [('$102', 34, None)]),
+    ('ollama_b', 'OLLAMA B', 'ollama', [('$273', 91, None)]),
     ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [('WEEK', 74, 2 * D + 2 * H), ('5H', 31, 3 * H)]),
     ('antigravity_b', 'ANTIGRAVITY B', 'antigravity', [('5H', 88, 45 * 60), ('WEEK', 12, 6 * D + 8 * H)]),
 ]
