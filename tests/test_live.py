@@ -37,15 +37,15 @@ class LiveTests(unittest.TestCase):
         ]}
         created, now = "2026-04-26T12:49:20.350091Z", "2026-10-12T12:00:00Z"
         self.assertEqual(normalize_ollama(data, 50.0, created, now), [
-            {"label": "$4", "used_percent": 8.0, "resets_at": None, "duration_minutes": 43200}])
+            {"label": "$4", "used_percent": 8.0, "resets_at": 1792972800, "duration_minutes": 43200}])
         # Spend above the allowance clamps to 100.0, and the label keeps the dollar value.
         over = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": 999.0}]}
         self.assertEqual(normalize_ollama(over, 50.0, created, now),
-                         [{"label": "$999", "used_percent": 100.0, "resets_at": None, "duration_minutes": 43200}])
+                         [{"label": "$999", "used_percent": 100.0, "resets_at": 1792972800, "duration_minutes": 43200}])
         # $68.84 in a $300 plan is 22.95%, labelled with the whole dollars only.
         spent = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": 68.84}]}
         self.assertEqual(normalize_ollama(spent, 300.0, created, now)[0],
-                         {"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200})
+                         {"label": "$68", "used_percent": 22.95, "resets_at": 1792972800, "duration_minutes": 43200})
 
     def test_credit_period_anchor_comes_from_the_creation_day(self):
         case = lambda created, now: credit_period_start(created, now)
