@@ -185,10 +185,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_accepts_a_good_file_and_applies_defaults(self):
         state = Path(self.directory.name) / 'state'
-        self.write({'device_url': 'http://192.168.1.154', 'symbols': ['AAPL', 'MSFT'], 'interval': 60,
+        self.write({'device_url': 'http://192.168.0.50', 'symbols': ['AAPL', 'MSFT'], 'interval': 60,
                     'palette': {'rise': '#12FF34', 'dim': 4008}, 'state_dir': str(state)})
         config = stocks.load_stock_config(self.path)
-        self.assertEqual(config['device_url'], 'http://192.168.1.154')
+        self.assertEqual(config['device_url'], 'http://192.168.0.50')
         self.assertEqual(config['symbols'], ['AAPL', 'MSFT'])
         self.assertEqual(config['interval'], 60)
         self.assertEqual(config['palette']['rise'], (0x12, 0xFF, 0x34))
@@ -225,7 +225,7 @@ class ConfigTests(unittest.TestCase):
             {'state_dir': ''},
             {'state_dir': 5},
             {'device_url': 'ftp://clock'},
-            {'device_url': 'http://192.168.1.154/photo'},
+            {'device_url': 'http://192.168.0.50/photo'},
         ]
         for case in cases:
             self.write(case)
@@ -299,7 +299,7 @@ class CliTests(unittest.TestCase):
     def test_stocks_subcommand_forwards_a_default_state_dir(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'stocks.json'
-            config.write_text(json.dumps({'device_url': 'http://192.168.1.154', 'symbols': ['AAPL']}))
+            config.write_text(json.dumps({'device_url': 'http://192.168.0.50', 'symbols': ['AAPL']}))
             seen = {}
             with patch.object(stocks, 'main', side_effect=lambda: seen.update(argv=list(sys.argv))):
                 with contextlib.redirect_stdout(io.StringIO()):
