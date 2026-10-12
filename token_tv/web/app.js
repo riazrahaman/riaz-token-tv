@@ -7,8 +7,8 @@ const THEMES = [
  {id:'hud', name:'Sci-Fi HUD', eyebrow:'', title:'AI PROVIDER USAGE', note:'Real-time usage monitor'}
 ];
 const STATUS = {ok:'Connected', loading:'Loading', auth_required:'Login needed', identity_mismatch:'Check identity', quota_unavailable:'Quota unavailable', stale:'OLD · Previous value', rate_limited:'Retry later', error:'Fetch failed'};
-const PROVIDERS = ['claude', 'codex', 'antigravity'];
-const COMPANIES = {claude:'ANTHROPIC', codex:'OPENAI', antigravity:'GOOGLE'};
+const PROVIDERS = ['claude', 'ollama', 'antigravity'];
+const COMPANIES = {claude:'ANTHROPIC', ollama:'OLLAMA', antigravity:'GOOGLE'};
 const svgNS = 'http://www.w3.org/2000/svg';
 const $ = s => document.querySelector(s);
 const readPreference = (k, f) => {try {return JSON.parse(localStorage.getItem(k)) ?? f} catch {return f}};
@@ -32,9 +32,13 @@ function icon(provider) {
  if (provider === 'claude') {
   const reach = [19.5, 15, 18, 14, 19, 15.5, 18.5, 14, 19.5, 15, 18, 14.5];
   reach.forEach((r, i) => s.append(svgNode('path', {d:`M24 ${24 - 6} V${24 - r}`, 'stroke-width':3.4, transform:`rotate(${i * 30 + (i % 2 ? 4 : 0)} 24 24)`})));
- } else if (provider === 'codex') {
-  s.append(svgNode('path', {d:'M24 5 40.5 14.5V33.5L24 43 7.5 33.5V14.5Z', 'stroke-width':3.2}));
-  s.append(svgNode('path', {d:'M7.5 14.5 24 24 40.5 14.5M24 24V43', 'stroke-width':3.2}));
+ } else if (provider === 'ollama') {
+  const block = (x, y, w, h, r) => s.append(svgNode('rect', {x, y, width:w, height:h, rx:r || 0, fill:'currentColor'}));
+  block(16, 5, 4, 8);      // left ear
+  block(26, 5, 4, 8);      // right ear
+  block(14, 11, 19, 9, 3); // head
+  block(7, 15, 8, 6, 2);   // muzzle
+  block(20, 20, 7, 20, 2); // long neck
  } else {
   s.append(svgNode('circle', {cx:24, cy:24, r:12.5, 'stroke-width':3.4}));
   s.append(svgNode('path', {d:'M5 43C17 33 31 19 43 5 34 19 21 32 5 43Z', fill:'currentColor', stroke:'currentColor', 'stroke-width':1.6}));
@@ -54,7 +58,7 @@ function clockGlyph() {
 /* Pixel Retro scenery on a 200×62 logical grid, anchored bottom-right. Sky objects sit
  * near x≈138 so they fall between the title row and the score column. */
 function scene(provider) {
- const W = 200, H = 62, rnd = seeded({claude:11, codex:23, antigravity:37}[provider]);
+ const W = 200, H = 62, rnd = seeded({claude:11, ollama:23, antigravity:37}[provider]);
  const s = svgNode('svg', {viewBox:`0 0 ${W} ${H}`, preserveAspectRatio:'xMaxYMax slice', 'shape-rendering':'crispEdges', class:'scene', 'aria-hidden':'true'});
  const rect = (x, y, w, h, fill, cls) => {const r = svgNode('rect', {x, y, width:w, height:h, fill}); if (cls) r.setAttribute('class', cls); s.append(r)};
  const bands = colors => colors.forEach((c, i) => rect(0, Math.floor(i * H / colors.length), W, Math.ceil(H / colors.length) + 1, c));
@@ -70,14 +74,14 @@ function scene(provider) {
   ridge(x => 41 - 9 * Math.max(0, Math.sin((x - 40) / 18)) - 3 * Math.sin(x / 6) - (x > 150 ? 5 * Math.max(0, Math.sin((x - 150) / 10)) : 0), '#5a2236');
   ridge(x => 49 - 3 * Math.sin(x / 9 + 1) - 2 * Math.sin(x / 4), '#371428');
   for (const x of [152, 158, 163, 182, 188, 194]) pine(x, 52, 7 + (x % 3), '#24101e');
- } else if (provider === 'codex') {
-  bands(['#06171d', '#082027', '#0b2a2e', '#0e3434', '#113f39', '#15493e', '#195443', '#1e6048']);
-  stars(30, 40, 26, ['#9bffd2', '#e6fff3']);
-  disc(137, 11, 5, '#d9ffe9'); disc(139, 10, 4, '#082027');
+ } else if (provider === 'ollama') {
+  bands(['#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f', '#2d1e6a', '#33226f']);
+  stars(30, 40, 26, ['#d9c6ff', '#f3ecff']);
+  disc(137, 11, 5, '#efe6ff'); disc(139, 10, 4, '#0d0a28');
   let x = 52;
-  while (x < W) {const w = 6 + Math.floor(rnd() * 7), h = 10 + Math.floor(rnd() * 13); rect(x, 52 - h, w, h + 10, '#0b3530'); for (let wy = 54 - h; wy < 50; wy += 3) for (let wx = x + 1; wx < x + w - 1; wx += 2) if (rnd() > .55) rect(wx, wy, 1, 1, rnd() > .7 ? '#e8ffa6' : '#7dffb9'); x += w + 2}
-  for (let p = 0; p < W; p += 5) pine(p + 2, 58, 6 + Math.floor(rnd() * 5), '#05201a');
-  for (let i = 0; i < 9; i++) rect(60 + Math.floor(rnd() * 138), 38 + Math.floor(rnd() * 12), 1, 1, '#c8ff8a', 'twinkle');
+  while (x < W) {const w = 6 + Math.floor(rnd() * 7), h = 10 + Math.floor(rnd() * 13); rect(x, 52 - h, w, h + 10, '#241a4a'); for (let wy = 54 - h; wy < 50; wy += 3) for (let wx = x + 1; wx < x + w - 1; wx += 2) if (rnd() > .55) rect(wx, wy, 1, 1, rnd() > .7 ? '#e0d0ff' : '#b48cf2'); x += w + 2}
+  for (let p = 0; p < W; p += 5) pine(p + 2, 58, 6 + Math.floor(rnd() * 5), '#150f33');
+  for (let i = 0; i < 9; i++) rect(60 + Math.floor(rnd() * 138), 38 + Math.floor(rnd() * 12), 1, 1, '#c8b0ff', 'twinkle');
  } else {
   bands(['#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f', '#2d1e6a', '#33226f']);
   stars(80, 0, 46, ['#efe6ff', '#b9a6ff', '#ffffff']);
@@ -185,7 +189,7 @@ function providerCard(provider, accounts) {
  let when = el('span', '—', 'stat-v');
  if (checked) {const d = new Date(checked * 1000); when = el('time', d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}), 'stat-v'); when.dateTime = d.toISOString(); when.title = d.toLocaleString('en-GB')}
  const foot = el('div', undefined, 'card-foot');
- foot.append(stat('Account', a.alias || '—'), stat('Window', primary ? period(primary) : '—'), stat('Source', a.source === 'mini' ? 'This computer' : a.source === 'codexbar' ? 'CodexBar' : a.source ? 'Linked snapshot' : '—'), stat(stale ? 'Last good' : 'Checked', when), stat('Status', el('span', offline ? 'OFFLINE · Previous value' : STATUS[a.status] || 'Unknown', 'row-status stat-v'), 'stat-status'));
+ foot.append(stat('Account', a.alias || '—'), stat('Window', primary ? period(primary) : '—'), stat('Source', a.source === 'mini' ? 'This computer' : a.source ? 'Linked snapshot' : '—'), stat(stale ? 'Last good' : 'Checked', when), stat('Status', el('span', offline ? 'OFFLINE · Previous value' : STATUS[a.status] || 'Unknown', 'row-status stat-v'), 'stat-status'));
  card.append(foot); shell.append(card); return shell;
 }
 function renderAccounts() {

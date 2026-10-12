@@ -8,7 +8,7 @@ from pathlib import Path
 from token_tv.sources import exe, fetch_account, load_config, scoped_env
 
 # provider: (everyday CLI home, file present after login)
-DEFAULT_HOMES = {"claude": ("~/.claude", ".credentials.json"), "codex": ("~/.codex", "auth.json"),
+DEFAULT_HOMES = {"claude": ("~/.claude", ".credentials.json"),
                  "antigravity": ("~/Library/Application Support/Antigravity", "")}
 
 
@@ -16,16 +16,14 @@ def login_command(account, browser=False):
     provider = account["provider"]
     if provider == "claude":
         return [exe("claude"), "auth", "login", "--claudeai", "--email", account["email"]]
-    if provider == "codex":
-        return [exe("codex"), "login"] if browser else [exe("codex"), "login", "--device-auth"]
-    raise ValueError("Antigravity has no login command; sign in inside the Antigravity app")
+    raise ValueError("This provider has no login command; sign in through its own app or API key")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--account", help="Stable account key; omit to choose interactively")
-    parser.add_argument("--browser", action="store_true", help="Use Codex browser login (forward localhost:1455 when running over SSH)")
+    parser.add_argument("--browser", action="store_true", help="Prefer the provider's browser login when it offers one")
     args = parser.parse_args()
     accounts = load_config(args.config)["accounts"]
     key = args.account
@@ -45,6 +43,10 @@ def main():
     if account["provider"] == "antigravity":
         print("Antigravity has no login command: sign in inside the Antigravity app; the agy CLI reads that\n"
               "login from the OS keychain. Verify it with: token-tv doctor --live", file=sys.stderr)
+        raise SystemExit(1)
+    if account["provider"] == "ollama":
+        print("Ollama Cloud has no login command: set OLLAMA_API_KEY, or store the key in the macOS Keychain\n"
+              "(security add-generic-password -s token-tv-ollama -w). Verify it with: token-tv doctor --live", file=sys.stderr)
         raise SystemExit(1)
     root = Path(account["source_home"]).expanduser()
     default, marker = DEFAULT_HOMES[account["provider"]]

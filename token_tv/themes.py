@@ -29,9 +29,9 @@ BANDS = {
     'hud': (('#14a874', '#35e0a0'), ('#1a7dff', '#3cc4ff'), ('#ff7a1a', '#ffb23f'), ('#e01e3c', '#ff4d6a')),
 }
 ACCENT = {
-    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#8ab4f8', '#4285f4')},
-    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'codex': ('#3ee68b', '#9bffc8'), 'antigravity': ('#8ab4f8', '#dbe8ff')},
-    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#8ab4f8', '#4285f4')},
+    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'ollama': ('#d946ef', '#8b5cf6'), 'antigravity': ('#8ab4f8', '#4285f4')},
+    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'ollama': ('#b388ff', '#e0d0ff'), 'antigravity': ('#8ab4f8', '#dbe8ff')},
+    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'ollama': ('#b48cf2', '#d9b3ff'), 'antigravity': ('#8ab4f8', '#4285f4')},
 }
 
 
@@ -111,7 +111,7 @@ class Canvas:
 
 @functools.lru_cache(maxsize=None)
 def glyph(provider, size, color, stroke=None):
-    """Provider marks drawn at 4× and reduced for clean edges (burst, cube, twin sparkle)."""
+    """Provider marks drawn at 4× and reduced for clean edges (burst, llama, twin sparkle)."""
     s = size * 4
     image = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -123,12 +123,15 @@ def glyph(provider, size, color, stroke=None):
             a = math.radians(i * 30 + (4 if i % 2 else 0) - 90)
             draw.line((c + math.cos(a) * s * 0.13, c + math.sin(a) * s * 0.13,
                        c + math.cos(a) * s * r, c + math.sin(a) * s * r), fill=color, width=width)
-    elif provider == 'codex':
-        k = s / 48
-        hexagon = [(24, 5), (40.5, 14.5), (40.5, 33.5), (24, 43), (7.5, 33.5), (7.5, 14.5), (24, 5)]
-        draw.line([(x * k, y * k) for x, y in hexagon], fill=color, width=width, joint='curve')
-        for end in ((7.5, 14.5), (40.5, 14.5), (24, 43)):
-            draw.line((24 * k, 24 * k, end[0] * k, end[1] * k), fill=color, width=width)
+    elif provider == 'ollama':
+        # A llama head: two ears over a long neck, drawn filled so it reads at small sizes.
+        def block(box):
+            draw.rectangle(tuple(round(v * s / 32) for v in box), fill=color)
+        block((10, 3, 13, 9))    # left ear
+        block((18, 3, 21, 9))    # right ear
+        block((9, 8, 22, 16))    # head
+        block((4, 11, 10, 16))   # muzzle
+        block((13, 15, 19, 30))  # long neck
     else:
         def sparkle(cx, cy, r):
             waist = max(1.0, r * 0.26)
@@ -372,10 +375,10 @@ def render_neon(snapshot):
 
 
 def pixel_scene(cv, provider, top):
-    """A 2-px pixel landscape behind each Pixel Retro row (sunset / forest city / space)."""
-    rnd = random.Random({'claude': 11, 'codex': 23, 'antigravity': 37}[provider])
+    """A 2-px pixel landscape behind each Pixel Retro row (sunset / violet city / space)."""
+    rnd = random.Random({'claude': 11, 'ollama': 23, 'antigravity': 37}[provider])
     sky = {'claude': ('#2a1330', '#3a1834', '#4d1f36', '#652836', '#7f3335', '#9a4133'),
-           'codex': ('#06171d', '#082027', '#0b2a2e', '#0e3434', '#113f39', '#15493e'),
+           'ollama': ('#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f'),
            'antigravity': ('#050b20', '#07122e', '#0a193c', '#0c2049', '#0f2757', '#122e64')}[provider]
     d = cv.back
     for i, color in enumerate(sky):
@@ -398,20 +401,20 @@ def pixel_scene(cv, provider, top):
             px(x, h, '#5a2236', 1, 37 - h)
         for x in range(3, 117):
             px(x, 33 - round(math.sin(x / 4)), '#371428', 1, 5)
-    elif provider == 'codex':
+    elif provider == 'ollama':
         for _ in range(14):
-            px(rnd.randrange(20, 116), rnd.randrange(1, 12), '#9bffd2')
-        disc(66, 7, 3, '#d9ffe9'); disc(67, 6, 2, sky[0])
+            px(rnd.randrange(20, 116), rnd.randrange(1, 12), '#d9c6ff')
+        disc(66, 7, 3, '#efe6ff'); disc(67, 6, 2, sky[0])
         x = 40
         while x < 116:
             w, h = rnd.randrange(3, 6), rnd.randrange(6, 13)
-            px(x, 32 - h, '#0b3530', w, h + 5)
+            px(x, 32 - h, '#241a4a', w, h + 5)
             for wy in range(33 - h, 31, 2):
                 if rnd.random() > .5:
-                    px(x + 1, wy, '#7dffb9')
+                    px(x + 1, wy, '#b48cf2')
             x += w + 1
         for p in range(3, 117, 3):
-            px(p, 33, '#05201a', 2, 5)
+            px(p, 33, '#150f33', 2, 5)
     else:
         for _ in range(40):
             px(rnd.randrange(3, 116), rnd.randrange(1, 30), rnd.choice(('#ffffff', '#8ab4f8')))

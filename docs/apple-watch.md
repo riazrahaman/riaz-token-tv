@@ -37,18 +37,18 @@ usually every 15–30 minutes, so the watch lags the clock.
 
 ## Fields
 
-Accounts are keyed by the name the clock shows: `CLAUDE A` is `claude_a`, `CODEX B` is `codex_b`.
+Accounts are keyed by the name the clock shows: `CLAUDE A` is `claude_a`, `OLLAMA B` is `ollama_b`.
 Config keys are not included.
 
 ```json
 {
   "updated_at": 1791803649,
-  "summary": "CLAUDE A 44% WK · CODEX A 12% 5H OLD · ANTIGRAVITY A NO DATA",
+  "summary": "CLAUDE A 44% WK · OLLAMA A 12% WK OLD · ANTIGRAVITY A NO DATA",
   "accounts": {
     "claude_a": {"label": "CLAUDE A", "used_percent": 44, "used": 0.44, "window": "WK",
                  "resets_in": "1d 2h", "resets_at": 1791897249, "text": "44% WK", "state": "ok"},
-    "codex_a": {"label": "CODEX A", "used_percent": 12, "used": 0.12, "window": "5H",
-                "resets_in": "1h 0m", "resets_at": 1791807249, "text": "12% 5H OLD", "state": "old"},
+    "ollama_a": {"label": "OLLAMA A", "used_percent": 12, "used": 0.12, "window": "WK",
+                "resets_in": "1d 0h", "resets_at": 1791807249, "text": "12% WK OLD", "state": "old"},
     "antigravity_a": {"label": "ANTIGRAVITY A", "used_percent": null, "used": null, "window": null,
                "resets_in": "--", "resets_at": null, "text": "NO DATA", "state": "missing"}
   }

@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from token_tv.usage import normalize_claude, normalize_codex, normalize_antigravity, timestamp
-from token_tv.sources import fetch_account, load_config, antigravity_identity, scoped_env
+from token_tv.usage import normalize_claude, normalize_ollama, normalize_antigravity, timestamp
+from token_tv.sources import fetch_account, load_config, antigravity_identity, ollama_identity, scoped_env
 from token_tv.state import UsageStore
 from token_tv.display import render_page, pages, overview_rows, primary_window
 
@@ -18,14 +18,28 @@ from token_tv.display import render_page, pages, overview_rows, primary_window
 class LiveTests(unittest.TestCase):
     def test_provider_cli_environment_does_not_inherit_other_authentication(self):
         with patch.dict("os.environ", {"OPENAI_API_KEY": "DO-NOT-INHERIT", "XAI_API_KEY": "DO-NOT-INHERIT", "CLAUDE_CODE_OAUTH_TOKEN": "DO-NOT-INHERIT"}):
-            for provider, variable in (("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME"), ("antigravity", "ANTIGRAVITY_EXECUTABLE_DATA_DIR")):
+            for provider, variable in (("claude", "CLAUDE_CONFIG_DIR"), ("antigravity", "ANTIGRAVITY_EXECUTABLE_DATA_DIR")):
                 env = scoped_env(provider, "/explicit/account/home")
                 self.assertEqual(env[variable], "/explicit/account/home")
                 self.assertFalse(any(key in env for key in ("OPENAI_API_KEY", "XAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")))
 
-    def test_codex_uses_reported_window_duration(self):
-        data = {"rateLimits": {"primary": {"usedPercent": 78, "windowDurationMins": 10080, "resetsAt": 2000000000}, "secondary": None}}
-        self.assertEqual(normalize_codex(data), [{"label": "WEEK", "used_percent": 78.0, "resets_at": 2000000000, "duration_minutes": 10080}])
+    def test_ollama_spend_is_measured_against_the_allowance(self):
+        data = {"range": "7d", "totals": {"usage_usd": 25.0}}
+        self.assertEqual(normalize_ollama(data, 50.0), [
+            {"label": "WEEK", "used_percent": 50.0, "resets_at": None, "duration_minutes": 10080}])
+        self.assertEqual(normalize_ollama({"totals": {"usage_usd": 999.0}}, 50.0)[0]["used_percent"], 100.0)
+        self.assertEqual(normalize_ollama({"totals": {"usage_usd": 27.48072}}, 40.0)[0]["used_percent"], 68.7)
+
+    def test_missing_ollama_allowance_or_spend_is_unknown(self):
+        data = {"range": "7d", "totals": {"usage_usd": 25.0}}
+        self.assertEqual(normalize_ollama(data, None), [])
+        self.assertEqual(normalize_ollama(data, 0), [])
+        self.assertEqual(normalize_ollama(data, -5), [])
+        self.assertEqual(normalize_ollama(data, True), [])
+        self.assertEqual(normalize_ollama({"totals": {}}, 50.0), [])
+        self.assertEqual(normalize_ollama({"totals": {"usage_usd": True}}, 50.0), [])
+        self.assertEqual(normalize_ollama({"totals": {"usage_usd": float("inf")}}, 50.0), [])
+        self.assertEqual(normalize_ollama({}, 50.0), [])
 
     def test_missing_antigravity_quota_is_unknown(self):
         self.assertEqual(normalize_antigravity({"command": {"data": {"groups": [{"name": "Claude and GPT models", "buckets": [{"window": "weekly", "remaining_fraction": 1.0}]}]}}}), [])
@@ -61,6 +75,23 @@ class LiveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_config(path)
 
+    def test_ollama_allowance_is_credential_free_metadata_for_ollama_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            # Allowed for ollama, and an ollama account needs no email (it reports none).
+            path.write_text(json.dumps({"accounts": [{"key": "o", "alias": "OLLAMA A", "provider": "ollama",
+                                                      "ollama_allowance_usd": 25.0}]}))
+            self.assertEqual(load_config(path)["accounts"][0]["ollama_allowance_usd"], 25.0)
+            for account in ({"key": "a", "alias": "A", "provider": "claude", "email": "a@example.com", "ollama_allowance_usd": 25.0},
+                            {"key": "ag", "alias": "AG", "provider": "antigravity", "ollama_allowance_usd": 25.0},
+                            {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "ollama_allowance_usd": 0},
+                            {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "ollama_allowance_usd": -5},
+                            {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "ollama_allowance_usd": True},
+                            {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "ollama_allowance_usd": "25"}):
+                path.write_text(json.dumps({"accounts": [account]}))
+                with self.assertRaises(ValueError, msg=account):
+                    load_config(path)
+
     def test_antigravity_source_is_unverified_and_reports_no_email(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "auth.json"
@@ -76,6 +107,29 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 75.0, "resets_at": timestamp("2026-10-14T17:46:08Z"), "duration_minutes": 10080}])
             self.assertNotIn("NEVER-EXPORT", json.dumps(row))
             self.assertNotIn("owner@example.com", json.dumps(row))
+
+    def test_ollama_source_is_unverified_and_spends_are_weekly(self):
+        # Identity: the API reports no email, so nothing is claimed, and the configured email is a label.
+        self.assertIsNone(ollama_identity({"source_home": "/unused"}))
+        account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "label-only@example.com",
+                   "ollama_allowance_usd": 40.0}
+        payload = {"range": "7d", "scope": "self", "granularity": "day",
+                   "totals": {"request_count": 7763, "usage_usd": 27.48072,
+                              "input_tokens": 900000, "cached_input_tokens": 500000, "output_tokens": 120000},
+                   "buckets": [{"from": "2026-10-05T00:00:00Z", "until": "2026-10-06T00:00:00Z",
+                                "request_count": 100, "usage_usd": 3.5}]}
+        with patch("token_tv.sources.ollama_payload", return_value=payload):
+            row = fetch_account(account)
+        self.assertEqual(row["status"], "ok")
+        self.assertFalse(row["identity_verified"])
+        self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 68.7, "resets_at": None, "duration_minutes": 10080}])
+        self.assertNotIn("label-only@example.com", json.dumps(row))
+        # No allowance means no honest percentage: the row stays unknown, never a fake 0%.
+        without = dict(account)
+        del without["ollama_allowance_usd"]
+        with patch("token_tv.sources.ollama_payload", return_value=payload):
+            row = fetch_account(without)
+        self.assertEqual((row["status"], row["windows"]), ("quota_unavailable", []))
 
     def test_cache_is_per_account_and_failure_preserves_stale_values(self):
         accounts = [{"key": "a", "alias": "A", "provider": "claude"}, {"key": "b", "alias": "B", "provider": "claude"}]
@@ -147,7 +201,7 @@ class LiveTests(unittest.TestCase):
                     "windows": [] if status != "ok" else [{"label": "WEEK", "used_percent": 94, "resets_at": None}]}
         snapshot = {"accounts": {
             "ca": account("claude", "CLAUDE A"), "cb": account("claude", "CLAUDE B"),
-            "cc": account("claude", "CLAUDE C"), "xa": account("codex", "CODEX A"),
+            "cc": account("claude", "CLAUDE C"), "xa": account("ollama", "OLLAMA A"),
             "ga": account("antigravity", "ANTIGRAVITY A", "auth_required"), "gb": account("antigravity", "ANTIGRAVITY B")}}
         rows = overview_rows(snapshot)
         self.assertEqual([r["key"] for r in rows], ["ca", "xa", "gb"])

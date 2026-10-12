@@ -17,13 +17,13 @@ from token_tv.sample import D, H, snapshot  # noqa: E402
 
 SCENES = [
     ('Fresh morning', [('claude_a', 'CLAUDE A', 'claude', [('5H', 8, 4 * H + 50 * 60)]),
-                       ('codex_a', 'CODEX A', 'codex', [('WEEK', 21, 5 * D)]),
+                       ('ollama_a', 'OLLAMA A', 'ollama', [('WEEK', 21, 5 * D)]),
                        ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [('BUDGET', 12, 20 * D)])]),
     ('Busy afternoon', [('claude_a', 'CLAUDE A', 'claude', [('5H', 63, 2 * H + 5 * 60)]),
-                        ('codex_a', 'CODEX A', 'codex', [('5H', 47, 3 * H)]),
+                        ('ollama_a', 'OLLAMA A', 'ollama', [('WEEK', 47, 3 * H)]),
                         ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [('BUDGET', 55, 9 * D)])]),
     ('Near the limit', [('claude_a', 'CLAUDE A', 'claude', [('5H', 97, 18 * 60)]),
-                        ('codex_a', 'CODEX A', 'codex', [('WEEK', 88, D + 6 * H)]),
+                        ('ollama_a', 'OLLAMA A', 'ollama', [('WEEK', 88, D + 6 * H)]),
                         ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [('BUDGET', 92, 2 * D)])]),
 ]
 SCALE, PAD, LABEL = 2, 24, 44

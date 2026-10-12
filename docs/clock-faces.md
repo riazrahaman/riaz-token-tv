@@ -35,10 +35,10 @@ def render_mono(data):
 if __name__ == '__main__':
     data = snapshot(time.time(), [
         ('claude_a', 'CLAUDE A', 'claude', [('5H', 72, 2 * H)]),
-        ('codex_a', 'CODEX A', 'codex', [('WEEK', 15, 4 * D)]),
+        ('ollama_a', 'OLLAMA A', 'ollama', [('WEEK', 15, 4 * D)]),
         ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', []),  # unknown: no window was reported
     ])
-    data['accounts']['codex_a']['status'] = 'stale'  # an old reading must look old
+    data['accounts']['ollama_a']['status'] = 'stale'  # an old reading must look old
     render_mono(data).save('my-face.png')
     print('wrote my-face.png')
 ```

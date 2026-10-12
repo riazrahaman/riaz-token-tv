@@ -4,7 +4,7 @@
 
 ![Six clock faces](images/clock-faces.png)
 
-TokenTV shows Claude and Codex usage limits on a small 240×240 Wi-Fi desk clock. It does
+TokenTV shows Claude, Ollama and Antigravity usage limits on a small 240×240 Wi-Fi desk clock. It does
 not replace the clock's firmware. This note explains how, and where it stops working.
 
 ## The idea
@@ -17,9 +17,9 @@ runs TokenTV code, so there is nothing to flash and no firmware to restore.
 ## The flow
 
 1. **Read usage.** A computer on the same network reads usage through each tool's own
-   login: the Claude Code CLI's OAuth profile and usage, the official `codex app-server`
-   rate-limit RPC, and, as an experimental option, the Antigravity CLI usage command (a share of its
-   billing budget, not web chat limits). It polls every five minutes by default.
+   login: the Claude Code CLI's OAuth profile and usage, the Ollama Cloud usage API (a share of the
+   weekly spend allowance you set), and the Antigravity CLI usage command. It polls every five minutes
+   by default.
 2. **Draw a face.** Python and Pillow draw a 240×240 image: used percentage, window,
    reset time and account label. An old reading is marked OLD, and missing data shows a dash
    instead of a fake 0%.

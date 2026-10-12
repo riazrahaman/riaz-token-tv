@@ -1,6 +1,6 @@
 # Agent guide
 
-TokenTV puts Claude and Codex usage limits on a ~$5 AliExpress Wi-Fi desk clock (240×240, SmallTV-style) by uploading pictures to its stock photo album, so the clock keeps its firmware. A computer that stays on reads usage and draws the pictures. Python 3.10+, Pillow, no other runtime deps.
+TokenTV puts Claude, Ollama and Antigravity usage limits on a ~$5 AliExpress Wi-Fi desk clock (240×240, SmallTV-style) by uploading pictures to its stock photo album, so the clock keeps its firmware. A computer that stays on reads usage and draws the pictures. Python 3.10+, Pillow, no other runtime deps.
 
 ## Run without accounts or a clock
 
@@ -17,9 +17,10 @@ When the user says "Set up TokenTV for me":
 1. Install: `python3 -m venv .venv && .venv/bin/pip install -e .` (Windows: `.venv\Scripts\pip install -e .`),
    or with Node only: `npx github:click6067-ship-it/token-tv demo`.
 2. Ask the user for the clock's IP address (shown on the clock's screen).
-3. Run `.venv/bin/token-tv start --device-url <ip>`. It finds the Claude, Codex and Antigravity CLIs that are already
+3. Run `.venv/bin/token-tv start --device-url <ip>`. It finds the Claude and Antigravity CLIs that are already
    signed in, reads each account's email through the official login, asks the user to confirm, saves the
    config and opens the dashboard at http://127.0.0.1:8787. The user then presses Clock display → Apply.
+   Ollama Cloud has no CLI: add its account by hand with `OLLAMA_API_KEY` and `ollama_allowance_usd`.
 4. If it says nothing is signed in, tell the user to sign in to the CLI they use (e.g. `claude`, then /login)
    and run step 3 again. A second account of the same service: `.venv/bin/token-tv connect --account <key>`.
 
