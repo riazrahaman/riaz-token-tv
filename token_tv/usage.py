@@ -93,6 +93,19 @@ def credit_period_start(created_at, now=None):
     return start
 
 
+def credit_period_end(start):
+    """The UTC moment the credit period that began at `start` refills.
+
+    Ollama refills on the same day-of-month one month later (clamped for short months), so the
+    clock can count down to it.
+    """
+    month, year = start.month + 1, start.year
+    if month > 12:
+        month, year = 1, year + 1
+    day = min(start.day, calendar.monthrange(year, month)[1])
+    return datetime(year, month, day, tzinfo=timezone.utc)
+
+
 def normalize_ollama(data, allowance, created_at=None, now=None):
     """Read the JSON from `GET https://ollama.com/api/usage?range=30d` for one credit period.
 
@@ -101,7 +114,8 @@ def normalize_ollama(data, allowance, created_at=None, now=None):
     the account was created (see `credit_period_start`); buckets before it are excluded, so the
     reading is the current monthly credit spend measured against the plan's monthly budget,
     never a rolling 7-day window. A missing/non-finite/unusable bucket, an unknown allowance,
-    an unknown period, or no in-period dollars at all stays unknown instead of a fake 0%.
+    an unknown period, or no in-period dollars at all stays unknown instead of a fake 0%. The
+    window's reset is the refill date (one month on from the period start).
     """
     if isinstance(allowance, bool) or not isinstance(allowance, (int, float)):
         return []
@@ -128,7 +142,7 @@ def normalize_ollama(data, allowance, created_at=None, now=None):
     if not known:
         return []
     percent = round(min(100.0, spent / allowance * 100.0), 2)
-    item = window("$" + str(int(spent)), percent, None, 43200)
+    item = window("$" + str(int(spent)), percent, credit_period_end(start).isoformat(), 43200)
     return [item] if item else []
 
 
