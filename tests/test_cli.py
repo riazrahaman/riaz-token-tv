@@ -33,7 +33,7 @@ class CliTest(unittest.TestCase):
                                                'email': 'a@example.com', 'source_home': '~/.claude'})
         sources.load_config(self.config)  # the daemon accepts what setup writes
         before = self.config.read_text()
-        code, _, err = run('setup', '--config', str(self.config), '--yes', '--codex-email', 'b@example.com')
+        code, _, err = run('setup', '--config', str(self.config), '--yes', '--ollama-email', 'b@example.com')
         self.assertEqual(code, 1)
         self.assertIn('never overwrites', err)
         self.assertEqual(self.config.read_text(), before)
@@ -45,28 +45,29 @@ class CliTest(unittest.TestCase):
         self.assertIn('--claude-email', err)
 
     def test_doctor_points_missing_logins_at_connect(self):
-        home = self.tmp / 'codex-home'
+        home = self.tmp / 'claude-home'
         self.config.write_text(json.dumps({'accounts': [
-            {'key': 'codex_a', 'alias': 'CODEX A', 'provider': 'codex', 'email': 'b@example.com',
+            {'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'b@example.com',
              'source_home': str(home)}]}))
-        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/codex'):
+        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/claude'), \
+                mock.patch.object(cli.sys, 'platform', 'linux'):
             code, out, _ = run('doctor', '--config', str(self.config))
             self.assertEqual(code, 1)
             self.assertIn('token-tv connect --config', out)
             home.mkdir()
-            (home / 'auth.json').write_text('{}')  # existence only; doctor never opens it
+            (home / '.credentials.json').write_text('{}')  # existence only; doctor never opens it
             code, out, _ = run('doctor', '--config', str(self.config))
         self.assertEqual(code, 0)
         self.assertIn('not verified', out)
         self.assertNotIn('Ready', out)
         bad = {'status': 'identity_mismatch', 'identity_verified': False}
-        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/codex'), \
+        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/claude'), \
                 mock.patch('token_tv.sources.fetch_account', return_value=bad):
             code, out, _ = run('doctor', '--config', str(self.config), '--live')
         self.assertEqual(code, 1)
         self.assertIn('IDENTITY_MISMATCH', out)
         good = {'status': 'ok', 'identity_verified': True}
-        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/codex'), \
+        with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/claude'), \
                 mock.patch('token_tv.sources.fetch_account', return_value=good):
             code, out, _ = run('doctor', '--config', str(self.config), '--live')
         self.assertEqual(code, 0)
@@ -82,25 +83,6 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('Keychain unchecked', out)
 
-    def test_doctor_checks_codexbar_instead_of_a_login_file(self):
-        self.config.write_text(json.dumps({'accounts': [
-            {'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'a@example.com',
-             'codexbar_command': str(self.tmp / 'missing-codexbar'), 'codexbar_source': 'oauth'}]}))
-        code, out, _ = run('doctor', '--config', str(self.config))
-        self.assertEqual(code, 1)
-        self.assertIn('install the CodexBar CLI', out)
-        self.assertNotIn('token-tv connect', out)
-        unreported = {'status': 'ok', 'identity_verified': False}
-        with mock.patch('token_tv.sources.fetch_account', return_value=unreported):
-            code, out, _ = run('doctor', '--config', str(self.config), '--live')
-        self.assertEqual(code, 0)
-        self.assertIn('CodexBar did not report the email for CLAUDE A', out)
-        failed = {'status': 'error', 'identity_verified': False}
-        with mock.patch('token_tv.sources.fetch_account', return_value=failed):
-            code, out, _ = run('doctor', '--config', str(self.config), '--live')
-        self.assertEqual(code, 1)
-        self.assertIn('live check ERROR', out)
-
     def test_broken_config_gets_a_sentence_not_a_traceback(self):
         self.config.write_text('{"accounts": [')
         for command in ('doctor', 'run'):
@@ -110,12 +92,12 @@ class CliTest(unittest.TestCase):
 
     def test_setup_two_accounts_reuse_then_isolate(self):
         code, out, _ = run('setup', '--config', str(self.config), '--yes',
-                           '--codex-email', 'a@example.com', '--codex-email', 'b@example.com')
+                           '--claude-email', 'a@example.com', '--claude-email', 'b@example.com')
         self.assertEqual(code, 0)
         a, b = json.loads(self.config.read_text())['accounts']
-        self.assertEqual((a['key'], a['source_home']), ('codex_a', '~/.codex'))
+        self.assertEqual((a['key'], a['source_home']), ('claude_a', '~/.claude'))
         self.assertEqual((b['key'], b['alias'], b['source_home']),
-                         ('codex_b', 'CODEX B', str(self.tmp / 'homes' / 'codex_b')))
+                         ('claude_b', 'CLAUDE B', str(self.tmp / 'homes' / 'claude_b')))
         self.assertIn('separate login', out)
         sources.load_config(self.config)
 
@@ -182,14 +164,14 @@ class ConnectGuardTest(unittest.TestCase):
     def test_everyday_login_is_kept_without_explicit_replace(self):
         from token_tv import connect
         home = Path(tempfile.mkdtemp())
-        (home / '.codex').mkdir()
-        (home / '.codex' / 'auth.json').write_text('{}')
+        (home / '.claude').mkdir()
+        (home / '.claude' / '.credentials.json').write_text('{}')
         config = home / 'config.json'
-        config.write_text(json.dumps({'accounts': [{'key': 'codex_a', 'alias': 'CODEX A', 'provider': 'codex',
-                                                     'email': 'a@example.com', 'source_home': '~/.codex'}]}))
+        config.write_text(json.dumps({'accounts': [{'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude',
+                                                     'email': 'a@example.com', 'source_home': '~/.claude'}]}))
         with mock.patch.dict(os.environ, {'HOME': str(home)}), \
                 mock.patch.object(connect.subprocess, 'run') as login, \
-                mock.patch.object(connect.sys, 'argv', ['connect', '--config', str(config), '--account', 'codex_a']):
+                mock.patch.object(connect.sys, 'argv', ['connect', '--config', str(config), '--account', 'claude_a']):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 connect.main()
@@ -222,7 +204,7 @@ class StartTest(unittest.TestCase):
         with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/x'), \
                 mock.patch.object(cli, 'login_state', side_effect=lambda p, h: 'yes' if p != 'antigravity' else 'no'), \
                 mock.patch('token_tv.sources.logged_in_email',
-                           side_effect=lambda p, h: {'claude': 'me@example.com', 'codex': None}[p]) as detect, \
+                           side_effect=lambda p, h: {'claude': 'me@example.com', 'ollama': None}[p]) as detect, \
                 mock.patch.object(live, 'main') as run:
             code, out, err = run_cli('start', '--config', str(self.config), '--yes', '--no-browser', *extra)
         return code, out, err, detect, run
@@ -236,16 +218,16 @@ class StartTest(unittest.TestCase):
         run.assert_called_once()
 
     def test_existing_config_skips_detection(self):
-        self.config.write_text(json.dumps({'accounts': [{'key': 'codex_a', 'alias': 'CODEX A', 'provider': 'codex',
-                                                         'email': 'b@example.com', 'source_home': '~/.codex'}]}))
+        self.config.write_text(json.dumps({'accounts': [{'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude',
+                                                         'email': 'b@example.com', 'source_home': '~/.claude'}]}))
         code, _, _, detect, run = self.start()
         self.assertEqual(code, 0)
         detect.assert_not_called()
         run.assert_called_once()
 
     def saved_config(self, device_url):
-        config = {'device_url': device_url, 'accounts': [{'key': 'codex_a', 'alias': 'CODEX A', 'provider': 'codex',
-                                                          'email': 'b@example.com', 'source_home': '~/.codex'}]}
+        config = {'device_url': device_url, 'accounts': [{'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude',
+                                                          'email': 'b@example.com', 'source_home': '~/.claude'}]}
         self.config.write_text(json.dumps(config))
         return config
 

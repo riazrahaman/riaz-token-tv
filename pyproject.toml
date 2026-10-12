@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "token-tv"
 version = "0.1.0"
-description = "Your AI usage limits on a $5 desk clock: Claude, Codex and Antigravity on a 240x240 Wi-Fi clock"
+description = "Your AI usage limits on a $5 desk clock: Claude, Ollama and Antigravity on a 240x240 Wi-Fi clock"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

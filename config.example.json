@@ -9,18 +9,11 @@
       "source_home": "~/.claude"
     },
     {
-      "key": "codex_a",
-      "alias": "CODEX A",
-      "provider": "codex",
-      "email": "your-chatgpt-email@example.com",
-      "source_home": "~/.codex"
-    },
-    {
-      "key": "codex_b",
-      "alias": "CODEX B",
-      "provider": "codex",
-      "email": "your-second-chatgpt-email@example.com",
-      "source_home": "~/.codex-account-b"
+      "key": "ollama_a",
+      "alias": "OLLAMA A",
+      "provider": "ollama",
+      "email": "label-only@example.com",
+      "ollama_allowance_usd": 25.0
     },
     {
       "key": "antigravity_a",

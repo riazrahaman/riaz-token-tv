@@ -9,8 +9,8 @@ This standalone example remains editable for experimenting with your own four-co
 | --- | --- | --- |
 | ![before](before.png) | ![after](after.png) | ![old/unknown](after-old-unknown.png) |
 
-The first two images use the same sample: Claude A 25% (5H, 3h 41m), Codex A 72% (WK, 2d 6h), Antigravity A 94% (WK, 12d 3h).
-The third image marks Codex as an old reading and gives Antigravity no data.
+The first two images use the same sample: Claude A 25% (5H, 3h 41m), Ollama A 72% (WK, 2d 6h), Antigravity A 94% (WK, 12d 3h).
+The third image marks Ollama as an old reading and gives Antigravity no data.
 
 ## Run it (no clock, no login, no fork)
 

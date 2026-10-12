@@ -6,6 +6,6 @@ class MockProvider:
         samples = {
             "claude_personal": Usage("mock", 29, 142, 4, 9876),
             "claude_work": Usage("mock", 61, 80, 22, 2400),
-            "codex_personal": Usage("mock", 17, 95, 38, 5100),
+            "ollama_personal": Usage("mock", 17, 95, 38, 5100),
         }
         return samples[account.key]

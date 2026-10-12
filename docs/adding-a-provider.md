@@ -1,6 +1,6 @@
 # Adding a service (provider)
 
-TokenTV reads Claude, Codex and Antigravity today. A new service is more than one function: the name is
+TokenTV reads Claude, Ollama and Antigravity today. A new service is more than one function: the name is
 listed in several places. This is the full list as of 2026-10-04; an AI agent can follow it.
 
 **First check the service exposes usage you can read** (percent used and reset time) through its

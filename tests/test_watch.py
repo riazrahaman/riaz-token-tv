@@ -21,19 +21,19 @@ class WatchPayloadTest(unittest.TestCase):
             'claude_a': row('claude', 'CLAUDE A', windows=[
                 {'label': '5H', 'used_percent': 10, 'resets_at': now + 3600},
                 {'label': 'WEEK', 'used_percent': 44.4, 'resets_at': now + 26 * 3600 + 30}]),
-            'codex_a': row('codex', 'CODEX A', 'stale', [{'label': '5H', 'used_percent': 12, 'resets_at': now + 3600}]),
+            'ollama_a': row('ollama', 'OLLAMA A', 'stale', [{'label': 'WEEK', 'used_percent': 12, 'resets_at': now + 3600}]),
             'antigravity_a': row('antigravity', 'ANTIGRAVITY A', 'quota_unavailable'),
         }})
-        claude, codex, antigravity = (data['accounts'][key] for key in ('claude_a', 'codex_a', 'antigravity_a'))
+        claude, ollama, antigravity = (data['accounts'][key] for key in ('claude_a', 'ollama_a', 'antigravity_a'))
         # The tightest window is the one shown, as on the clock.
         self.assertEqual(claude, {'label': 'CLAUDE A', 'used_percent': 44, 'used': 0.44, 'window': 'WK',
                                   'resets_in': '1d 2h', 'resets_at': round(now + 26 * 3600 + 30),
                                   'text': '44% WK', 'state': 'ok'})
-        self.assertEqual((codex['state'], codex['text']), ('old', '12% 5H OLD'))
+        self.assertEqual((ollama['state'], ollama['text']), ('old', '12% WK OLD'))
         # Missing stays missing: never 0%.
         self.assertEqual((antigravity['used_percent'], antigravity['used'], antigravity['window'], antigravity['state'], antigravity['text'],
                           antigravity['resets_in']), (None, None, None, 'missing', 'NO DATA', '--'))
-        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · CODEX A 12% 5H OLD · ANTIGRAVITY A NO DATA')
+        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · OLLAMA A 12% WK OLD · ANTIGRAVITY A NO DATA')
         self.assertEqual(data['updated_at'], 1000)
 
     def test_keys_follow_clock_labels_not_config_keys(self):

@@ -9,7 +9,7 @@ from token_tv.providers.mock import MockProvider
 MOCK_ACCOUNTS = (
     Account("claude_personal", "Claude personal", "claude"),
     Account("claude_work", "Claude work", "claude"),
-    Account("codex_personal", "Codex personal", "codex"),
+    Account("ollama_personal", "Ollama personal", "ollama"),
 )
 
 
@@ -65,7 +65,7 @@ def main():
     args = parser.parse_args()
     with ThreadingHTTPServer((args.host, args.port), make_handler(MOCK_ACCOUNTS, {
         "claude": MockProvider(),
-        "codex": MockProvider(),
+        "ollama": MockProvider(),
     })) as server:
         print(f"TokenTV mock listening at http://{args.host}:{server.server_port}/snapshot", flush=True)
         server.serve_forever()

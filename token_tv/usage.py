@@ -36,39 +36,25 @@ def normalize_claude(data):
     return result
 
 
-def normalize_codex(data):
-    result = []
-    limits = data.get("rateLimits") or {}
-    for key in ("primary", "secondary"):
-        value = limits.get(key) or {}
-        duration = value.get("windowDurationMins")
-        if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
-            duration = None
-        label = {300: "5H", 10080: "WEEK"}.get(duration, "WINDOW")
-        item = window(label, value.get("usedPercent"), value.get("resetsAt"), duration)
-        if item:
-            result.append(item)
-    return result
+def normalize_ollama(data, allowance):
+    """Read the JSON from `GET https://ollama.com/api/usage?range=7d`.
 
-
-def normalize_codexbar(entry):
-    """One provider entry of CodexBar's usage JSON (`codexbar usage --format json`, `serve` GET /usage).
-    Only the primary and secondary slots: tertiary and extra windows are model-scoped and would
-    overwrite the weekly reading if they shared its label."""
-    result = []
-    usage = entry.get("usage")
-    for key in ("primary", "secondary"):
-        value = usage.get(key) if isinstance(usage, dict) else None
-        if not isinstance(value, dict):
-            continue
-        duration = value.get("windowMinutes")
-        if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
-            duration = None
-        label = {300: "5H", 10080: "WEEK"}.get(duration, "WINDOW")
-        item = window(label, value.get("usedPercent"), value.get("resetsAt"), duration)
-        if item:
-            result.append(item)
-    return result
+    Ollama Cloud reports no plan or limit, only the spend in a rolling window, so the
+    clock compares the 7-day `totals.usage_usd` against the allowance the user set.
+    A missing or non-positive allowance, or a missing/non-finite spend, stays unknown:
+    the reading is never invented as 0%.
+    """
+    if isinstance(allowance, bool) or not isinstance(allowance, (int, float)):
+        return []
+    if not math.isfinite(allowance) or allowance <= 0:
+        return []
+    totals = data.get("totals") if isinstance(data, dict) else None
+    spent = totals.get("usage_usd") if isinstance(totals, dict) else None
+    if isinstance(spent, bool) or not isinstance(spent, (int, float)) or not math.isfinite(spent):
+        return []
+    percent = round(min(100.0, spent / allowance * 100.0), 2)
+    item = window("WEEK", percent, None, 10080)
+    return [item] if item else []
 
 
 def normalize_antigravity(data):

@@ -13,7 +13,7 @@ class SnapshotTests(unittest.TestCase):
     def test_snapshot_exposes_distinct_aliases_as_theme_paths(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(MOCK_ACCOUNTS, {
             "claude": MockProvider(),
-            "codex": MockProvider(),
+            "ollama": MockProvider(),
         }))
         thread = threading.Thread(target=server.serve_forever)
         thread.start()
@@ -24,7 +24,7 @@ class SnapshotTests(unittest.TestCase):
                 self.assertEqual(response.headers["Content-Type"], "application/json; charset=utf-8")
             data = json.loads(payload)
             self.assertEqual(data["schema"], 1)
-            self.assertEqual(set(data["accounts"]), {"claude_personal", "claude_work", "codex_personal"})
+            self.assertEqual(set(data["accounts"]), {"claude_personal", "claude_work", "ollama_personal"})
             self.assertEqual(data["accounts"]["claude_work"]["alias"], "Claude work")
             self.assertEqual(data["accounts"]["claude_work"]["status"], "mock")
             with urlopen(f"http://127.0.0.1:{server.server_port}/snapshot/claude_work") as response:

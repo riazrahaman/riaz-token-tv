@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 PROVIDERS = {
     # provider: (CLI command, default home, file the CLI writes after login, login hint)
     'claude': ('claude', '~/.claude', '.credentials.json', 'claude auth login'),
-    'codex': ('codex', '~/.codex', 'auth.json', 'codex login'),
+    'ollama': ('', '~/.ollama', '', 'set OLLAMA_API_KEY, or store the key in the macOS Keychain (token-tv-ollama)'),
     'antigravity': ('agy', '~/Library/Application Support/Antigravity', '', 'sign in with the Antigravity app'),
 }
 
@@ -44,6 +44,8 @@ def login_state(provider, home):
     """'yes', 'no', 'keychain' or 'keyring'. Only checks that a login file exists; never opens it."""
     if provider == 'antigravity':
         return 'keyring'  # agy keeps its login in the OS keychain; there is no file to look at
+    if provider == 'ollama':
+        return 'keyring'  # the API key lives in the environment or the OS keychain, not a file
     root = Path(home).expanduser()
     if (root / PROVIDERS[provider][2]).is_file():
         return 'yes'
@@ -87,7 +89,10 @@ def setup(args):
         if provider == 'antigravity' and given is not None and not emails:
             emails = [ANTIGRAVITY_EMAIL]  # a bare --antigravity-email means "use the default label"
         if interactive and not emails:
-            print(f'\n{provider.title()}: CLI {"found" if cli_path(provider) else "not found"}')
+            if provider == 'ollama':
+                print('\nOllama Cloud: usage is read from OLLAMA_API_KEY, not a CLI; the email is a label only.')
+            else:
+                print(f'\n{provider.title()}: CLI {"found" if cli_path(provider) else "not found"}')
             for letter in 'ABC':
                 email = ask(f'  {provider.title()} account {letter} email (blank to {"skip" if letter == "A" else "finish"})',
                             ANTIGRAVITY_EMAIL if provider == 'antigravity' else '')
@@ -108,7 +113,7 @@ def setup(args):
             accounts.append({'key': key, 'alias': f'{provider.upper()} {letter}', 'provider': provider,
                              'email': email, 'source_home': home if reuse else str(homes / key)})
     if not accounts:
-        print('No accounts given. Pass --claude-email, --codex-email or --antigravity-email (repeat for B and C), '
+        print('No accounts given. Pass --claude-email, --ollama-email or --antigravity-email (repeat for B and C), '
               'or run setup in a terminal to be asked.', file=sys.stderr)
         return 1
     device = args.device_url
@@ -167,46 +172,28 @@ def doctor(args):
         return 1
     flag = '' if str(Path(args.config).expanduser()) == default_config() else f' --config {args.config}'
     ready = True
-    unreported = []
     unlabeled = []
     for account in config['accounts']:
         provider = account['provider']
-        if account.get('codexbar_command') or account.get('codexbar_url'):
-            # CodexBar owns this login; TokenTV only checks that it answers.
-            command = account.get('codexbar_command')
-            line = f'{account["alias"]:<10} {provider:<6} CodexBar '
-            if args.live:
-                from token_tv.sources import fetch_account
-                row = fetch_account(account)
-                good = row['status'] in ('ok', 'quota_unavailable')
-                line += f'live check {"ok" if good else row["status"].upper()}'
-                if good and not row.get('identity_verified'):
-                    line += ' (CodexBar reported no email)'
-                    unreported.append(account['alias'])
-                ready &= good
-            elif command and not shutil.which(os.path.expanduser(command)):
-                ready = False
-                line += f'MISSING: {command} not found -> install the CodexBar CLI'
-            else:
-                line += f'{command or account["codexbar_url"]} (not checked yet)'
-            print(line)
-            continue
+        host_api = provider == 'ollama'  # no CLI: usage comes from a hosted API key
         home = account.get('source_home') or PROVIDERS[provider][1]
-        found, state = cli_path(provider), login_state(provider, home)
-        line = f'{account["alias"]:<10} {provider:<6} CLI {"ok" if found else "MISSING"}  '
+        found, state = (True if host_api else cli_path(provider)), login_state(provider, home)
+        kind = 'API' if host_api else f'CLI {"ok" if found else "MISSING"}'
+        line = f'{account["alias"]:<10} {provider:<6} {kind}  '
         if args.live:
             from token_tv.sources import fetch_account
             row = fetch_account(account)
-            verified = row.get('identity_verified') or provider == 'antigravity'
+            verified = row.get('identity_verified') or provider in ('antigravity', 'ollama')
             good = row['status'] in ('ok', 'quota_unavailable') and verified
             line += f'live check {"ok" if good else row["status"].upper()}'
             if good and not row.get('identity_verified'):
-                line += ' (Antigravity reports no email)'
+                line += f' ({provider.title()} reports no email)'
                 unlabeled.append(account['alias'])
             ready &= bool(good)
             if not good:
-                fix = ('sign in with the Antigravity app' if provider == 'antigravity'
-                       else f'token-tv connect{flag} --account {account["key"]}')
+                fix = {'antigravity': 'sign in with the Antigravity app',
+                       'ollama': 'set OLLAMA_API_KEY or store it in the macOS Keychain'}.get(
+                           provider, f'token-tv connect{flag} --account {account["key"]}')
                 line += f' -> {fix}'
         elif state == 'yes':
             line += 'login file present (not verified yet)'
@@ -215,7 +202,10 @@ def doctor(args):
             line += 'no login file; macOS Keychain unchecked (untested on real Macs) -> doctor --live'
         elif state == 'keyring':
             ready = False
-            line += 'login lives in the OS keychain (not checked yet) -> doctor --live'
+            if provider == 'ollama':
+                line += 'key comes from OLLAMA_API_KEY or the macOS Keychain (not checked yet) -> doctor --live'
+            else:
+                line += 'login lives in the OS keychain (not checked yet) -> doctor --live'
         else:
             ready = False
             line += f'login MISSING -> token-tv connect{flag} --account {account["key"]}'
@@ -226,13 +216,9 @@ def doctor(args):
     print('Clock: ' + (config.get('device_url') or 'none (dashboard only)'))
     if not ready:
         print(f'Fix the lines above, then run token-tv doctor{flag} again.')
-    elif args.live and (unreported or unlabeled):
-        if unreported:
-            print(f'Ready, but CodexBar did not report the email for {", ".join(unreported)}. '
-                  f'Check it reads the account you expect, then start with: token-tv run{flag}')
-        if unlabeled:
-            print(f'Ready, but Antigravity reports no email to compare for {", ".join(unlabeled)}. '
-                  f'Check it reads the account you expect, then start with: token-tv run{flag}')
+    elif args.live and unlabeled:
+        print(f'Ready, but Ollama and Antigravity report no email to compare for {", ".join(unlabeled)}. '
+              f'Check each reads the account you expect, then start with: token-tv run{flag}')
     elif args.live:
         print(f'Ready: every account answered with the expected email. Start with: token-tv run{flag}')
     else:
@@ -283,8 +269,9 @@ def start(args):
                              'email': email, 'source_home': home})
             print(f'{provider.title()}: {email}')
         if not accounts:
-            print('No signed-in Claude, Codex or Antigravity CLI found. Sign in to one (for example `claude`, then /login),\n'
-                  'or look around first with: token-tv demo', file=sys.stderr)
+            print('No signed-in Claude or Antigravity CLI found. Sign in to one (for example `claude`, then /login).\n'
+                  'Ollama Cloud has no CLI: add its account by hand with OLLAMA_API_KEY and ollama_allowance_usd.\n'
+                  'Or look around first with: token-tv demo', file=sys.stderr)
             return 1
         device = args.device_url
         if device is None and interactive:
