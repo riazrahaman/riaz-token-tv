@@ -329,7 +329,7 @@ footer{margin-top:24px;border-top:1px solid #303b46;padding-top:16px;color:var(-
 <p class="muted">240 × 240 · Live clock view</p><div class="gauge-legend" aria-label="Used quota levels"><span><i></i>0–49%</span><span><i class="medium"></i>50–79%</span><span><i class="high"></i>80–89%</span><span><i class="critical"></i>90–100%</span></div></section><section id="accounts"></section></div>
 <footer>Percentages and bars show <strong>used</strong> quota. Times show when that quota resets.<br>
 The clock shows the highest reported usage window for one account per provider. All account windows appear here.<br>
-Antigravity reports the used share of its Gemini weekly and five-hour limits. Ollama Cloud shows the week's spend against the allowance you set, not a plan limit.<br>
+Antigravity reports the used share of its Gemini weekly and five-hour limits. Ollama Cloud shows the last 7 days of spend against your monthly credit budget (from your plan, or the allowance you set), not a weekly limit.<br>
 Laptop-linked accounts update while the laptop is online. Missing quotas are shown as unknown.</footer></main>
 <script>
 const labels={ok:'Connected',loading:'Loading',auth_required:'Login needed',identity_mismatch:'Check account',quota_unavailable:'Quota unavailable',stale:'Previous value',rate_limited:'Retry later',error:'Fetch failed'};

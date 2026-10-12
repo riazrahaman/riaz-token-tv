@@ -24,10 +24,10 @@ class LiveTests(unittest.TestCase):
                 self.assertEqual(env[variable], "/explicit/account/home")
                 self.assertFalse(any(key in env for key in ("OPENAI_API_KEY", "XAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")))
 
-    def test_ollama_spend_is_measured_against_the_allowance(self):
+    def test_ollama_spend_is_measured_against_the_monthly_budget(self):
         data = {"range": "7d", "totals": {"usage_usd": 25.0}}
         self.assertEqual(normalize_ollama(data, 50.0), [
-            {"label": "WEEK", "used_percent": 50.0, "resets_at": None, "duration_minutes": 10080}])
+            {"label": "BUDGET", "used_percent": 50.0, "resets_at": None, "duration_minutes": 43200}])
         self.assertEqual(normalize_ollama({"totals": {"usage_usd": 999.0}}, 50.0)[0]["used_percent"], 100.0)
         self.assertEqual(normalize_ollama({"totals": {"usage_usd": 27.48072}}, 40.0)[0]["used_percent"], 68.7)
 
@@ -109,13 +109,12 @@ class LiveTests(unittest.TestCase):
             self.assertNotIn("NEVER-EXPORT", json.dumps(row))
             self.assertNotIn("owner@example.com", json.dumps(row))
 
-    def test_ollama_allowance_is_the_weekly_share_of_the_plan_credits(self):
-        # Monthly plan credits (pricing) become a 7-day share because the API only reports
-        # dollars for windows up to 7 days.
-        self.assertEqual(ollama_allowance("max"), 70.0)
-        self.assertEqual(ollama_allowance("pro"), 14.0)
-        self.assertEqual(ollama_allowance("team"), 233.33)
-        self.assertEqual(ollama_allowance(" MAX "), 70.0)  # case-insensitive, stripped
+    def test_ollama_allowance_is_the_monthly_plan_credit_budget(self):
+        # Plan credits are a monthly budget that can be spent at any pace, not a weekly quota.
+        self.assertEqual(ollama_allowance("max"), 300.0)
+        self.assertEqual(ollama_allowance("pro"), 60.0)
+        self.assertEqual(ollama_allowance("team"), 1000.0)
+        self.assertEqual(ollama_allowance(" MAX "), 300.0)  # case-insensitive, stripped
         # free / unknown / missing plans stay unknown, never a fake allowance of 0.
         for plan in ("free", "something-else", "", None, 42):
             self.assertIsNone(ollama_allowance(plan), plan)
@@ -124,7 +123,7 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(ollama_allowance("free", 25.0), 25.0)
         # A missing or invalid override falls back to the plan.
         for bad in (None, 0, -5, True, float("inf"), float("nan"), "25"):
-            self.assertEqual(ollama_allowance("max", bad), 70.0, bad)
+            self.assertEqual(ollama_allowance("max", bad), 300.0, bad)
 
     def test_ollama_plan_posts_to_api_me_and_is_optional(self):
         class Response:
@@ -168,12 +167,12 @@ class LiveTests(unittest.TestCase):
                  "buckets": [{"from": "2026-10-05T00:00:00Z", "until": "2026-10-06T00:00:00Z",
                               "request_count": 100, "usage_usd": 3.5}]}
         account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "label-only@example.com"}
-        # Max = $70/week, so $27.48072 spent is 39.26%.
+        # Max = $300/month, so $27.48072 of the last 7 days is 9.16%.
         with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):
             row = fetch_account(account)
         self.assertEqual(row["status"], "ok")
         self.assertFalse(row["identity_verified"])
-        self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 39.26, "resets_at": None, "duration_minutes": 10080}])
+        self.assertEqual(row["windows"], [{"label": "BUDGET", "used_percent": 9.16, "resets_at": None, "duration_minutes": 43200}])
         self.assertNotIn("label-only@example.com", json.dumps(row))
         # An explicit ollama_allowance_usd wins over the plan.
         with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):

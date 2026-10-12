@@ -119,7 +119,7 @@ function buildStarfield() {
  $('#starfield').append(s);
 }
 function resetTime(epoch) {if (!Number.isFinite(epoch) || epoch <= 0) return '—'; let m = Math.ceil((epoch - Date.now() / 1000) / 60); if (m <= 0) return 'Awaiting reset'; return m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : `${Math.floor(m / 60)}h ${pad(m % 60)}m`}
-function period(w) {if (!w) return 'QUOTA'; return w.label === 'BUDGET' ? 'CLI BUDGET' : w.label === 'WEEK' ? 'WEEKLY' : w.label === '5H' ? '5-HOUR' : String(w.label || 'QUOTA')}
+function period(w) {if (!w) return 'QUOTA'; return w.label === 'BUDGET' ? 'CREDIT BUDGET' : w.label === 'WEEK' ? 'WEEKLY' : w.label === '5H' ? '5-HOUR' : String(w.label || 'QUOTA')}
 function level(v) {return v < 50 ? 'low' : v < 80 ? 'medium' : v < 90 ? 'high' : 'critical'}
 function levelText(v) {return v >= 100 ? 'Limit reached' : v >= 90 ? 'Near limit' : v >= 80 ? 'High usage' : v >= 50 ? 'Moderate' : 'Low usage'}
 function gauge(value, label) {
@@ -180,7 +180,7 @@ function providerCard(provider, accounts) {
  const others = windows.filter(w => w !== primary);
  if (others.length) {
   const details = el('details', undefined, 'more-windows'); details.open = prior?.open || false;
-  const named = period(others[0]) === 'CLI BUDGET' ? 'CLI budget' : period(others[0])[0] + period(others[0]).slice(1).toLowerCase();
+  const named = period(others[0]) === 'CREDIT BUDGET' ? 'Credit budget' : period(others[0])[0] + period(others[0]).slice(1).toLowerCase();
   details.append(el('summary', others.length === 1 ? `${named} window` : `${others.length} more windows`));
   for (const w of others) {const line = el('div', undefined, 'window-detail'); line.append(el('span', period(w), 'window-name'), gauge(w.used_percent, a.alias + ' ' + period(w) + ' used quota'), el('span', Math.round(w.used_percent) + '%', 'window-percent'), el('span', resetTime(w.resets_at), 'window-timer')); details.append(line)}
   card.append(details);

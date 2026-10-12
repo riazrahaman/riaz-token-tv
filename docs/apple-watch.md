@@ -43,12 +43,12 @@ Config keys are not included.
 ```json
 {
   "updated_at": 1791803649,
-  "summary": "CLAUDE A 44% WK · OLLAMA A 12% WK OLD · ANTIGRAVITY A NO DATA",
+  "summary": "CLAUDE A 44% WK · OLLAMA A 12% BUD OLD · ANTIGRAVITY A NO DATA",
   "accounts": {
     "claude_a": {"label": "CLAUDE A", "used_percent": 44, "used": 0.44, "window": "WK",
                  "resets_in": "1d 2h", "resets_at": 1791897249, "text": "44% WK", "state": "ok"},
-    "ollama_a": {"label": "OLLAMA A", "used_percent": 12, "used": 0.12, "window": "WK",
-                "resets_in": "1d 0h", "resets_at": 1791807249, "text": "12% WK OLD", "state": "old"},
+    "ollama_a": {"label": "OLLAMA A", "used_percent": 12, "used": 0.12, "window": "BUD",
+                "resets_in": "--", "resets_at": null, "text": "12% BUD OLD", "state": "old"},
     "antigravity_a": {"label": "ANTIGRAVITY A", "used_percent": null, "used": null, "window": null,
                "resets_in": "--", "resets_at": null, "text": "NO DATA", "state": "missing"}
   }
@@ -59,7 +59,7 @@ Config keys are not included.
 |---|---|
 | `used_percent` | Used share of the tightest window, 0–100. `null` when nothing was reported, never 0 |
 | `used` | The same as 0–1, for gauge complications |
-| `window` | `5H`, `WK` or `BUD`, as on the clock |
+| `window` | `5H`, `WK` or `BUD`, as on the clock. `BUD` is Ollama's monthly credit budget, read as the last 7 days of spend |
 | `resets_in`, `resets_at` | Time left as text (computed when the watch asks), and the reset as a Unix time |
 | `text` | What the clock row says, e.g. `44% WK` or `NO DATA` |
 | `state` | `ok`, `old` (the last good value; the latest check failed) or `missing` |
