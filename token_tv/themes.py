@@ -29,9 +29,9 @@ BANDS = {
     'hud': (('#14a874', '#35e0a0'), ('#1a7dff', '#3cc4ff'), ('#ff7a1a', '#ffb23f'), ('#e01e3c', '#ff4d6a')),
 }
 ACCENT = {
-    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#e8eaf0', '#ffffff')},
-    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'codex': ('#3ee68b', '#9bffc8'), 'antigravity': ('#b388ff', '#e0d0ff')},
-    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#dfe3ea', '#ffffff')},
+    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#8ab4f8', '#4285f4')},
+    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'codex': ('#3ee68b', '#9bffc8'), 'antigravity': ('#8ab4f8', '#dbe8ff')},
+    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#8ab4f8', '#4285f4')},
 }
 
 
@@ -111,7 +111,7 @@ class Canvas:
 
 @functools.lru_cache(maxsize=None)
 def glyph(provider, size, color, stroke=None):
-    """Provider marks drawn at 4× and reduced for clean edges (burst, cube, ringed slash)."""
+    """Provider marks drawn at 4× and reduced for clean edges (burst, cube, twin sparkle)."""
     s = size * 4
     image = Image.new('RGBA', (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
@@ -130,9 +130,13 @@ def glyph(provider, size, color, stroke=None):
         for end in ((7.5, 14.5), (40.5, 14.5), (24, 43)):
             draw.line((24 * k, 24 * k, end[0] * k, end[1] * k), fill=color, width=width)
     else:
-        r = s * 0.27
-        draw.ellipse((c - r, c - r, c + r, c + r), outline=color, width=width)
-        draw.polygon([(s * 0.1, s * 0.9), (s * 0.86, s * 0.12), (s * 0.9, s * 0.1), (s * 0.16, s * 0.9)], fill=color)
+        def sparkle(cx, cy, r):
+            waist = max(1.0, r * 0.26)
+            draw.polygon([(cx, cy - r), (cx + waist, cy - waist), (cx + r, cy),
+                           (cx + waist, cy + waist), (cx, cy + r), (cx - waist, cy + waist),
+                           (cx - r, cy), (cx - waist, cy - waist)], fill=color)
+        sparkle(s * 0.38, s * 0.62, s * 0.30)
+        sparkle(s * 0.72, s * 0.30, s * 0.14)
     return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
@@ -372,7 +376,7 @@ def pixel_scene(cv, provider, top):
     rnd = random.Random({'claude': 11, 'codex': 23, 'antigravity': 37}[provider])
     sky = {'claude': ('#2a1330', '#3a1834', '#4d1f36', '#652836', '#7f3335', '#9a4133'),
            'codex': ('#06171d', '#082027', '#0b2a2e', '#0e3434', '#113f39', '#15493e'),
-           'antigravity': ('#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f')}[provider]
+           'antigravity': ('#050b20', '#07122e', '#0a193c', '#0c2049', '#0f2757', '#122e64')}[provider]
     d = cv.back
     for i, color in enumerate(sky):
         d.rectangle((6, top + 2 + i * 12, 233, top + 2 + (i + 1) * 12), fill=color)
@@ -410,12 +414,12 @@ def pixel_scene(cv, provider, top):
             px(p, 33, '#05201a', 2, 5)
     else:
         for _ in range(40):
-            px(rnd.randrange(3, 116), rnd.randrange(1, 30), rnd.choice(('#efe6ff', '#b9a6ff')))
-        disc(66, 10, 5, '#8f6cf2'); disc(65, 9, 3, '#a98bff')
+            px(rnd.randrange(3, 116), rnd.randrange(1, 30), rnd.choice(('#ffffff', '#8ab4f8')))
+        disc(66, 10, 5, '#4285f4'); disc(65, 9, 3, '#8ab4f8')
         for i in range(-9, 10):
-            px(66 + i, 11 - round(i * .28), '#e2d6ff' if abs(i) < 5 else '#bca8ff')
+            px(66 + i, 11 - round(i * .28), '#dbe8ff' if abs(i) < 5 else '#8ab4f8')
         for x in range(3, 117):
-            px(x, 33 - round(2 * abs(math.sin(x / 7))), '#120c33', 1, 6)
+            px(x, 33 - round(2 * abs(math.sin(x / 7))), '#050b20', 1, 6)
 
 
 def render_retro(snapshot):
