@@ -9,13 +9,13 @@
 ![실제 시계에 띄운 Digital, Pixel Retro, Sci-Fi HUD 화면](images/real-clock.jpg)
 
 **AI 사용 한도를 작은 책상 시계에.** Claude와 Codex 사용량을 여러 계정으로, 시계 펌웨어를 바꾸지 않고 보여줍니다.
-Grok은 CLI 예산 정보를 보여주는 실험적 기능입니다. 제작자의 시계 구매 영수증은 5,650원(한국 알리익스프레스 할인가)이며 가격은 지역마다 다릅니다. 다른 기기는 확인하지 않았습니다. 켜 두는 컴퓨터(호스트)가 필요합니다.
+Antigravity는 CLI 사용량 명령으로 Gemini 한도를 보여주는 실험적 기능입니다. 제작자의 시계 구매 영수증은 5,650원(한국 알리익스프레스 할인가)이며 가격은 지역마다 다릅니다. 다른 기기는 확인하지 않았습니다. 켜 두는 컴퓨터(호스트)가 필요합니다.
 
 사용량은 240×240 책상 시계에 띄우고, 계정별 세부는 브라우저에서 봅니다. 계정별 인증 홈을 분리하고 실제 조회 실패와 오래된 값을 표시합니다.
 
 ## 실행
 
-Python 3.10+와 사용할 공급자의 공식 CLI(`claude`, `codex`, `grok`)가 필요합니다.
+Python 3.10+와 사용할 공급자의 공식 CLI(`claude`, `codex`, `agy`)가 필요합니다.
 
 ```bash
 pipx install git+https://github.com/click6067-ship-it/token-tv
@@ -41,9 +41,9 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 
 브라우저: `http://127.0.0.1:8787/`. `/snapshot`과 `/snapshot/<key>`는 JSON,
 `/frame/0.jpg`는 시계와 같은 240×240 JPEG이며 `/frame/1.jpg`는 호환 별칭입니다.
-시계는 Claude·Codex·Grok 각각 한 계정을 세 행으로 보여줍니다. 픽셀 아이콘, 큰 사용률 숫자, 막대, 기간 및 리셋 시간을 표시합니다.
+시계는 Claude·Codex·Antigravity 각각 한 계정을 세 행으로 보여줍니다. 픽셀 아이콘, 큰 사용률 숫자, 막대, 기간 및 리셋 시간을 표시합니다.
 실제 사용량을 제공하는 첫 계정을 선택하며 계정 전환은 수행하지 않습니다. Claude/Codex는 가장 높은 기간 사용률을 표시합니다.
-영문 계정명은 `CLAUDE A/B/C`, `CODEX A/B`, `GROK A/B`로 구분합니다. 일곱 계정의 전체 기간과 조회 시각·오류 상태는 웹에서 공급자별로 확인합니다.
+영문 계정명은 `CLAUDE A/B/C`, `CODEX A/B`, `ANTIGRAVITY A/B`로 구분합니다. 일곱 계정의 전체 기간과 조회 시각·오류 상태는 웹에서 공급자별로 확인합니다.
 기본 조회 주기는 5분이며 브라우저를 열어도 추가 조회하지 않습니다.
 
 ### 화면 스타일
@@ -62,7 +62,7 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 | Sci-Fi HUD | 모서리를 깎은 발광 프레임, 기울어진 칸 게이지 |
 
 기존 Pixel(5×7 비트맵 글꼴과 픽셀 마스코트)도 같은 목록에서 고를 수 있습니다.
-각 스타일은 Claude·Codex·Grok 한 계정과 10% 단위 10칸 게이지를 표시합니다.
+각 스타일은 Claude·Codex·Antigravity 한 계정과 10% 단위 10칸 게이지를 표시합니다.
 설정의 `display_style`은 `digital`, `neon`, `retro`, `hud`, `pixel`, `space`를 지원하며 재시작 후에도 유지됩니다. 미설정 기본값은 `pixel`입니다.
 숫자는 테마 내 공통 중성색입니다.
 로고 색은 공급자별로 유지하며 게이지는 0–49% / 50–79% / 80–89% / 90–100% 구간마다 같은 색 계열의 두 색 그라데이션으로 표시합니다.
@@ -83,12 +83,12 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 |---|---|---|
 | Claude | CLI 소유 OAuth의 profile/usage | 5시간 및 주간 **사용한 비율** |
 | Codex | 공식 `codex app-server`의 계정/한도 RPC | 응답이 지정한 실제 기간의 **사용한 비율** |
-| Grok | 공식 CLI billing RPC, 실험 단계 | 제공된 CLI **비용 한도**. 웹 대화 횟수와 별개 |
+| Antigravity | Antigravity CLI의 `agy -p "/usage"` 명령(Gemini Flash·Pro), 실험 단계 | Gemini 5시간·주간 한도의 **사용한 비율** |
 
 Claude/Codex는 예상 이메일과 인증된 이메일을 대조합니다.
-Grok은 공식 CLI 인증 홈에 저장된 단일 계정 이메일도 대조합니다.
-계정이 여러 개 섞인 인증 홈은 거부하며 billing 인증만으로 이메일을 추정하지 않습니다.
-Grok이 한도 수치를 제공하지 않으면 `quota_unavailable`로 표시합니다.
+Antigravity는 CLI가 이메일을 보고하지 않으므로 대조하지 않습니다(행에 미확인으로 표시).
+계정이 여러 개 섞인 인증 홈은 거부하며 CLI 인증만으로 이메일을 추정하지 않습니다.
+Antigravity가 한도 수치를 제공하지 않으면 `quota_unavailable`로 표시합니다.
 `auth_required`, `identity_mismatch`, `rate_limited`, `error`, `stale`을 구별하며
 이전 성공 값에는 `last_success_at`을 붙입니다. 실패한 값을 0%로 바꾸지 않습니다.
 
@@ -177,8 +177,8 @@ names its selected quota period.
 **Clock display** opens the 240×240 preview and five LCD styles. Previewing
 is read-only; **Apply to clock** explicitly sends the chosen LCD style. Unknown
 quota is shown as a dash, old readings carry an OLD label, and disconnected web
-sessions retain their last readings with an offline notice. Grok CLI budget is
-not the Grok web conversation quota.
+sessions retain their last readings with an offline notice. Antigravity shows the
+used share of its Gemini weekly and five-hour limits, read from the Antigravity CLI.
 
 Web files live in `token_tv/web/`; `token_tv/web/tokens.css` defines appearance colors and fonts.
 `token_tv/web_assets.py` allowlists public files. The bundled fonts (Manrope, Orbitron,

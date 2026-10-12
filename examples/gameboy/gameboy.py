@@ -54,7 +54,7 @@ def sample(stale_and_unknown=False):
     data = snapshot(time.time(), [
         ('claude_a', 'CLAUDE A', 'claude', [('5H', 25, 3 * H + 41 * 60)]),
         ('codex_a', 'CODEX A', 'codex', [('WEEK', 72, 2 * D + 6 * H)]),
-        ('grok_a', 'GROK A', 'grok', [] if stale_and_unknown else [('BUDGET', 94, 12 * D + 3 * H)]),
+        ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [] if stale_and_unknown else [('WEEK', 94, 12 * D + 3 * H)]),
     ])
     if stale_and_unknown:
         data['accounts']['codex_a']['status'] = 'stale'

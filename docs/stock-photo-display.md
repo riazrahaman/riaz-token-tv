@@ -18,7 +18,7 @@ runs TokenTV code, so there is nothing to flash and no firmware to restore.
 
 1. **Read usage.** A computer on the same network reads usage through each tool's own
    login: the Claude Code CLI's OAuth profile and usage, the official `codex app-server`
-   rate-limit RPC, and, as an experimental option, the Grok CLI billing RPC (a share of the CLI
+   rate-limit RPC, and, as an experimental option, the Antigravity CLI usage command (a share of its
    billing budget, not web chat limits). It polls every five minutes by default.
 2. **Draw a face.** Python and Pillow draw a 240×240 image: used percentage, window,
    reset time and account label. An old reading is marked OLD, and missing data shows a dash

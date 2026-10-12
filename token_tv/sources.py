@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
-from token_tv.usage import normalize_claude, normalize_codex, normalize_codexbar, normalize_grok, timestamp, window
+from token_tv.usage import normalize_claude, normalize_codex, normalize_codexbar, normalize_antigravity, timestamp, window
 from token_tv.display import STYLES
 
 CODEXBAR_SOURCES = {"auto", "web", "cli", "oauth", "api"}
@@ -36,9 +36,10 @@ class SourceError(Exception):
 def scoped_env(provider, root):
     env = dict(os.environ)
     for key in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
-                "GROK_OAUTH_TOKEN", "GROK_API_KEY", "XAI_API_KEY", "GROK_AUTH_TOKEN", "CLAUDECODE"):
+                "XAI_API_KEY", "CLAUDECODE"):
         env.pop(key, None)
-    variable = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME", "grok": "GROK_HOME"}[provider]
+    variable = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME",
+                "antigravity": "ANTIGRAVITY_EXECUTABLE_DATA_DIR"}[provider]
     env[variable] = str(root)
     if provider == "claude":
         env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = str(root)
@@ -120,7 +121,7 @@ def load_config(path):
     for account in data.get("accounts", []):
         if set(account) - allowed:
             raise ValueError("Only credential-free account metadata is allowed")
-        if account.get("provider") not in ("claude", "codex", "grok"):
+        if account.get("provider") not in ("claude", "codex", "antigravity"):
             raise ValueError("Unknown provider")
         check_codexbar(account)
         key = account.get("key", "")
@@ -128,7 +129,7 @@ def load_config(path):
             raise ValueError("Account keys must be unique")
         if not isinstance(account.get("alias"), str) or not 1 <= len(account["alias"]) <= 32:
             raise ValueError("Account alias is required")
-        if not account.get("email"):
+        if not account.get("email") and account.get("provider") != "antigravity":
             raise ValueError("Expected account identity is required")
         seen.add(key)
     if not seen:
@@ -245,24 +246,27 @@ def codex_payload(account):
         rpc.close()
 
 
-def grok_payload(account):
+def antigravity_payload(account):
+    """Antigravity's own local `/usage` command, printed as JSON. No model call, so no quota is spent."""
     root = Path(account["source_home"]).expanduser()
-    if not (root / "auth.json").is_file():
-        raise SourceError("auth_required")
-    env = scoped_env("grok", root)
-    command = os.environ.get("TOKEN_TV_GROK_BIN", "grok")
-    rpc = RPC([exe(command), "agent", "--no-leader", "stdio"], env)
+    env = scoped_env("antigravity", root)
+    command = os.environ.get("TOKEN_TV_ANTIGRAVITY_BIN", "agy")
     try:
-        rpc.call("initialize", {"protocolVersion": 1, "clientCapabilities": {
-            "fs": {"readTextFile": False, "writeTextFile": False}, "terminal": False}})
-        try:
-            return rpc.call("_x.ai/billing", timeout=20)
-        except SourceError as error:
-            if error.code != "method_unavailable":
-                raise
-            return rpc.call("x.ai/billing", timeout=20)
-    finally:
-        rpc.close()
+        result = subprocess.run([exe(command), "-p", "/usage", "--output-format", "json"],
+                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, timeout=30)
+    except FileNotFoundError:
+        raise SourceError("cli_unavailable") from None
+    except subprocess.TimeoutExpired:
+        raise SourceError("timeout") from None
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict) or payload.get("status") != "SUCCESS":
+        text = (result.stdout + result.stderr).lower()
+        raise SourceError("auth_required" if any(word in text for word in AUTH_WORDS) else "error")
+    return payload
 
 
 def codexbar_payload(account):
@@ -340,28 +344,14 @@ def logged_in_email(provider, home):
                 return identity.get("email") if identity.get("type") == "chatgpt" else None
             finally:
                 rpc.close()
-        return grok_identity({"source_home": str(root)})
+        return None  # Antigravity's CLI reports no email, so setup can't detect one.
     except (SourceError, OSError, ValueError, KeyError, TypeError, HTTPError, subprocess.SubprocessError):
         return None
 
 
-def grok_identity(account):
-    data = json.loads((Path(account["source_home"]).expanduser() / "auth.json").read_text())
-    emails = set()
-    def scan(value):
-        if isinstance(value, dict):
-            if isinstance(value.get("email"), str):
-                emails.add(value["email"].strip().casefold())
-            for item in value.values():
-                if isinstance(item, (dict, list)):
-                    scan(item)
-        elif isinstance(value, list):
-            for item in value:
-                scan(item)
-    scan(data)
-    if len(emails) != 1:
-        raise SourceError("identity_mismatch")
-    return emails.pop()
+def antigravity_identity(account):
+    """Antigravity's CLI keeps its login in the OS keychain and reports no email, so there is none to check."""
+    return None
 
 
 def imported_row(account):
@@ -420,11 +410,8 @@ def fetch_account(account):
             row["windows"] = normalize_codex(codex_payload(account))
             row["identity_verified"] = True
         else:
-            if not identity_matches(account["email"], grok_identity(account)):
-                raise SourceError("identity_mismatch")
-            data = grok_payload(account)
-            row["windows"] = normalize_grok(data)
-            row["identity_verified"] = True
+            # Antigravity's CLI reports no email, so this source is always unverified.
+            row["windows"] = normalize_antigravity(antigravity_payload(account))
         row["status"] = "ok" if row["windows"] else "quota_unavailable"
     except SourceError as error:
         row["status"] = error.code if error.code in {"auth_required", "identity_mismatch", "stale"} else "error"

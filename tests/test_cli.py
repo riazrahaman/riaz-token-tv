@@ -220,7 +220,7 @@ class StartTest(unittest.TestCase):
     def start(self, *extra):
         from token_tv import live
         with mock.patch.object(cli, 'cli_path', return_value='/usr/bin/x'), \
-                mock.patch.object(cli, 'login_state', side_effect=lambda p, h: 'yes' if p != 'grok' else 'no'), \
+                mock.patch.object(cli, 'login_state', side_effect=lambda p, h: 'yes' if p != 'antigravity' else 'no'), \
                 mock.patch('token_tv.sources.logged_in_email',
                            side_effect=lambda p, h: {'claude': 'me@example.com', 'codex': None}[p]) as detect, \
                 mock.patch.object(live, 'main') as run:

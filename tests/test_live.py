@@ -9,27 +9,41 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from token_tv.usage import normalize_claude, normalize_codex, normalize_grok
-from token_tv.sources import fetch_account, load_config, grok_identity, scoped_env
+from token_tv.usage import normalize_claude, normalize_codex, normalize_antigravity, timestamp
+from token_tv.sources import fetch_account, load_config, antigravity_identity, scoped_env
 from token_tv.state import UsageStore
 from token_tv.display import render_page, pages, overview_rows, primary_window
 
 
 class LiveTests(unittest.TestCase):
     def test_provider_cli_environment_does_not_inherit_other_authentication(self):
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "DO-NOT-INHERIT", "GROK_OAUTH_TOKEN": "DO-NOT-INHERIT", "CLAUDE_CODE_OAUTH_TOKEN": "DO-NOT-INHERIT"}):
-            for provider, variable in (("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME"), ("grok", "GROK_HOME")):
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "DO-NOT-INHERIT", "XAI_API_KEY": "DO-NOT-INHERIT", "CLAUDE_CODE_OAUTH_TOKEN": "DO-NOT-INHERIT"}):
+            for provider, variable in (("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME"), ("antigravity", "ANTIGRAVITY_EXECUTABLE_DATA_DIR")):
                 env = scoped_env(provider, "/explicit/account/home")
                 self.assertEqual(env[variable], "/explicit/account/home")
-                self.assertFalse(any(key in env for key in ("OPENAI_API_KEY", "GROK_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")))
+                self.assertFalse(any(key in env for key in ("OPENAI_API_KEY", "XAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")))
 
     def test_codex_uses_reported_window_duration(self):
         data = {"rateLimits": {"primary": {"usedPercent": 78, "windowDurationMins": 10080, "resetsAt": 2000000000}, "secondary": None}}
         self.assertEqual(normalize_codex(data), [{"label": "WEEK", "used_percent": 78.0, "resets_at": 2000000000, "duration_minutes": 10080}])
 
-    def test_missing_grok_quota_is_unknown(self):
-        self.assertEqual(normalize_grok({"config": {"currentPeriod": {"end": "2026-10-05T00:00:00Z"}}}), [])
+    def test_missing_antigravity_quota_is_unknown(self):
+        self.assertEqual(normalize_antigravity({"command": {"data": {"groups": [{"name": "Claude and GPT models", "buckets": [{"window": "weekly", "remaining_fraction": 1.0}]}]}}}), [])
+        self.assertEqual(normalize_antigravity({"command": {"data": {"groups": [{"name": "Gemini Models", "buckets": [{"window": "weekly"}, {"window": "5h", "remaining_fraction": True}]}]}}}), [])
+        self.assertEqual(normalize_antigravity({}), [])
         self.assertEqual(normalize_claude({"five_hour": {"utilization": None}, "seven_day": {"utilization": 24, "resets_at": None}})[0]["label"], "WEEK")
+
+    def test_antigravity_reports_used_share_of_gemini_limits(self):
+        data = {"command": {"data": {"groups": [
+            {"name": "Gemini Models", "buckets": [
+                {"window": "weekly", "remaining_fraction": 0.25, "reset_time": "2026-10-14T17:46:08Z"},
+                {"window": "5h", "remaining_fraction": 0.5, "reset_time": "2026-10-12T19:57:47Z"}]},
+            {"name": "Claude and GPT models", "buckets": [{"window": "weekly", "remaining_fraction": 0.0}]}]}}}
+        windows = normalize_antigravity(data)
+        self.assertEqual([w["label"] for w in windows], ["WEEK", "5H"])
+        self.assertEqual([w["used_percent"] for w in windows], [75.0, 50.0])
+        self.assertEqual([w["duration_minutes"] for w in windows], [10080, 300])
+        self.assertEqual(windows[0]["resets_at"], timestamp("2026-10-14T17:46:08Z"))
 
     def test_credentials_and_identity_never_enter_snapshot(self):
         account = {"key": "a", "alias": "CLAUDE A", "provider": "claude", "source_home": "/unused", "email": "expected@example.com"}
@@ -47,17 +61,21 @@ class LiveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_config(path)
 
-    def test_grok_owner_identity_must_match_expected_email(self):
+    def test_antigravity_source_is_unverified_and_reports_no_email(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "auth.json"
             path.write_text(json.dumps({"issuer::client": {"email": "owner@example.com", "key": "NEVER-EXPORT", "refresh_token": "NEVER-EXPORT"}}))
-            self.assertEqual(grok_identity({"source_home": directory}), "owner@example.com")
-            account = {"key": "g", "alias": "G", "provider": "grok", "source_home": directory, "email": "wrong@example.com"}
-            with patch("token_tv.sources.grok_payload") as billing:
+            self.assertIsNone(antigravity_identity({"source_home": directory}))
+            account = {"key": "ag", "alias": "ANTIGRAVITY A", "provider": "antigravity", "source_home": directory, "email": "label-only@example.com"}
+            payload = {"status": "SUCCESS", "command": {"name": "usage", "data": {"groups": [{"name": "Gemini Models", "buckets": [
+                {"id": "gemini-weekly", "window": "weekly", "remaining_fraction": 0.25, "reset_time": "2026-10-14T17:46:08Z"}]}]}}}
+            with patch("token_tv.sources.antigravity_payload", return_value=payload):
                 row = fetch_account(account)
-            billing.assert_not_called()
-            self.assertEqual(row["status"], "identity_mismatch")
+            self.assertEqual(row["status"], "ok")
+            self.assertFalse(row["identity_verified"])
+            self.assertEqual(row["windows"], [{"label": "WEEK", "used_percent": 75.0, "resets_at": timestamp("2026-10-14T17:46:08Z"), "duration_minutes": 10080}])
             self.assertNotIn("NEVER-EXPORT", json.dumps(row))
+            self.assertNotIn("owner@example.com", json.dumps(row))
 
     def test_cache_is_per_account_and_failure_preserves_stale_values(self):
         accounts = [{"key": "a", "alias": "A", "provider": "claude"}, {"key": "b", "alias": "B", "provider": "claude"}]
@@ -130,7 +148,7 @@ class LiveTests(unittest.TestCase):
         snapshot = {"accounts": {
             "ca": account("claude", "CLAUDE A"), "cb": account("claude", "CLAUDE B"),
             "cc": account("claude", "CLAUDE C"), "xa": account("codex", "CODEX A"),
-            "ga": account("grok", "GROK A", "auth_required"), "gb": account("grok", "GROK B")}}
+            "ga": account("antigravity", "ANTIGRAVITY A", "auth_required"), "gb": account("antigravity", "ANTIGRAVITY B")}}
         rows = overview_rows(snapshot)
         self.assertEqual([r["key"] for r in rows], ["ca", "xa", "gb"])
         self.assertEqual(len(snapshot["accounts"]), 6)

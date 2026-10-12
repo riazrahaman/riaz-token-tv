@@ -19,7 +19,7 @@ ASSETS = {
     '/assets/chakra-petch-700.woff2': (WEB / 'chakra-petch-700.woff2', 'font/woff2'),
     '/assets/claude-pixel.png': (ROOT / 'assets' / 'claude-pixel.png', 'image/png'),
     '/assets/codex-pixel.png': (ROOT / 'assets' / 'codex-pixel.png', 'image/png'),
-    '/assets/grok-pixel.png': (ROOT / 'assets' / 'grok-pixel.png', 'image/png'),
+    '/assets/antigravity-pixel.png': (ROOT / 'assets' / 'antigravity-pixel.png', 'image/png'),
 }
 
 

@@ -43,13 +43,13 @@ Config keys are not included.
 ```json
 {
   "updated_at": 1791803649,
-  "summary": "CLAUDE A 44% WK · CODEX A 12% 5H OLD · GROK A NO DATA",
+  "summary": "CLAUDE A 44% WK · CODEX A 12% 5H OLD · ANTIGRAVITY A NO DATA",
   "accounts": {
     "claude_a": {"label": "CLAUDE A", "used_percent": 44, "used": 0.44, "window": "WK",
                  "resets_in": "1d 2h", "resets_at": 1791897249, "text": "44% WK", "state": "ok"},
     "codex_a": {"label": "CODEX A", "used_percent": 12, "used": 0.12, "window": "5H",
                 "resets_in": "1h 0m", "resets_at": 1791807249, "text": "12% 5H OLD", "state": "old"},
-    "grok_a": {"label": "GROK A", "used_percent": null, "used": null, "window": null,
+    "antigravity_a": {"label": "ANTIGRAVITY A", "used_percent": null, "used": null, "window": null,
                "resets_in": "--", "resets_at": null, "text": "NO DATA", "state": "missing"}
   }
 }

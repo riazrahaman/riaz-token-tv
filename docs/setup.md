@@ -4,7 +4,7 @@ Everything that used to be in the README. Written for people and for AI coding a
 
 ## Quick start
 
-Needs Python 3.10+ and the official CLI (`claude`, `codex` or `grok`) for each provider you use.
+Needs Python 3.10+ and the official CLI (`claude`, `codex` or `agy`) for each provider you use.
 
 ```bash
 pipx install git+https://github.com/click6067-ship-it/token-tv   # or: pip install --user git+...
@@ -66,9 +66,10 @@ See [docs/hardware-compatibility.md](hardware-compatibility.md) for what is veri
 |---|---|---|
 | Claude | Claude Code CLI's own OAuth login (profile and usage) | Share of the 5-hour and weekly limits **used** |
 | Codex | Official `codex app-server` account and rate-limit RPC | Share of each reported window **used** |
-| Grok | Grok CLI billing RPC (experimental) | Share of the CLI **billing budget**, not web chat limits |
+| Antigravity | Antigravity CLI's `agy -p "/usage"` command (Gemini Flash and Pro) | Share of the Gemini 5-hour and weekly limits **used** |
 
-Every login is checked against the email you configured. The clock gets only a picture,
+Every login is checked against the email you configured, except Antigravity, whose CLI reports
+no email (its row is marked unverified). The clock gets only a picture,
 never a password, token or cookie. Polling runs every five minutes; old readings say OLD and
 missing data shows a dash, never a fake 0%. Claude accounts with `refresh_with_cli: true` may
 refresh an expired login through the CLI, which sends one tiny prompt.
@@ -87,7 +88,7 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
 <details>
 <summary><b>Accounts, clock and restore</b></summary>
 
-- `setup` lets account A reuse the login you already have (`~/.claude`, `~/.codex`, `~/.grok`)
+- `setup` lets account A reuse the login you already have (`~/.claude`, `~/.codex`, `~/Library/Application Support/Antigravity`)
   and gives accounts B and C their own login folder under `~/.config/token-tv/homes/`.
   Non-interactive: repeat the flag, e.g. `token-tv setup --yes --codex-email a@x.com --codex-email b@x.com`;
   add `--isolate` to give account A its own folder too.
@@ -105,14 +106,15 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   `token-tv run --restore-display`.
 - **macOS (untested on a real Mac):** Claude Code keeps its login in the Keychain, so TokenTV
   reads it there read-only with `security` when the CLI home has no `.credentials.json`.
-  The login is still checked against the configured email. Codex and Grok read files as on Linux.
+  The login is still checked against the configured email. Codex reads files as on Linux, and
+  Antigravity reads its login from the Keychain too, so it is never email-checked.
 </details>
 
 <details>
 <summary><b>Status and contributing</b></summary>
 
 Early and built for one desk: setup is `token-tv setup` plus CLI logins, it is tested on Linux with
-one clock, and it supports Claude, Codex and Grok. A new provider touches several files; see
+one clock, and it supports Claude, Codex and Antigravity. A new provider touches several files; see
 [adding a provider](adding-a-provider.md). Issues and pull requests for providers, clock models and faces are welcome;
 see [CONTRIBUTING.md](../CONTRIBUTING.md) and [making a clock face](clock-faces.md).
 </details>

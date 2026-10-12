@@ -29,9 +29,9 @@ BANDS = {
     'hud': (('#14a874', '#35e0a0'), ('#1a7dff', '#3cc4ff'), ('#ff7a1a', '#ffb23f'), ('#e01e3c', '#ff4d6a')),
 }
 ACCENT = {
-    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'codex': ('#7a9dff', '#b1a7ff'), 'grok': ('#e8eaf0', '#ffffff')},
-    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'codex': ('#3ee68b', '#9bffc8'), 'grok': ('#b388ff', '#e0d0ff')},
-    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'codex': ('#7a9dff', '#b1a7ff'), 'grok': ('#dfe3ea', '#ffffff')},
+    'neon': {'claude': ('#ff8a2b', '#ffd23f'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#e8eaf0', '#ffffff')},
+    'retro': {'claude': ('#ff9f43', '#ffcf6b'), 'codex': ('#3ee68b', '#9bffc8'), 'antigravity': ('#b388ff', '#e0d0ff')},
+    'hud': {'claude': ('#ff8a3d', '#ffb47a'), 'codex': ('#7a9dff', '#b1a7ff'), 'antigravity': ('#dfe3ea', '#ffffff')},
 }
 
 
@@ -369,10 +369,10 @@ def render_neon(snapshot):
 
 def pixel_scene(cv, provider, top):
     """A 2-px pixel landscape behind each Pixel Retro row (sunset / forest city / space)."""
-    rnd = random.Random({'claude': 11, 'codex': 23, 'grok': 37}[provider])
+    rnd = random.Random({'claude': 11, 'codex': 23, 'antigravity': 37}[provider])
     sky = {'claude': ('#2a1330', '#3a1834', '#4d1f36', '#652836', '#7f3335', '#9a4133'),
            'codex': ('#06171d', '#082027', '#0b2a2e', '#0e3434', '#113f39', '#15493e'),
-           'grok': ('#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f')}[provider]
+           'antigravity': ('#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f')}[provider]
     d = cv.back
     for i, color in enumerate(sky):
         d.rectangle((6, top + 2 + i * 12, 233, top + 2 + (i + 1) * 12), fill=color)
@@ -437,8 +437,6 @@ def render_retro(snapshot):
         for cx, cy in ((4, y), (234, y), (4, y + ROW_H - 2), (234, y + ROW_H - 2)):
             cv.back.rectangle((cx, cy, cx + 1, cy + 1), fill='#0a0f2c')
         cv.draw.rectangle((11, y + 8, 50, y + 47), fill=outline_ink, outline=a, width=2)
-        if row['provider'] == 'grok':
-            cv.draw.rectangle((16, y + 13, 45, y + 42), fill='#d9ccff')
         mascot(cv.ink, row['provider'], (7, y + 4), pixel=True, size=32)
         cv.text((57, y + 9), account_label(row), title(8), cream, stroke_width=1, stroke_fill=outline_ink)
         cv.text((57, y + 22), number_text(used) + ('%' if used is not None else ''), title(16), cream,

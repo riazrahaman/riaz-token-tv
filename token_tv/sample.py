@@ -7,8 +7,8 @@ SAMPLE = [
     ('claude_c', 'CLAUDE C', 'claude', [('5H', 97, 38 * 60), ('WEEK', 64, 4 * D)]),
     ('codex_a', 'CODEX A', 'codex', [('5H', 34, 2 * H + 12 * 60)]),
     ('codex_b', 'CODEX B', 'codex', [('WEEK', 91, D + 4 * H)]),
-    ('grok_a', 'GROK A', 'grok', [('BUDGET', 61, 6 * D + 2 * H)]),
-    ('grok_b', 'GROK B', 'grok', [('BUDGET', 18, 12 * D + 3 * H)]),
+    ('antigravity_a', 'ANTIGRAVITY A', 'antigravity', [('WEEK', 74, 2 * D + 2 * H), ('5H', 31, 3 * H)]),
+    ('antigravity_b', 'ANTIGRAVITY B', 'antigravity', [('5H', 88, 45 * 60), ('WEEK', 12, 6 * D + 8 * H)]),
 ]
 
 

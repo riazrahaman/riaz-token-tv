@@ -221,7 +221,7 @@ class ConfigTests(unittest.TestCase):
                 self.check(codexbar_url=url)
 
     def test_rejects_unclear_or_unverified_input(self):
-        for account in ({"provider": "grok", "codexbar_command": "codexbar"},
+        for account in ({"provider": "antigravity", "codexbar_command": "codexbar"},
                         {"codexbar_command": "codexbar", "codexbar_url": "http://127.0.0.1:8080/usage"},
                         {"codexbar_url": "file:///etc/passwd"},
                         {"codexbar_command": ""},

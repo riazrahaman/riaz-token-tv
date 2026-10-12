@@ -22,18 +22,18 @@ class WatchPayloadTest(unittest.TestCase):
                 {'label': '5H', 'used_percent': 10, 'resets_at': now + 3600},
                 {'label': 'WEEK', 'used_percent': 44.4, 'resets_at': now + 26 * 3600 + 30}]),
             'codex_a': row('codex', 'CODEX A', 'stale', [{'label': '5H', 'used_percent': 12, 'resets_at': now + 3600}]),
-            'grok_a': row('grok', 'GROK A', 'quota_unavailable'),
+            'antigravity_a': row('antigravity', 'ANTIGRAVITY A', 'quota_unavailable'),
         }})
-        claude, codex, grok = (data['accounts'][key] for key in ('claude_a', 'codex_a', 'grok_a'))
+        claude, codex, antigravity = (data['accounts'][key] for key in ('claude_a', 'codex_a', 'antigravity_a'))
         # The tightest window is the one shown, as on the clock.
         self.assertEqual(claude, {'label': 'CLAUDE A', 'used_percent': 44, 'used': 0.44, 'window': 'WK',
                                   'resets_in': '1d 2h', 'resets_at': round(now + 26 * 3600 + 30),
                                   'text': '44% WK', 'state': 'ok'})
         self.assertEqual((codex['state'], codex['text']), ('old', '12% 5H OLD'))
         # Missing stays missing: never 0%.
-        self.assertEqual((grok['used_percent'], grok['used'], grok['window'], grok['state'], grok['text'],
-                          grok['resets_in']), (None, None, None, 'missing', 'NO DATA', '--'))
-        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · CODEX A 12% 5H OLD · GROK A NO DATA')
+        self.assertEqual((antigravity['used_percent'], antigravity['used'], antigravity['window'], antigravity['state'], antigravity['text'],
+                          antigravity['resets_in']), (None, None, None, 'missing', 'NO DATA', '--'))
+        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · CODEX A 12% 5H OLD · ANTIGRAVITY A NO DATA')
         self.assertEqual(data['updated_at'], 1000)
 
     def test_keys_follow_clock_labels_not_config_keys(self):

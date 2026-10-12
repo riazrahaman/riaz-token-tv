@@ -71,20 +71,36 @@ def normalize_codexbar(entry):
     return result
 
 
-def normalize_grok(data):
-    config = data.get("config") or {}
-    percent = config.get("creditUsagePercent")
-    cycle = config.get("currentPeriod") or {}
-    reset = cycle.get("end") or config.get("billingPeriodEnd")
-    item = window("BUDGET", percent, reset)
-    if item:
-        return [item]
-    # CLI credits are a billing budget, not a fabricated web-message quota.
-    limit = (data.get("monthlyLimit") or {}).get("val")
-    used = ((data.get("usage") or {}).get("includedUsed") or {}).get("val")
-    if isinstance(limit, (int, float)) and limit > 0 and isinstance(used, (int, float)):
-        item = window("BUDGET", used / limit * 100,
-                      (data.get("billingCycle") or {}).get("billingPeriodEnd"))
+def normalize_antigravity(data):
+    """Read the JSON printed by `agy -p "/usage" --output-format json`.
+
+    The CLI reports the quota REMAINING in each bucket; TokenTV displays what is
+    USED, so every reading is converted with used = (1 - remaining_fraction) * 100.
+    Only the Gemini group is shown (the clock shows one row per provider); the
+    "Claude and GPT models" group is ignored. A bucket without a usable number
+    is skipped, never turned into a fake 0%.
+    """
+    payload = (data.get("command") or {}).get("data")
+    groups = payload.get("groups") if isinstance(payload, dict) else None
+    if not isinstance(groups, list):
+        return []
+    group = next((item for item in groups if isinstance(item, dict)
+                  and "gemini" in str(item.get("name", "")).lower()), None)
+    if group is None:
+        return []
+    result = []
+    for bucket in group.get("buckets") or []:
+        if not isinstance(bucket, dict):
+            continue
+        fraction = bucket.get("remaining_fraction")
+        if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+            continue
+        if not math.isfinite(fraction):
+            continue
+        percent = max(0.0, min(100.0, (1.0 - fraction) * 100.0))
+        duration = {"5h": 300, "weekly": 10080}.get(bucket.get("window"))
+        label = {300: "5H", 10080: "WEEK"}.get(duration, "WINDOW")
+        item = window(label, percent, bucket.get("reset_time"), duration)
         if item:
-            return [item]
-    return []
+            result.append(item)
+    return result

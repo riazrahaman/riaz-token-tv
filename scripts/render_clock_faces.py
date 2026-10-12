@@ -16,9 +16,9 @@ from token_tv.display import render_page  # noqa: E402
 from token_tv.sample import D, H, snapshot  # noqa: E402
 
 
-def rows(claude, codex, grok):
+def rows(claude, codex, antigravity):
     return [(f'{p}_{k.lower()}', f'{p.upper()} {k}', p, [(w, used, reset)])
-            for p, (k, w, used, reset) in zip(('claude', 'codex', 'grok'), (claude, codex, grok))]
+            for p, (k, w, used, reset) in zip(('claude', 'codex', 'antigravity'), (claude, codex, antigravity))]
 
 
 # The same sample on every face so they compare at a glance: low, busy and near the limit.

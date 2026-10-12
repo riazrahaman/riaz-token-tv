@@ -9,7 +9,7 @@ from token_tv.sources import exe, fetch_account, load_config, scoped_env
 
 # provider: (everyday CLI home, file present after login)
 DEFAULT_HOMES = {"claude": ("~/.claude", ".credentials.json"), "codex": ("~/.codex", "auth.json"),
-                 "grok": ("~/.grok", "auth.json")}
+                 "antigravity": ("~/Library/Application Support/Antigravity", "")}
 
 
 def login_command(account, browser=False):
@@ -18,7 +18,7 @@ def login_command(account, browser=False):
         return [exe("claude"), "auth", "login", "--claudeai", "--email", account["email"]]
     if provider == "codex":
         return [exe("codex"), "login"] if browser else [exe("codex"), "login", "--device-auth"]
-    return [exe(os.environ.get("TOKEN_TV_GROK_BIN", "grok")), "login", "--device-auth"]
+    raise ValueError("Antigravity has no login command; sign in inside the Antigravity app")
 
 
 def main():
@@ -42,6 +42,10 @@ def main():
     account = next((a for a in accounts if a["key"] == key), None)
     if account is None or not account.get("source_home"):
         parser.error("An account with its own CLI home (source_home) is required")
+    if account["provider"] == "antigravity":
+        print("Antigravity has no login command: sign in inside the Antigravity app; the agy CLI reads that\n"
+              "login from the OS keychain. Verify it with: token-tv doctor --live", file=sys.stderr)
+        raise SystemExit(1)
     root = Path(account["source_home"]).expanduser()
     default, marker = DEFAULT_HOMES[account["provider"]]
     keychain = account["provider"] == "claude" and sys.platform == "darwin"  # Claude Code on macOS keeps it there

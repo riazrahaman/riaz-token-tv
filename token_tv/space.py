@@ -29,7 +29,7 @@ DIM = (128, 140, 178)
 EMPTY = (38, 48, 90)
 SPARK = (255, 216, 107)
 MOON = (233, 226, 200)
-GROK_GLASS = (64, 78, 140)
+ANTIGRAVITY_GLASS = (64, 78, 140)
 STARS = ((92, 104, 150), (170, 182, 220), (255, 255, 255))
 # Used-quota bands (below 50, 50–79, 80–89, 90–100): start and tip of each cell ramp.
 BANDS = (((42, 168, 74), (94, 224, 106)), ((143, 201, 58), (211, 232, 74)),
@@ -148,8 +148,8 @@ def positions(t, paths, events):
 
 
 def bubble(frame, draw, provider, x, y, mirrored):
-    # The black Grok bot needs lighter glass to stay visible on the night sky.
-    draw.ellipse((x - RADIUS, y - RADIUS, x + RADIUS, y + RADIUS), fill=GROK_GLASS if provider == 'grok' else GLASS, outline=RIM)
+    # The black Antigravity bot needs lighter glass to stay visible on the night sky.
+    draw.ellipse((x - RADIUS, y - RADIUS, x + RADIUS, y + RADIUS), fill=ANTIGRAVITY_GLASS if provider == 'antigravity' else GLASS, outline=RIM)
     art = sprite(provider)
     if mirrored:
         art = art.transpose(Image.Transpose.FLIP_LEFT_RIGHT)

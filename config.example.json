@@ -23,11 +23,11 @@
       "source_home": "~/.codex-account-b"
     },
     {
-      "key": "grok_a",
-      "alias": "GROK A",
-      "provider": "grok",
-      "email": "your-grok-email@example.com",
-      "source_home": "~/.grok"
+      "key": "antigravity_a",
+      "alias": "ANTIGRAVITY A",
+      "provider": "antigravity",
+      "email": "label-only@example.com",
+      "source_home": "~/Library/Application Support/Antigravity"
     }
   ],
   "display_style": "pixel"

@@ -7,8 +7,8 @@ const THEMES = [
  {id:'hud', name:'Sci-Fi HUD', eyebrow:'', title:'AI PROVIDER USAGE', note:'Real-time usage monitor'}
 ];
 const STATUS = {ok:'Connected', loading:'Loading', auth_required:'Login needed', identity_mismatch:'Check identity', quota_unavailable:'Quota unavailable', stale:'OLD · Previous value', rate_limited:'Retry later', error:'Fetch failed'};
-const PROVIDERS = ['claude', 'codex', 'grok'];
-const COMPANIES = {claude:'ANTHROPIC', codex:'OPENAI', grok:'XAI'};
+const PROVIDERS = ['claude', 'codex', 'antigravity'];
+const COMPANIES = {claude:'ANTHROPIC', codex:'OPENAI', antigravity:'GOOGLE'};
 const svgNS = 'http://www.w3.org/2000/svg';
 const $ = s => document.querySelector(s);
 const readPreference = (k, f) => {try {return JSON.parse(localStorage.getItem(k)) ?? f} catch {return f}};
@@ -54,7 +54,7 @@ function clockGlyph() {
 /* Pixel Retro scenery on a 200×62 logical grid, anchored bottom-right. Sky objects sit
  * near x≈138 so they fall between the title row and the score column. */
 function scene(provider) {
- const W = 200, H = 62, rnd = seeded({claude:11, codex:23, grok:37}[provider]);
+ const W = 200, H = 62, rnd = seeded({claude:11, codex:23, antigravity:37}[provider]);
  const s = svgNode('svg', {viewBox:`0 0 ${W} ${H}`, preserveAspectRatio:'xMaxYMax slice', 'shape-rendering':'crispEdges', class:'scene', 'aria-hidden':'true'});
  const rect = (x, y, w, h, fill, cls) => {const r = svgNode('rect', {x, y, width:w, height:h, fill}); if (cls) r.setAttribute('class', cls); s.append(r)};
  const bands = colors => colors.forEach((c, i) => rect(0, Math.floor(i * H / colors.length), W, Math.ceil(H / colors.length) + 1, c));

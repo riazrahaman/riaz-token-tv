@@ -19,8 +19,7 @@ TEXT = '#d9dde1'
 MUTED = TEXT
 TRACK = '#28313a'
 RULE = '#202730'
-PROVIDER_INK = {'claude': '#d68e68', 'codex': '#a799e5', 'grok': '#cbd1d7'}
-ICON_PAPER = PROVIDER_INK['grok']
+PROVIDER_INK = {'claude': '#d68e68', 'codex': '#a799e5', 'antigravity': '#cbd1d7'}
 FONT_MAIN = '/usr/share/fonts/truetype/dejavu/DejaVuSans'
 FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
 STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy')
@@ -28,7 +27,7 @@ STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy')
 GAUGE_LEVELS = ((50, '#76a99a'), (80, '#93c9b9'), (90, '#d1b275'), (101, '#d8877e'))
 STATUS = {'loading': 'WAIT', 'auth_required': 'LOGIN', 'identity_mismatch': 'CHECK',
           'quota_unavailable': 'NO DATA', 'error': 'ERROR', 'rate_limited': 'RETRY', 'stale': 'OLD'}
-PROVIDERS = ('claude', 'codex', 'grok')
+PROVIDERS = ('claude', 'codex', 'antigravity')
 ASSETS = Path(__file__).with_name('assets')
 
 
@@ -238,10 +237,6 @@ def render_pixel(snapshot):
         if index:
             for x in range(14, 227, 4):
                 draw.point((x, y - 6), fill=RULE)
-        if row['provider'] == 'grok':
-            disc = Image.new('RGB', (24, 24), BACKGROUND)
-            ImageDraw.Draw(disc).ellipse((1, 1, 22, 22), fill=ICON_PAPER)
-            image.paste(disc.resize((48, 48), Image.Resampling.NEAREST), (14, y + 10))
         mascot(image, row['provider'], (14, y + 10), pixel=True)
         label = row['alias']
         if not label.startswith(row['provider'].upper() + ' '):
@@ -283,7 +278,7 @@ HTML = '''<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TokenTV · Account usage</title>
 <style>
-:root{--color-text:#d9dde1;--color-claude:#d68e68;--color-codex:#a799e5;--color-grok:#cbd1d7;--color-level-low:#76a99a;--color-level-medium:#93c9b9;--color-level-high:#d1b275;--color-level-critical:#d8877e;color-scheme:dark;font-family:system-ui,sans-serif;background:#0d1115;color:var(--color-text)}
+:root{--color-text:#d9dde1;--color-claude:#d68e68;--color-codex:#a799e5;--color-antigravity:#cbd1d7;--color-level-low:#76a99a;--color-level-medium:#93c9b9;--color-level-high:#d1b275;--color-level-critical:#d8877e;color-scheme:dark;font-family:system-ui,sans-serif;background:#0d1115;color:var(--color-text)}
 *{box-sizing:border-box}html,body{overflow-x:clip}body{margin:0}main{max-width:1060px;margin:auto;padding:32px}
 header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #303b46;padding-bottom:18px}
 .brand{letter-spacing:.18em;font-weight:700;font-size:13px}.muted{color:var(--color-text);opacity:.75;font-size:13px}
@@ -303,7 +298,7 @@ h1{font-size:32px;letter-spacing:-.035em;margin:28px 0;overflow-wrap:anywhere;mi
 .style-button[data-state=success]{border-color:var(--color-control-selected)}
 .more-styles{margin-top:12px}.more-styles summary{font-size:12px;cursor:pointer}.apply-style{grid-column:1/-1}.display-state{min-height:16px;width:290px;font-size:12px;color:var(--color-control-muted)}
 .display-state[data-state=error]{color:var(--color-control-error)}
-.group{margin-bottom:24px;--provider-ink:var(--color-text)}.group[data-provider=claude]{--provider-ink:var(--color-claude)}.group[data-provider=codex]{--provider-ink:var(--color-codex)}.group[data-provider=grok]{--provider-ink:var(--color-grok)}.group h2{font-size:12px;letter-spacing:.1em;color:var(--color-text);opacity:.75;margin:0 0 6px}
+.group{margin-bottom:24px;--provider-ink:var(--color-text)}.group[data-provider=claude]{--provider-ink:var(--color-claude)}.group[data-provider=codex]{--provider-ink:var(--color-codex)}.group[data-provider=antigravity]{--provider-ink:var(--color-antigravity)}.group h2{font-size:12px;letter-spacing:.1em;color:var(--color-text);opacity:.75;margin:0 0 6px}
 .card{padding:12px 0;border-bottom:1px solid #26313c}.cardhead{display:flex;justify-content:space-between;align-items:center}
 .name{font-size:16px;font-weight:600}.status{font-size:12px;color:var(--color-text);opacity:.75}
 .window{display:grid;grid-template-columns:58px minmax(0,1fr) 44px 74px;align-items:center;gap:10px;margin-top:9px;font-variant-numeric:tabular-nums;font-size:12px}
@@ -334,7 +329,7 @@ footer{margin-top:24px;border-top:1px solid #303b46;padding-top:16px;color:var(-
 <p class="muted">240 × 240 · Live clock view</p><div class="gauge-legend" aria-label="Used quota levels"><span><i></i>0–49%</span><span><i class="medium"></i>50–79%</span><span><i class="high"></i>80–89%</span><span><i class="critical"></i>90–100%</span></div></section><section id="accounts"></section></div>
 <footer>Percentages and bars show <strong>used</strong> quota. Times show when that quota resets.<br>
 The clock shows the highest reported usage window for one account per provider. All account windows appear here.<br>
-Grok BUDGET measures the CLI billing budget, not web conversation limits.<br>
+Antigravity reports the used share of its Gemini weekly and five-hour limits, not web chat.<br>
 Laptop-linked accounts update while the laptop is online. Missing quotas are shown as unknown.</footer></main>
 <script>
 const labels={ok:'Connected',loading:'Loading',auth_required:'Login needed',identity_mismatch:'Check account',quota_unavailable:'Quota unavailable',stale:'Previous value',rate_limited:'Retry later',error:'Fetch failed'};
@@ -360,7 +355,7 @@ document.querySelector('#apply').onclick=async()=>{busy=true;localError=false;pa
 async function update(){try{
 const response=await fetch('/snapshot',{cache:'no-store'});if(!response.ok)throw Error();const data=await response.json();
 const container=document.querySelector('#accounts');container.replaceChildren();
-for(const provider of ['claude','codex','grok']){const group=el('section',undefined,'group');group.dataset.provider=provider;group.append(el('h2',provider.toUpperCase()));
+for(const provider of ['claude','codex','antigravity']){const group=el('section',undefined,'group');group.dataset.provider=provider;group.append(el('h2',provider.toUpperCase()));
 Object.values(data.accounts).filter(a=>a.provider===provider).forEach(a=>{const c=el('article',undefined,'card');const head=el('div',undefined,'cardhead');head.append(el('span',a.alias,'name'),el('span',labels[a.status]||a.status,'status'));c.append(head);
 a.windows.forEach(w=>{const row=el('div',undefined,'window');const bar=el('div',undefined,'usage-meter');const used=Math.max(0,Math.min(100,w.used_percent));bar.dataset.level=used<50?'low':used<80?'medium':used<90?'high':'critical';bar.setAttribute('role','meter');bar.setAttribute('aria-label','Used quota');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(used));const fill=el('span',undefined,'usage-fill');fill.style.width=used+'%';bar.append(fill);row.append(el('span',w.label),bar,el('span',Math.round(w.used_percent)+'%'),el('span',reset(w.resets_at)));c.append(row)});
 if(a.source==='laptop')c.append(el('div','Laptop link · 5 min refresh','note'));
