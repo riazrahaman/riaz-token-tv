@@ -12,7 +12,7 @@
       "key": "ollama_a",
       "alias": "OLLAMA A",
       "provider": "ollama",
-      "email": "label-only@example.com",
+      "email": "your-ollama-email@example.com",
       "ollama_allowance_usd": 25.0
     },
     {

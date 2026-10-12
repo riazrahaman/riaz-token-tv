@@ -190,6 +190,12 @@ def ollama_me(account):
     return data if isinstance(data, dict) else None
 
 
+def ollama_email(profile):
+    """The account email from a `POST /api/me` body (`Email`), or None when absent or blank."""
+    email = profile.get("Email") if isinstance(profile, dict) else None
+    return email.strip() if isinstance(email, str) and email.strip() else None
+
+
 def ollama_plan(account):
     """The account's Ollama Cloud plan name from `POST /api/me`, or None.
 
@@ -203,11 +209,11 @@ def ollama_plan(account):
 
 
 def ollama_payload(account):
-    """Ollama Cloud's own usage API: the current credit period's daily spend, plan and age.
+    """Ollama Cloud's own usage API: the current credit period's daily spend, plan, age and email.
 
     The usage endpoint reports no email and no limit. Dollars are read over `range=30d`: a
-    7-day window can only see a fraction of a monthly credit period. The plan and the
-    account's `CreatedAt` both come from `POST /api/me`.
+    7-day window can only see a fraction of a monthly credit period. The plan, the account's
+    `CreatedAt` and its `Email` all come from `POST /api/me`.
     """
     token = ollama_token()
     headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
@@ -215,7 +221,7 @@ def ollama_payload(account):
     profile = ollama_me(account) or {}
     plan = profile.get("Plan")
     return {"usage": usage, "plan": plan.strip() if isinstance(plan, str) and plan.strip() else None,
-            "created_at": profile.get("CreatedAt")}
+            "created_at": profile.get("CreatedAt"), "email": ollama_email(profile)}
 
 
 def antigravity_payload(account):
@@ -249,7 +255,10 @@ def logged_in_email(provider, home):
             headers = {"Authorization": "Bearer " + claude_token(root), "Accept": "application/json",
                        "User-Agent": "claude-code/2.1.287", "anthropic-beta": "oauth-2025-04-20"}
             return email_from_profile(json_get("https://api.anthropic.com/api/oauth/profile", headers))
-        return None  # Ollama and Antigravity report no email, so setup can't detect one.
+        if provider == "ollama":
+            # The usage endpoint reports no email, but `POST /api/me` does (`Email`).
+            return ollama_email(ollama_me({"source_home": str(root)}))
+        return None  # Antigravity keeps its login in the OS keychain and reports no email.
     except (SourceError, OSError, ValueError, KeyError, TypeError, HTTPError, subprocess.SubprocessError):
         return None
 
@@ -260,8 +269,12 @@ def antigravity_identity(account):
 
 
 def ollama_identity(account):
-    """Ollama Cloud's usage API reports no email, so there is none to check."""
-    return None
+    """The Ollama Cloud account email from `POST /api/me`, or None.
+
+    The usage endpoint reports no email, but `/api/me` does (`Email`); any failure (no key, an
+    HTTP error, a body without `Email`) means "no identity to check", never a provider error.
+    """
+    return ollama_email(ollama_me(account))
 
 
 def imported_row(account):
@@ -308,9 +321,17 @@ def fetch_account(account):
             row["windows"] = normalize_claude(data)
             row["identity_verified"] = True
         elif account["provider"] == "ollama":
-            # Ollama's usage API reports no email, so this source is always unverified.
-            # The allowance comes from the account's plan unless the config overrides it.
+            # The usage endpoint reports no email, but `POST /api/me` reports the account's
+            # (`Email`), so a configured email is a real identity check. The allowance comes
+            # from the account's plan unless the config overrides it.
             data = ollama_payload(account)
+            reported = data.get("email")
+            if account.get("email") and reported:
+                if not identity_matches(account["email"], reported):
+                    raise SourceError("identity_mismatch")
+                row["identity_verified"] = True
+            # No reported email means the optional `/api/me` enrichment failed: stay unverified
+            # rather than inventing a mismatch, and still show the usage numbers.
             allowance = ollama_allowance(data.get("plan"), account.get("ollama_allowance_usd"))
             row["windows"] = normalize_ollama(data.get("usage"), allowance, data.get("created_at"))
         else:

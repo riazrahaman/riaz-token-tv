@@ -82,11 +82,13 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 | 공급자 | 조회 경로 | 수치의 의미 |
 |---|---|---|
 | Claude | CLI 소유 OAuth의 profile/usage | 5시간 및 주간 **사용한 비율** |
-| Ollama | Ollama Cloud `GET /api/usage?range=30d`(API 키)와 `POST /api/me`(플랜·계정 생성일) | 플랜에서 계산한 월 크레딧 예산(또는 `ollama_allowance_usd`) 대비 현재 크레딧 기간(계정 생성일부터)의 **지출** |
+| Ollama | Ollama Cloud `GET /api/usage?range=30d`(API 키)와 `POST /api/me`(플랜·계정 생성일·이메일) | 플랜에서 계산한 월 크레딧 예산(또는 `ollama_allowance_usd`) 대비 현재 크레딧 기간(계정 생성일부터)의 **지출** |
 | Antigravity | Antigravity CLI의 `agy -p "/usage"` 명령(Gemini Flash·Pro), 실험 단계 | Gemini 5시간·주간 한도의 **사용한 비율** |
 
 Claude는 예상 이메일과 인증된 이메일을 대조합니다.
-Ollama와 Antigravity는 이메일을 보고하지 않으므로 대조하지 않습니다(행에 미확인으로 표시).
+Ollama는 계정에 이메일을 설정한 경우 Ollama Cloud 프로필(`POST /api/me`)의 이메일과 대조하며,
+이메일을 설정하지 않았거나 프로필을 읽을 수 없으면 미확인으로 표시합니다.
+Antigravity는 이메일을 보고하지 않으므로 대조하지 않습니다(행에 미확인으로 표시).
 계정이 여러 개 섞인 인증 홈은 거부하며 CLI 인증만으로 이메일을 추정하지 않습니다.
 Antigravity가 한도 수치를 제공하지 않으면 `quota_unavailable`로 표시합니다.
 `auth_required`, `identity_mismatch`, `rate_limited`, `error`, `stale`을 구별하며

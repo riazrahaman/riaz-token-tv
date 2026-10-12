@@ -83,6 +83,26 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('Keychain unchecked', out)
 
+    def test_doctor_treats_a_verified_ollama_account_as_checked(self):
+        self.config.write_text(json.dumps({'accounts': [
+            {'key': 'ollama_a', 'alias': 'OLLAMA A', 'provider': 'ollama', 'email': 'me@example.com'}]}))
+        good = {'status': 'ok', 'identity_verified': True}
+        with mock.patch('token_tv.sources.fetch_account', return_value=good):
+            code, out, _ = run('doctor', '--config', str(self.config), '--live')
+        self.assertEqual(code, 0)
+        self.assertIn('Ready', out)
+        self.assertNotIn('reports no email', out)
+
+    def test_doctor_notes_an_ollama_account_without_an_email(self):
+        self.config.write_text(json.dumps({'accounts': [
+            {'key': 'ollama_a', 'alias': 'OLLAMA A', 'provider': 'ollama'}]}))
+        unverified = {'status': 'ok', 'identity_verified': False}
+        with mock.patch('token_tv.sources.fetch_account', return_value=unverified):
+            code, out, _ = run('doctor', '--config', str(self.config), '--live')
+        self.assertEqual(code, 0)
+        self.assertIn('no email to compare', out)
+        self.assertNotIn('reports no email', out)
+
     def test_broken_config_gets_a_sentence_not_a_traceback(self):
         self.config.write_text('{"accounts": [')
         for command in ('doctor', 'run'):
