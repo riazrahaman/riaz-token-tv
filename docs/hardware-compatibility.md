@@ -40,3 +40,9 @@ web UI name and the result. Leave out Wi-Fi names, passwords and public IP addre
 
 A computer that stays on in the same network (Python 3.10+). The clock only shows the picture;
 the computer reads usage and draws it.
+
+## What the clock's own firmware does
+
+TokenTV is a client of the clock's built-in web UI; it never replaces it. If you want to know what
+that firmware's HTTP surface is — the endpoints, the settings keys, how colours are encoded, and
+why the clock cannot buffer a whole frame — see [clock-firmware.md](clock-firmware.md).
