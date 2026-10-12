@@ -82,7 +82,7 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 | 공급자 | 조회 경로 | 수치의 의미 |
 |---|---|---|
 | Claude | CLI 소유 OAuth의 profile/usage | 5시간 및 주간 **사용한 비율** |
-| Ollama | Ollama Cloud `GET /api/usage?range=7d`(API 키, 플랜·한도 엔드포인트 없음) | 설정한 `ollama_allowance_usd` 대비 이번 주 **지출 비율** |
+| Ollama | Ollama Cloud `GET /api/usage?range=7d`(API 키)와 `POST /api/me`(플랜) | 플랜에서 계산한 허용액(또는 `ollama_allowance_usd`) 대비 이번 주 **지출 비율** |
 | Antigravity | Antigravity CLI의 `agy -p "/usage"` 명령(Gemini Flash·Pro), 실험 단계 | Gemini 5시간·주간 한도의 **사용한 비율** |
 
 Claude는 예상 이메일과 인증된 이메일을 대조합니다.

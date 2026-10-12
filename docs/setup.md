@@ -65,7 +65,7 @@ See [docs/hardware-compatibility.md](hardware-compatibility.md) for what is veri
 | Provider | Source | The number means |
 |---|---|---|
 | Claude | Claude Code CLI's own OAuth login (profile and usage) | Share of the 5-hour and weekly limits **used** |
-| Ollama | Ollama Cloud `GET /api/usage?range=7d` with an API key (no plan or limit endpoint) | This week's spend against the `ollama_allowance_usd` you set |
+| Ollama | Ollama Cloud `GET /api/usage?range=7d` with an API key, plus `POST /api/me` for the plan | This week's spend against the allowance derived from your plan (or `ollama_allowance_usd`) |
 | Antigravity | Antigravity CLI's `agy -p "/usage"` command (Gemini Flash and Pro) | Share of the Gemini 5-hour and weekly limits **used** |
 
 Every login is checked against the email you configured, except Ollama and Antigravity, which report
@@ -90,7 +90,10 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   Non-interactive: repeat the flag, e.g. `token-tv setup --yes --ollama-email a@x.com --ollama-email b@x.com`;
   add `--isolate` to give account A its own folder too.
 - Ollama Cloud has no CLI login: set `OLLAMA_API_KEY` (or store it in the macOS Keychain as
-  `token-tv-ollama`), add the account with an `ollama_allowance_usd`, and never put the key in the config.
+  `token-tv-ollama`) and never put the key in the config. The allowance comes from the plan that
+  `POST /api/me` reports: free = 0, pro = $60, max = $300, team = $1000 of monthly credits, shown
+  as the 7-day share (`credits × 7 / 30`) because the API reports dollars only up to 7 days. Set
+  `ollama_allowance_usd` to override it.
 - `token-tv connect --account claude_b` logs a separate account in with its official CLI. It
   will not log in again over your everyday `~/.claude` login unless you type REPLACE.
 - `token-tv doctor` only checks that login files exist. `doctor --live` runs the same check

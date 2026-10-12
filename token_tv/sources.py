@@ -13,7 +13,8 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from token_tv.usage import normalize_claude, normalize_ollama, normalize_antigravity, timestamp, window
+from token_tv.usage import (normalize_claude, normalize_ollama, normalize_antigravity,
+                            ollama_allowance, timestamp, window)
 from token_tv.display import STYLES
 
 AUTH_WORDS = ("auth", "login", "sign in", "token")
@@ -79,6 +80,11 @@ def load_config(path):
 
 def json_get(url, headers=None):
     with urlopen(Request(url, headers=headers or {}), timeout=20) as response:
+        return json.load(response)
+
+
+def json_post(url, headers=None):
+    with urlopen(Request(url, headers=headers or {}, method="POST"), timeout=20) as response:
         return json.load(response)
 
 
@@ -158,11 +164,32 @@ def ollama_token():
     raise SourceError("auth_required")
 
 
+def ollama_plan(account):
+    """The account's Ollama Cloud plan name from `POST /api/me`, or None.
+
+    The plan is optional enrichment, not a reading: any failure (no key, an HTTP error, a
+    body without `Plan`) means "no plan" instead of a provider error, so usage still works
+    and simply falls back to the configured allowance. The same key as `ollama_token`.
+    """
+    try:
+        token = ollama_token()
+        headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+        data = json_post("https://ollama.com/api/me", headers)
+    except (SourceError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return None
+    plan = data.get("Plan") if isinstance(data, dict) else None
+    return plan.strip() if isinstance(plan, str) and plan.strip() else None
+
+
 def ollama_payload(account):
-    """Ollama Cloud's own usage API. It reports spend only, with no email and no plan limit."""
+    """Ollama Cloud's own usage API: the 7-day spend plus the plan name when it is known.
+
+    The usage endpoint reports no email and no limit; the plan comes from `POST /api/me`.
+    """
     token = ollama_token()
     headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
-    return json_get("https://ollama.com/api/usage?range=7d", headers)
+    usage = json_get("https://ollama.com/api/usage?range=7d", headers)
+    return {"usage": usage, "plan": ollama_plan(account)}
 
 
 def antigravity_payload(account):
@@ -256,7 +283,10 @@ def fetch_account(account):
             row["identity_verified"] = True
         elif account["provider"] == "ollama":
             # Ollama's usage API reports no email, so this source is always unverified.
-            row["windows"] = normalize_ollama(ollama_payload(account), account.get("ollama_allowance_usd"))
+            # The allowance comes from the account's plan unless the config overrides it.
+            data = ollama_payload(account)
+            allowance = ollama_allowance(data.get("plan"), account.get("ollama_allowance_usd"))
+            row["windows"] = normalize_ollama(data.get("usage"), allowance)
         else:
             # Antigravity's CLI reports no email, so this source is always unverified.
             row["windows"] = normalize_antigravity(antigravity_payload(account))
