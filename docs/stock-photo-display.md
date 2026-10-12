@@ -17,8 +17,8 @@ runs TokenTV code, so there is nothing to flash and no firmware to restore.
 ## The flow
 
 1. **Read usage.** A computer on the same network reads usage through each tool's own
-   login: the Claude Code CLI's OAuth profile and usage, the Ollama Cloud usage API (the last
-   7 days of spend against your monthly credit budget), and the Antigravity CLI usage command. It polls every five minutes
+   login: the Claude Code CLI's OAuth profile and usage, the Ollama Cloud usage API (the
+   current monthly credit period's spend against your monthly credit budget), and the Antigravity CLI usage command. It polls every five minutes
    by default.
 2. **Draw a face.** Python and Pillow draw a 240×240 image: used percentage, window,
    reset time and account label. An old reading is marked OLD, and missing data shows a dash

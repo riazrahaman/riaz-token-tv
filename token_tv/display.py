@@ -172,7 +172,7 @@ PIXEL_GLYPHS = {
     'A': '01110/10001/10001/11111/10001/10001/10001',
     'B': '11110/10001/10001/11110/10001/10001/11110',
     'C': '01111/10000/10000/10000/10000/10000/01111',
-    'D': '11110/10001/10001/10001/10001/10001/11110',
+    'D': '11110/10001/10001/10001/10001/10010/11100',
     'E': '11111/10000/10000/11110/10000/10000/11111',
     'F': '11111/10000/10000/11110/10000/10000/10000',
     'G': '01111/10000/10000/10111/10001/10001/01111',
@@ -206,6 +206,7 @@ PIXEL_GLYPHS = {
     '8': '01110/10001/10001/01110/10001/10001/01110',
     '9': '01110/10001/10001/01111/00001/00001/01110',
     '%': '11001/11010/00010/00100/01000/01011/10011',
+    '$': '00100/01111/10100/01110/00101/11110/00100',
     '-': '00000/00000/00000/11111/00000/00000/00000',
     '?': '01110/10001/00001/00010/00100/00000/00100',
     ' ': '00000/00000/00000/00000/00000/00000/00000',
@@ -248,7 +249,7 @@ def render_pixel(snapshot):
         number = '--' if used is None else str(round(used)) + '%'
         pixel_text(draw, (68, y + 21), number, scale=3, color=TEXT)
         if value:
-            period = {'WEEK': 'WK', 'BUDGET': 'BUD'}.get(value['label'], value['label'])
+            period = quota_period(value)
             pixel_text(draw, (226, y + 3), period + (' OLD' if old else ' USED'), color=MUTED, align='right')
             pixel_text(draw, (226, y + 25), time_left(value.get('resets_at')).replace(' ', ''), scale=2, color=MUTED, align='right')
         else:
@@ -329,7 +330,7 @@ footer{margin-top:24px;border-top:1px solid #303b46;padding-top:16px;color:var(-
 <p class="muted">240 × 240 · Live clock view</p><div class="gauge-legend" aria-label="Used quota levels"><span><i></i>0–49%</span><span><i class="medium"></i>50–79%</span><span><i class="high"></i>80–89%</span><span><i class="critical"></i>90–100%</span></div></section><section id="accounts"></section></div>
 <footer>Percentages and bars show <strong>used</strong> quota. Times show when that quota resets.<br>
 The clock shows the highest reported usage window for one account per provider. All account windows appear here.<br>
-Antigravity reports the used share of its Gemini weekly and five-hour limits. Ollama Cloud shows the last 7 days of spend against your monthly credit budget (from your plan, or the allowance you set), not a weekly limit.<br>
+Antigravity reports the used share of its Gemini weekly and five-hour limits. Ollama Cloud shows the current monthly credit period's spend (from the day your account was created) against your monthly credit budget (from your plan, or the allowance you set), not a weekly limit.<br>
 Laptop-linked accounts update while the laptop is online. Missing quotas are shown as unknown.</footer></main>
 <script>
 const labels={ok:'Connected',loading:'Loading',auth_required:'Login needed',identity_mismatch:'Check account',quota_unavailable:'Quota unavailable',stale:'Previous value',rate_limited:'Retry later',error:'Fetch failed'};

@@ -4,14 +4,16 @@ import json
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
 
-from token_tv.usage import normalize_claude, normalize_ollama, normalize_antigravity, ollama_allowance, timestamp
+from token_tv.usage import (normalize_claude, normalize_ollama, normalize_antigravity,
+                            ollama_allowance, credit_period_start, timestamp)
 from token_tv.sources import (fetch_account, load_config, antigravity_identity, ollama_identity,
-                              ollama_plan, scoped_env, SourceError)
+                              ollama_plan, imported_row, scoped_env, SourceError)
 from token_tv.state import UsageStore
 from token_tv.display import render_page, pages, overview_rows, primary_window
 
@@ -24,23 +26,58 @@ class LiveTests(unittest.TestCase):
                 self.assertEqual(env[variable], "/explicit/account/home")
                 self.assertFalse(any(key in env for key in ("OPENAI_API_KEY", "XAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")))
 
-    def test_ollama_spend_is_measured_against_the_monthly_budget(self):
-        data = {"range": "7d", "totals": {"usage_usd": 25.0}}
-        self.assertEqual(normalize_ollama(data, 50.0), [
-            {"label": "BUDGET", "used_percent": 50.0, "resets_at": None, "duration_minutes": 43200}])
-        self.assertEqual(normalize_ollama({"totals": {"usage_usd": 999.0}}, 50.0)[0]["used_percent"], 100.0)
-        self.assertEqual(normalize_ollama({"totals": {"usage_usd": 27.48072}}, 40.0)[0]["used_percent"], 68.7)
+    def test_ollama_reading_sums_only_the_current_credit_period(self):
+        # The account was created on the 26th, so the period began 2026-09-26. The 09-25 bucket
+        # is before it and must not count. A bucket without usage_usd inside the period is 0.
+        data = {"range": "30d", "buckets": [
+            {"from": "2026-09-25T00:00:00Z", "request_count": 500, "usage_usd": 10.0},
+            {"from": "2026-09-26T00:00:00Z", "request_count": 0},
+            {"from": "2026-09-27T00:00:00Z", "request_count": 7, "usage_usd": 1.5},
+            {"from": "2026-10-01T00:00:00Z", "request_count": 9, "usage_usd": 2.5},
+        ]}
+        created, now = "2026-04-26T12:49:20.350091Z", "2026-10-12T12:00:00Z"
+        self.assertEqual(normalize_ollama(data, 50.0, created, now), [
+            {"label": "$4", "used_percent": 8.0, "resets_at": None, "duration_minutes": 43200}])
+        # Spend above the allowance clamps to 100.0, and the label keeps the dollar value.
+        over = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": 999.0}]}
+        self.assertEqual(normalize_ollama(over, 50.0, created, now),
+                         [{"label": "$999", "used_percent": 100.0, "resets_at": None, "duration_minutes": 43200}])
+        # $68.84 in a $300 plan is 22.95%, labelled with the whole dollars only.
+        spent = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": 68.84}]}
+        self.assertEqual(normalize_ollama(spent, 300.0, created, now)[0],
+                         {"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200})
+
+    def test_credit_period_anchor_comes_from_the_creation_day(self):
+        case = lambda created, now: credit_period_start(created, now)
+        # Day 26: the most recent 26th at or before now (this month, or last when it is later).
+        self.assertEqual(case("2026-04-26T12:49:20.350091Z", "2026-10-27T09:00:00Z"), datetime(2026, 10, 26, tzinfo=timezone.utc))
+        self.assertEqual(case("2026-04-26T12:49:20Z", "2026-10-12T00:00:00Z"), datetime(2026, 9, 26, tzinfo=timezone.utc))
+        # A day 31 anchor clamps into short months instead of overflowing.
+        self.assertEqual(case("2026-01-31T00:00:00Z", "2026-03-05T00:00:00Z"), datetime(2026, 2, 28, tzinfo=timezone.utc))
+        self.assertEqual(case("2026-01-31T00:00:00Z", "2026-02-15T00:00:00Z"), datetime(2026, 1, 31, tzinfo=timezone.utc))
+        # Unknown or unusable input stays unknown rather than inventing a period.
+        for created in (None, "", "not-a-date", 0):
+            self.assertIsNone(case(created, "2026-10-12T00:00:00Z"), created)
 
     def test_missing_ollama_allowance_or_spend_is_unknown(self):
-        data = {"range": "7d", "totals": {"usage_usd": 25.0}}
-        self.assertEqual(normalize_ollama(data, None), [])
-        self.assertEqual(normalize_ollama(data, 0), [])
-        self.assertEqual(normalize_ollama(data, -5), [])
-        self.assertEqual(normalize_ollama(data, True), [])
-        self.assertEqual(normalize_ollama({"totals": {}}, 50.0), [])
-        self.assertEqual(normalize_ollama({"totals": {"usage_usd": True}}, 50.0), [])
-        self.assertEqual(normalize_ollama({"totals": {"usage_usd": float("inf")}}, 50.0), [])
-        self.assertEqual(normalize_ollama({}, 50.0), [])
+        created, now = "2026-04-26T12:49:20Z", "2026-10-12T12:00:00Z"
+        data = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": 25.0}]}
+        self.assertEqual(normalize_ollama(data, None, created, now), [])
+        self.assertEqual(normalize_ollama(data, 0, created, now), [])
+        self.assertEqual(normalize_ollama(data, -5, created, now), [])
+        self.assertEqual(normalize_ollama(data, True, created, now), [])
+        # No period (unknown creation date) or no buckets: unknown, never a fake 0%.
+        self.assertEqual(normalize_ollama(data, 50.0, None, now), [])
+        self.assertEqual(normalize_ollama({"totals": {"usage_usd": 25.0}}, 50.0, created, now), [])
+        self.assertEqual(normalize_ollama({}, 50.0, created, now), [])
+        # A period with no dollars at all is unknown; a malformed dollar value is not a reading.
+        self.assertEqual(normalize_ollama({"buckets": [{"from": "2026-09-26T00:00:00Z"}]}, 50.0, created, now), [])
+        for bad in (True, float("inf"), float("nan"), "25"):
+            data = {"buckets": [{"from": "2026-09-26T00:00:00Z", "usage_usd": bad}]}
+            self.assertEqual(normalize_ollama(data, 50.0, created, now), [], bad)
+        # Buckets before the period do not make a reading either.
+        self.assertEqual(normalize_ollama({"buckets": [{"from": "2026-09-01T00:00:00Z", "usage_usd": 25.0}]},
+                                          50.0, created, now), [])
 
     def test_missing_antigravity_quota_is_unknown(self):
         self.assertEqual(normalize_antigravity({"command": {"data": {"groups": [{"name": "Claude and GPT models", "buckets": [{"window": "weekly", "remaining_fraction": 1.0}]}]}}}), [])
@@ -161,33 +198,50 @@ class LiveTests(unittest.TestCase):
     def test_ollama_source_is_unverified_and_the_plan_sets_the_allowance(self):
         # Identity: the API reports no email, so nothing is claimed, and the configured email is a label.
         self.assertIsNone(ollama_identity({"source_home": "/unused"}))
-        usage = {"range": "7d", "scope": "self", "granularity": "day",
-                 "totals": {"request_count": 7763, "usage_usd": 27.48072,
-                            "input_tokens": 900000, "cached_input_tokens": 500000, "output_tokens": 120000},
-                 "buckets": [{"from": "2026-10-05T00:00:00Z", "until": "2026-10-06T00:00:00Z",
-                              "request_count": 100, "usage_usd": 3.5}]}
+        usage = {"range": "30d", "scope": "self", "granularity": "day",
+                 "buckets": [{"from": "2026-09-26T00:00:00Z", "until": "2026-09-27T00:00:00Z",
+                              "request_count": 100, "usage_usd": 68.84}]}
+        payload = {"usage": usage, "plan": "max", "created_at": "2026-04-26T12:49:20.350091Z"}
         account = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "email": "label-only@example.com"}
-        # Max = $300/month, so $27.48072 of the last 7 days is 9.16%.
-        with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):
+        captured = {}
+
+        def fake_normalize(data, allowance, created_at=None, now=None):
+            captured.update(data=data, allowance=allowance, created_at=created_at)
+            return [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200}]
+
+        # Max = $300/month, so the current period's $68.84 is 22.95%.
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama", side_effect=fake_normalize):
             row = fetch_account(account)
         self.assertEqual(row["status"], "ok")
         self.assertFalse(row["identity_verified"])
-        self.assertEqual(row["windows"], [{"label": "BUDGET", "used_percent": 9.16, "resets_at": None, "duration_minutes": 43200}])
+        self.assertEqual(row["windows"], [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200}])
+        # The source hands the period's buckets, the plan budget and the creation day to the reader.
+        self.assertEqual(captured, {"data": usage, "allowance": 300.0, "created_at": "2026-04-26T12:49:20.350091Z"})
         self.assertNotIn("label-only@example.com", json.dumps(row))
         # An explicit ollama_allowance_usd wins over the plan.
-        with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": "max"}):
-            row = fetch_account(dict(account, ollama_allowance_usd=40.0))
-        self.assertEqual(row["windows"][0]["used_percent"], 68.7)
+        with patch("token_tv.sources.ollama_payload", return_value=payload), \
+                patch("token_tv.sources.normalize_ollama", side_effect=fake_normalize):
+            fetch_account(dict(account, ollama_allowance_usd=40.0))
+        self.assertEqual(captured["allowance"], 40.0)
         # A free / unknown / missing plan means no honest percentage: unknown, never a fake 0%.
         for plan in ("free", "something-else", None):
-            with patch("token_tv.sources.ollama_payload", return_value={"usage": usage, "plan": plan}):
+            with patch("token_tv.sources.ollama_payload", return_value=dict(payload, plan=plan)):
                 row = fetch_account(account)
             self.assertEqual((row["status"], row["windows"]), ("quota_unavailable", []), plan)
-        # Spend above the allowance clamps to 100.0.
-        over = {"totals": {"usage_usd": 999.0}}
-        with patch("token_tv.sources.ollama_payload", return_value={"usage": over, "plan": "pro"}):
-            row = fetch_account(account)
-        self.assertEqual(row["windows"][0]["used_percent"], 100.0)
+
+    def test_snapshot_import_accepts_dollar_spend_labels_but_not_junk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshot.json"
+            row = {"key": "o", "alias": "OLLAMA A", "provider": "ollama", "status": "ok",
+                   "identity_verified": False, "fetched_at": time.time(),
+                   "windows": [{"label": "$68", "used_percent": 22.95, "resets_at": None, "duration_minutes": 43200},
+                               {"label": "BUDGET", "used_percent": 12, "resets_at": None, "duration_minutes": 43200},
+                               {"label": "HACK", "used_percent": 50, "resets_at": None, "duration_minutes": 100},
+                               {"label": "$nope", "used_percent": 50, "resets_at": None, "duration_minutes": 100}]}
+            path.write_text(json.dumps({"accounts": {"o": row}}))
+            clean = imported_row({"key": "o", "alias": "OLLAMA A", "provider": "ollama", "snapshot_file": str(path)})
+            self.assertEqual([w["label"] for w in clean["windows"]], ["$68", "BUDGET"])
 
     def test_cache_is_per_account_and_failure_preserves_stale_values(self):
         accounts = [{"key": "a", "alias": "A", "provider": "claude"}, {"key": "b", "alias": "B", "provider": "claude"}]
@@ -270,7 +324,8 @@ class LiveTests(unittest.TestCase):
         windows = [{"label": "5H", "used_percent": 2}, {"label": "WEEK", "used_percent": 94}]
         self.assertEqual(primary_window({"windows": windows})["label"], "WEEK")
         self.assertIsNone(primary_window({"windows": []}))
-        self.assertEqual(primary_window({"windows": [{"label": "BUDGET", "used_percent": 100}]})["label"], "BUDGET")
+        for label in ("BUDGET", "$68"):  # a legacy quota name or the new dollar-spend label
+            self.assertEqual(primary_window({"windows": [{"label": label, "used_percent": 100}]})["label"], label)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ class WatchPayloadTest(unittest.TestCase):
             'claude_a': row('claude', 'CLAUDE A', windows=[
                 {'label': '5H', 'used_percent': 10, 'resets_at': now + 3600},
                 {'label': 'WEEK', 'used_percent': 44.4, 'resets_at': now + 26 * 3600 + 30}]),
-            'ollama_a': row('ollama', 'OLLAMA A', 'stale', [{'label': 'BUDGET', 'used_percent': 12, 'resets_at': now + 3600}]),
+            'ollama_a': row('ollama', 'OLLAMA A', 'stale', [{'label': '$68', 'used_percent': 12, 'resets_at': now + 3600}]),
             'antigravity_a': row('antigravity', 'ANTIGRAVITY A', 'quota_unavailable'),
         }})
         claude, ollama, antigravity = (data['accounts'][key] for key in ('claude_a', 'ollama_a', 'antigravity_a'))
@@ -29,11 +29,11 @@ class WatchPayloadTest(unittest.TestCase):
         self.assertEqual(claude, {'label': 'CLAUDE A', 'used_percent': 44, 'used': 0.44, 'window': 'WK',
                                   'resets_in': '1d 2h', 'resets_at': round(now + 26 * 3600 + 30),
                                   'text': '44% WK', 'state': 'ok'})
-        self.assertEqual((ollama['state'], ollama['text']), ('old', '12% BUD OLD'))
+        self.assertEqual((ollama['state'], ollama['text']), ('old', '12% $68 OLD'))
         # Missing stays missing: never 0%.
         self.assertEqual((antigravity['used_percent'], antigravity['used'], antigravity['window'], antigravity['state'], antigravity['text'],
                           antigravity['resets_in']), (None, None, None, 'missing', 'NO DATA', '--'))
-        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · OLLAMA A 12% BUD OLD · ANTIGRAVITY A NO DATA')
+        self.assertEqual(data['summary'], 'CLAUDE A 44% WK · OLLAMA A 12% $68 OLD · ANTIGRAVITY A NO DATA')
         self.assertEqual(data['updated_at'], 1000)
 
     def test_keys_follow_clock_labels_not_config_keys(self):
