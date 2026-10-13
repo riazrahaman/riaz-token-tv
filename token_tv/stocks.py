@@ -26,7 +26,7 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import FILES, LIMITS, BackupMismatch, open_display
+from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
 from token_tv.display import encode_jpeg, pixel_text
 
 QUOTE_URL = 'https://finnhub.io/api/v1/quote'
@@ -313,7 +313,8 @@ def snapshot_payload(rows, meta):
 # ---------------------------------------------------------------------------
 # Config (its own strict loader; never ``sources.load_config``)
 # ---------------------------------------------------------------------------
-STOCK_KEYS = ('device_url', 'symbols', 'interval', 'palette', 'state_dir', 'reassert_cycles')
+STOCK_KEYS = ('device_url', 'symbols', 'interval', 'palette', 'state_dir', 'reassert_cycles',
+              'max_writes_per_hour')
 PALETTE_ROLES = ('background', 'text', 'rise', 'fall', 'dim')
 CREDENTIAL_WORDS = ('token', 'api_key', 'apikey', 'secret', 'password', 'credential', 'auth', 'key')
 SYMBOL_PATTERN = re.compile(r'[A-Z][A-Z0-9.\-]{0,9}')
@@ -424,12 +425,14 @@ def mismatch_message(error, backup_path):
 
 
 def publish(device, image, state_dir, backup_path, original, active_file, last_upload, *,
-            style=DEFAULT_STYLE, now=None, reassert=False):
+            style=DEFAULT_STYLE, now=None, reassert=False, budget=0, last_write=None):
     """Upload only new bytes, activate only a new file, and write a receipt.
 
     Returns (original, active_file, last_upload, uploaded). A ``BackupMismatch`` is re-raised so
     the caller can stop without touching the clock. `reassert` re-selects the photo theme even
-    when the file name is unchanged, for a clock that rebooted back to its own theme.
+    when the file name is unchanged, for a clock that rebooted back to its own theme. `budget`
+    caps flash writes per hour: prices move on every poll, so the byte dedupe never fires while
+    the market is open and a 30-second interval would otherwise rewrite flash 120 times an hour.
     """
     state_dir = Path(state_dir)
     at = int(now if now is not None else time.time())
@@ -442,23 +445,36 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         phase = 'upload'
         name = FILES[1] if image[:4] == b'GIF8' else FILES[0]
         digest = hashlib.sha256(image).hexdigest()
-        if (name, digest) != last_upload:  # identical frames are not rewritten to flash
-            state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / name).write_bytes(image)
-            receipts.append(dict(device.upload(name, image), sha256=digest))
-            last_upload = (name, digest)
-            uploaded = True
+        state_dir.mkdir(parents=True, exist_ok=True)
         reasserted = active_file != name or reassert
+        lost = False
         if reasserted:
             phase = 'activate'
-            if not uploaded:  # an upload this cycle already put the file back
-                files = device.capture().get('files')
-                if files is not None and not any(f['name'] == name for f in files):
-                    last_upload = None  # the clock lost our file; the dedupe must not hide that
+            files = device.capture().get('files')
+            lost = files is not None and not any(f['name'] == name for f in files)
+            if lost:
+                last_upload = None  # the clock lost our file; the dedupe must not hide that
+        phase = 'upload'
+        throttled = False
+        if (name, digest) != last_upload:  # identical frames are not rewritten to flash
+            # A clock showing nothing bypasses the budget; the cap is there to spare flash, not
+            # to withhold the frame.
+            if lost or may_write(last_write, at, budget):
+                # Written only on upload, so the local copy stays a record of what the clock is
+                # actually showing.
+                (state_dir / name).write_bytes(image)
+                receipts.append(dict(device.upload(name, image), sha256=digest))
+                last_upload = (name, digest)
+                uploaded = True
+            else:
+                throttled = True  # last_upload is left alone, so the newest frame retries
+        if reasserted:
+            phase = 'activate'
             device.activate(original, name)
             active_file = name
         write_json(state_dir / 'display-receipt.json',
-                   {'at': at, 'style': style, 'uploads': receipts, 'reasserted': reasserted})
+                   {'at': at, 'style': style, 'uploads': receipts, 'reasserted': reasserted,
+                    'throttled': throttled})
     except BackupMismatch:
         write_json(state_dir / 'display-receipt.json',
                    {'at': at, 'style': style, 'status': 'error', 'phase': phase, 'uploads': receipts})
@@ -532,8 +548,12 @@ def main(argv=None):
     # Re-assert the photo theme periodically: a reboot or a visit to the clock's own web UI drops
     # it back to its theme, and `activate` only ran when the file name changed, i.e. once.
     reassert_after = max(1, int(config.get('reassert_cycles', 12)))
+    # Off by default. Prices move on every poll, so the byte dedupe never fires while the market
+    # is open and a 30-second interval rewrites flash ~120 times an hour — but a watchlist that
+    # refreshes slowly is not a watchlist, so the trade-off is the owner's to make, not ours.
+    budget = max(0, int(config.get('max_writes_per_hour', 0)))
     status, failures = {}, 0
-    cycles = 0
+    cycles, last_write = 0, None
     try:
         while True:
             now = time.time()
@@ -551,9 +571,12 @@ def main(argv=None):
             write_json(state_dir / 'snapshot.json', snapshot_payload(rows, meta))
             if device:
                 try:
-                    original, active_file, last_upload, _ = publish(
+                    original, active_file, last_upload, uploaded = publish(
                         device, image, state_dir, backup_path, original, active_file, last_upload,
-                        now=now, reassert=cycles % reassert_after == 0)
+                        now=now, reassert=cycles % reassert_after == 0,
+                        budget=budget, last_write=last_write)
+                    if uploaded:
+                        last_write = now
                 except BackupMismatch as error:
                     print(mismatch_message(error, backup_path), flush=True)
                     return 1

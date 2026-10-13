@@ -9,21 +9,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import FILES, LIMITS, BackupMismatch, open_display
+from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import STYLES, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
-
-
-def within_budget(writes, now, budget):
-    """True when another upload fits the trailing hour, after dropping the writes that aged out.
-
-    `writes` is trimmed in place. A busy five-hour window changes the frame on every poll, so the
-    byte dedupe cannot bound flash wear on its own; this does. A budget of 0 means no cap."""
-    writes[:] = [t for t in writes if now - t < 3600]
-    return not budget or len(writes) < budget
 
 
 def write_json(path, data):
@@ -206,16 +197,12 @@ def main():
     original = None
     active_file = None
     last_upload = None
-    writes = []  # upload timestamps inside the trailing hour
+    last_write = None
+    last_style = None
     cycles = 0
 
-    def spend(now, forced):
-        """A style the user just applied always goes through, so the dashboard never reports a
-        change as delivered that the clock never received."""
-        return True if forced else within_budget(writes, now, budget)
-
     def cycle(refresh=True):
-        nonlocal original, active_file, last_upload, cycles
+        nonlocal original, active_file, last_upload, last_write, last_style, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
@@ -233,33 +220,43 @@ def main():
                                               LIMITS[FILES[0]][0] if style != 'space' else LIMITS[FILES[1]][0])
                 name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
-                (state_dir / name).write_bytes(image)  # the local frame always reflects the latest render
-                throttled = uploaded = False
-                if (name, digest) != last_upload:  # identical frames are not rewritten to flash
-                    if spend(now, forced=not refresh):
-                        receipts.append(dict(device.upload(name, image), sha256=digest, **encoded))
-                        writes.append(now)
-                        last_upload = (name, digest)  # left alone when throttled, so it retries
-                        uploaded = True
-                    else:
-                        throttled = True
-                # Re-assert the theme periodically, not only when the file name changes.
+                # Re-assert the theme periodically, not only when the file name changes: a reboot
+                # or a visit to the clock's own web UI drops it back to its own theme.
                 due = active_file != name or cycles % reassert_after == 0
+                lost = False
                 if due:
                     phase = "activate"
                     # `activate` re-reads the clock and only writes what is wrong, so in steady
                     # state this is a handful of GETs. Ultra clocks report no file list.
-                    if not uploaded:  # an upload this cycle already put the file back
-                        files = device.capture().get("files")
-                        if files is not None and not any(f["name"] == name for f in files):
-                            last_upload = None  # the clock lost it; the dedupe must not hide that
+                    files = device.capture().get("files")
+                    lost = files is not None and not any(f["name"] == name for f in files)
+                    if lost:
+                        last_upload = None  # the clock lost it; the dedupe must not hide that
+                phase = "upload"
+                throttled = False
+                # A style the user just applied, and a clock showing nothing, both bypass the
+                # budget: the cap exists to spare flash, not to withhold the frame that matters.
+                forced = not refresh or lost or style != last_style
+                if (name, digest) != last_upload:  # identical frames are not rewritten to flash
+                    if forced or may_write(last_write, now, budget):
+                        # Written only on upload, so the local copy stays a record of what the
+                        # clock is actually showing.
+                        (state_dir / name).write_bytes(image)
+                        receipts.append(dict(device.upload(name, image), sha256=digest, **encoded))
+                        last_upload, last_write, last_style = (name, digest), now, style
+                    else:
+                        throttled = True  # last_upload is left alone, so the newest frame retries
+                if due:
+                    phase = "activate"
                     device.activate(original, name)
                     active_file = name
                 write_json(state_dir / "display-receipt.json",
                            {"at": int(time.time()), "style": style, "uploads": receipts,
-                            "throttled": throttled, "reasserted": due, "encoded": encoded,
-                            "writes_this_hour": len(writes)})
-                preferences.delivered(style, not throttled)
+                            "throttled": throttled, "reasserted": due, "encoded": encoded})
+                # Throttling is not a delivery failure: the style is already on the clock and the
+                # newest frame follows shortly. Reporting it would flash a false error.
+                if not throttled:
+                    preferences.delivered(style, True)
             except (OSError, ValueError, KeyError) as error:
                 if isinstance(error, BackupMismatch):
                     print(mismatch_message(error, backup_path), flush=True)

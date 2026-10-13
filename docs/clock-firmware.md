@@ -161,9 +161,25 @@ TokenTV does not, and for the normal use there is no reason to. For completeness
   used percentage both move on every poll, so every frame differs and the dedupe never fires —
   measured at 12 distinct frames an hour, about 288 writes a day. Two settings bound it:
   - `countdown_seconds` (default 900) rounds the rendered countdown up to whole buckets, which
-    alone cuts a steady hour from 12 writes to 4.
+    alone cuts a steady hour from 12 writes to 4. Usage only; it has no effect on a watchlist.
   - `max_writes_per_hour` (default 6) is the real cap, and the one that holds while a percentage
-    is climbing. A style you apply from the dashboard is never throttled.
+    is climbing. It spaces writes rather than spending a quota, so the frame is never more than
+    one gap old — 10 minutes at the default. A style you apply from the dashboard, and a clock
+    that has lost our file, both bypass it.
+
+  The stock watchlist writes harder while it runs: it polls every 30 seconds **only while the
+  market is open**, and prices move on every poll, so the byte dedupe never fires. Measured at 120
+  writes an hour, about 780 per trading day across the 6.5-hour regular session. Outside the
+  session it falls back to 300-second polls on a frame that does not change, so the dedupe
+  absorbs it.
+
+  `stocks.json` accepts the same `max_writes_per_hour` key, but it **defaults to 0, meaning no
+  cap**. A capped ticker refreshes no faster than the cap — 6/hour is a ten-minute ticker, which
+  is not what a ticker is for — so the trade-off belongs to whoever owns the clock. If you do want
+  one, pick it from the refresh you can live with: 60/hour is a one-minute ticker and halves the
+  wear. For reference, uncapped is roughly 197 000 writes a year against the GD25Q32C's ~100 000
+  erase cycles per sector; whether that matters depends on whether the photo region wear-levels,
+  which this firmware does not document.
 
   Keep any other push frequency low too.
 

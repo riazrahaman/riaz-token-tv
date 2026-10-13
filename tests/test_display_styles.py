@@ -171,24 +171,31 @@ class FlashWearTests(unittest.TestCase):
         self.assertEqual(snapshot['accounts']['claude_a']['windows'][0]['resets_at'], original)
 
     def test_the_write_budget_bounds_uploads_even_when_every_frame_differs(self):
-        from token_tv.live import within_budget
-        writes, allowed = [], 0
+        from token_tv.device import may_write
+        interval, budget = 300, 6
+        allowed, last = [], None
         for poll in range(12):  # an hour of five-minute polls, every frame distinct
-            now = 1791900000 + poll * 300
-            if within_budget(writes, now, 6):
-                writes.append(now)
-                allowed += 1
-        self.assertEqual(allowed, 6)
-        # An hour later the budget has refilled.
-        self.assertTrue(within_budget(writes, 1791900000 + 7200, 6))
+            now = 1791900000 + poll * interval
+            if may_write(last, now, budget):
+                allowed.append(now)
+                last = now
+        self.assertEqual(len(allowed), budget)
+        # Spacing, not a quota: the writes must stay spread out, so the clock never freezes on a
+        # stale frame for the rest of the hour once the allowance is spent.
+        gaps = [b - a for a, b in zip(allowed, allowed[1:])]
+        self.assertLessEqual(max(gaps), 3600 / budget + interval)
 
     def test_a_zero_budget_means_no_cap(self):
-        from token_tv.live import within_budget
-        writes = []
+        from token_tv.device import may_write
+        last = None
         for poll in range(50):
             now = 1791900000 + poll * 10
-            self.assertTrue(within_budget(writes, now, 0))
-            writes.append(now)
+            self.assertTrue(may_write(last, now, 0))
+            last = now
+
+    def test_the_first_write_is_never_throttled(self):
+        from token_tv.device import may_write
+        self.assertTrue(may_write(None, 1791900000, 6))
 
 
 class QualityLadderTests(unittest.TestCase):

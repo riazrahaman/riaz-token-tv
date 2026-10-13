@@ -267,7 +267,8 @@ class PublishTests(unittest.TestCase):
         self.assertTrue(uploaded)
         self.assertEqual(len(device.uploads), 2)
         self.assertEqual(device.activations, 1)
-        self.assertEqual(device.captures, 1)
+        # The backup read, plus one album read on the activating cycle to notice a lost file.
+        self.assertEqual(device.captures, 2)
         self.assertTrue(backup.is_file())
         receipt = json.loads((self.state / 'display-receipt.json').read_text())
         self.assertEqual(receipt['at'], 102)

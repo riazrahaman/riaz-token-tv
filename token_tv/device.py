@@ -13,6 +13,18 @@ LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
 MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
 
 
+def may_write(last_write, now, budget):
+    """True when enough time has passed since `last_write` to spend another flash write.
+
+    Spacing, not a quota: counting writes inside a trailing hour lets a busy hour spend the whole
+    allowance in its first minutes and then freeze the clock until the window slides, which is
+    exactly when the reading matters. Spacing keeps the frame at most one gap old. `budget` is
+    writes per hour; 0 means no cap."""
+    if not budget:
+        return True
+    return last_write is None or (now - last_write) >= 3600 / budget
+
+
 class BackupMismatch(ValueError):
     """The saved original state belongs to a different kind of clock."""
 
