@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
 from token_tv.catalog import payload as theme_payload
-from token_tv.display import STYLES, render_frame, render_page, watch_payload
+from token_tv.display import STYLES, data_digest, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -199,10 +199,11 @@ def main():
     last_upload = None
     last_write = None
     last_style = None
+    last_data = None
     cycles = 0
 
     def cycle(refresh=True):
-        nonlocal original, active_file, last_upload, last_write, last_style, cycles
+        nonlocal original, active_file, last_upload, last_write, last_style, last_data, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
@@ -234,9 +235,12 @@ def main():
                         last_upload = None  # the clock lost it; the dedupe must not hide that
                 phase = "upload"
                 throttled = False
-                # A style the user just applied, and a clock showing nothing, both bypass the
-                # budget: the cap exists to spare flash, not to withhold the frame that matters.
-                forced = not refresh or lost or style != last_style
+                # The budget may defer a countdown that merely ticked, but never a real change:
+                # a new reading, a style you applied, or a clock showing nothing all go at once.
+                # The cap exists to spare flash, not to withhold the frame that matters.
+                changed = data_digest(snapshot)
+                data_changed = changed != last_data
+                forced = not refresh or lost or style != last_style or data_changed
                 if (name, digest) != last_upload:  # identical frames are not rewritten to flash
                     if forced or may_write(last_write, now, budget):
                         # Written only on upload, so the local copy stays a record of what the
@@ -244,6 +248,7 @@ def main():
                         (state_dir / name).write_bytes(image)
                         receipts.append(dict(device.upload(name, image), sha256=digest, **encoded))
                         last_upload, last_write, last_style = (name, digest), now, style
+                        last_data = changed
                     else:
                         throttled = True  # last_upload is left alone, so the newest frame retries
                 if due:
@@ -252,7 +257,8 @@ def main():
                     active_file = name
                 write_json(state_dir / "display-receipt.json",
                            {"at": int(time.time()), "style": style, "uploads": receipts,
-                            "throttled": throttled, "reasserted": due, "encoded": encoded})
+                            "throttled": throttled, "reasserted": due, "encoded": encoded,
+                            "data_changed": data_changed})
                 # Throttling is not a delivery failure: the style is already on the clock and the
                 # newest frame follows shortly. Reporting it would flash a false error.
                 if not throttled:

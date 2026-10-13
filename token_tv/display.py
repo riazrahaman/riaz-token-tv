@@ -3,6 +3,7 @@
 Hallmark · component: LCD overview · genre: instrument · scope: 240×240
 Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4 (self-review)
 """
+import hashlib
 import io
 import math
 import os
@@ -151,6 +152,22 @@ def quantise(snapshot, seconds):
             windows.append(window)
         accounts[key] = dict(row, windows=windows)
     return dict(snapshot, accounts=accounts)
+
+
+def data_digest(snapshot):
+    """A fingerprint of what the numbers say, ignoring how much time is left.
+
+    The publisher needs to tell a real change from the countdown ticking down. A changed reading
+    must reach the clock at once; a countdown that merely advanced can wait for the write budget.
+    Percentages are rounded to the same precision the faces print, so a change here means a change
+    somebody can actually see."""
+    rows = []
+    for key in sorted(snapshot.get('accounts', {})):
+        row = snapshot['accounts'][key]
+        windows = [(w.get('label'), None if w.get('used_percent') is None else round(w['used_percent'], 1))
+                   for w in row.get('windows', [])]
+        rows.append((key, row.get('status'), row.get('alias'), windows))
+    return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
 # Enough quality to stay legible on a 240×240 panel, stepping down only to fit the firmware's limit.

@@ -198,6 +198,24 @@ class FlashWearTests(unittest.TestCase):
         self.assertTrue(may_write(None, 1791900000, 6))
 
 
+    def test_a_changed_reading_is_never_deferred_but_a_ticking_countdown_is(self):
+        from token_tv.display import data_digest
+        now = 1791900000
+        base = self._snapshot(now, 8000, used=41.0)
+        # Only the countdown moved: the budget may defer this.
+        self.assertEqual(data_digest(base), data_digest(self._snapshot(now, 5000, used=41.0)))
+        # The reading itself moved: this must reach the clock at once.
+        self.assertNotEqual(data_digest(base), data_digest(self._snapshot(now, 8000, used=42.0)))
+
+    def test_a_changed_status_counts_as_a_changed_reading(self):
+        from token_tv.display import data_digest
+        now = 1791900000
+        base = self._snapshot(now, 8000)
+        stale = self._snapshot(now, 8000)
+        stale['accounts']['claude_a']['status'] = 'auth_required'
+        self.assertNotEqual(data_digest(base), data_digest(stale))
+
+
 class QualityLadderTests(unittest.TestCase):
     def test_a_busy_frame_steps_quality_down_until_it_fits(self):
         from token_tv.display import encode_jpeg

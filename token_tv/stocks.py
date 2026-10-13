@@ -33,7 +33,7 @@ QUOTE_URL = 'https://finnhub.io/api/v1/quote'
 STATUS_URL = 'https://finnhub.io/api/v1/stock/market-status'
 KEYCHAIN_SERVICE = 'token-tv-finnhub'
 DEFAULT_SYMBOLS = ('AAPL', 'MSFT', 'NVDA', 'TSLA')
-MAX_SYMBOLS = 6
+MAX_SYMBOLS = 4    # the face is laid out for four rows; see render_image
 MIN_INTERVAL = 15     # a hard floor: a bad config can never hammer the clock or the API
 MAX_INTERVAL = 3600
 OPEN_INTERVAL = 30    # seconds between refreshes while the US market is open
@@ -273,7 +273,7 @@ def render_image(rows, meta, style=DEFAULT_STYLE):
 
     _rule(draw, 34, palette)
     top, pitch = 40, 47
-    for index, row in enumerate(list(rows)[:4]):
+    for index, row in enumerate(list(rows)[:MAX_SYMBOLS]):
         y = top + index * pitch
         if index:
             _rule(draw, y - 7, palette)
