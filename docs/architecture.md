@@ -50,8 +50,9 @@ comes back into a common window shape of `label`, `used_percent` and `resets_at`
 the result in a thread-safe `UsageStore` that the poll loop and the web handler share.
 
 `display.py` owns the snapshot-to-picture step: the `pixel` face, the shared drawing helpers, the
-`STYLES` list, and `render_frame`. The other still faces live in `themes.py`, and `space.py`
-produces an animated GIF instead of a JPEG. `device.py` is the only module that talks to the clock;
+`STYLES` list, and `render_frame`. The other still faces live in `themes.py`, `space.py` produces
+an animated GIF instead of a JPEG, and `combo.py` draws AI usage and a stock watchlist on one
+frame. `device.py` is the only module that talks to the clock;
 it implements two firmware profiles and refuses to upload an oversized file.
 
 `live.py` ties it together: it runs the dashboard on `127.0.0.1:8787` and the publish loop that
@@ -91,12 +92,38 @@ while uploads keep succeeding into a photo nobody is showing. And `encode_jpeg` 
 (92 → 85 → 78, then chroma subsampling) until the frame fits the firmware's size limit, because a
 busy face can otherwise exceed it and stop updating with no visible error.
 
+## Both faces on one clock
+
+A 240×240 panel is about an inch and a half across, so seven rows of detail is the most it will
+take. The `combo` face therefore shows less per row than either dedicated face: no provider
+mascots, no reset countdown. It keeps the window label, because 75% of a five-hour window and 75%
+of a week are different facts and the percentage alone would mislead.
+
+It is also conditional. The market section is drawn only while the market is open and the feed is
+fresh; outside the session `combo` returns the full-size usage face, so the readable layout is what
+the clock shows for most of the day and no screen space goes to prices that stopped moving hours
+ago.
+
+The important part is ownership rather than drawing. Two publishers pointed at one clock fight over
+the same filename and over which saved original is authoritative. So the stock runner drops its
+`device_url` and becomes a pure feeder that only writes its snapshot, and the usage runner reads
+that file through `stocks_snapshot` and remains the single process that backs up, uploads to and
+re-asserts the device. The conflict is removed by construction, not by coordination.
+
+Prices move faster than `poll_seconds`, so `render_seconds` (default 30) re-draws the frame without
+re-reading any provider — the usage numbers on screen are redrawn every 30 seconds but are still
+only as fresh as the last provider poll. `data_digest` covers the watchlist, so a price move counts
+as changed data and is never deferred by the write budget.
+
+Consolidating two clocks onto one roughly doubles that device's flash write load, concentrated in
+the trading session.
+
 ## Honest edges
 
 **`stocks.py` is a near-duplicate of `live.py`.** It has its own config loader, `write_json`,
 `load_original`, `mismatch_message` and `publish`. A change to the publish path usually has to be
-made twice. Both publishers write the same filenames, so two of them pointed at one clock will
-fight; each needs its own device.
+made twice. Both publishers write the same filenames, so only one of them may own a given clock —
+see the feeder arrangement above.
 
 **Configuration is allowlisted in two places**, `sources.load_config` and `stocks.STOCK_KEYS`.
 A new key added to only one of them makes the other process exit at startup.

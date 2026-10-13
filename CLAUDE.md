@@ -49,10 +49,17 @@ sources.py ──▶ usage.py ──▶ state.py ──▶ display.py / themes.p
 **`stocks.py` is a parallel universe.** It is a near-duplicate of `live.py` with its own config
 loader, `write_json`, `load_original`, `mismatch_message` and `publish`. A change to the publish
 path usually has to be made twice. Both write the same filenames (`tokentv.jpg` / `tokentv.gif`),
-so two instances pointed at the *same* clock will fight; they are meant for one clock each.
+so two instances pointed at the *same* clock will fight over the file and over which saved
+`display-original.json` is authoritative.
+
+**One clock takes one owner.** To put both faces on a single clock, `stocks.json` drops
+`device_url` and becomes a pure feeder that only writes its snapshot; `live.py` reads that file via
+`stocks_snapshot` and stays the only process that backs up, uploads to and re-asserts the device.
+Do not solve this by coordinating two publishers — the ownership split is what makes it correct.
 
 **Config keys are allowlisted in two places.** `sources.load_config` and `stocks.STOCK_KEYS` both
-reject unknown fields with `Unsupported configuration field`. Adding a key without updating the
+reject unknown fields with `Unsupported configuration field`. Current extras: `countdown_seconds`,
+`max_writes_per_hour`, `reassert_cycles`, `stocks_snapshot`, `render_seconds`. Adding a key without updating the
 right allowlist makes the process exit at startup — which, under a supervisor, is a crash-loop.
 
 **The version lives in three files.** `token_tv/__init__.py`, `pyproject.toml` and `package.json`.
@@ -103,7 +110,10 @@ before — only the publishers pass them.
 
 `STYLES` lives in `display.py`. The `pixel` face is in `display.py`; `digital`, `neon`, `retro`,
 `hud` and `gameboy` are in `themes.py` (`RENDERERS`); `space` is in `space.py` and returns animated
-GIF bytes, so callers branch on a `GIF8` magic prefix to choose the filename. Adding a face is
+GIF bytes, so callers branch on a `GIF8` magic prefix to choose the filename. `combo` is in
+`combo.py` and is the one face that reads `snapshot['stocks']`; when the market is closed or the
+feed is stale it returns `render_pixel(snapshot)`, so it is deliberately byte-identical to `pixel`
+then — a test asserts exactly that, rather than that every style is distinct. Adding a face is
 documented in `docs/clock-faces.md`.
 
 ## Runtime state
