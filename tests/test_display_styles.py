@@ -1,6 +1,7 @@
 import copy
 import io
 import json
+import time
 import tempfile
 import threading
 import unittest
@@ -71,7 +72,10 @@ class DisplayStyleTests(unittest.TestCase):
     def test_all_styles_keep_same_payload_contract_and_unknown_states(self):
         sample = {'accounts': {'a': {'alias': 'CLAUDE A', 'provider': 'claude', 'status': 'auth_required', 'windows': []}}}
         frames = [render_page(sample, style=style) for style in STYLES]
-        self.assertEqual(len(set(frames)), len(STYLES))
+        # 'combo' deliberately renders the full-size pixel face when there is no open market, so it
+        # is the one style allowed to match another; every other pair must stay distinct.
+        self.assertEqual(len(set(frames)), len(STYLES) - 1)
+        self.assertEqual(render_page(sample, style='combo'), render_page(sample, style='pixel'))
         for status in ('ok', 'stale'):
             sample['accounts']['a'].update(status=status, windows=[{'label': 'WEEK', 'used_percent': 100, 'resets_at': None}])
             frames.extend(render_page(sample, style=style) for style in STYLES)
@@ -231,3 +235,71 @@ class QualityLadderTests(unittest.TestCase):
         data, meta = render_frame(FlashWearTests._snapshot(1791900000, 8000), style='retro', limit=10)
         self.assertFalse(meta['fits'])  # the caller reports it rather than the clock rejecting it
         self.assertTrue(data)
+
+
+class ComboFaceTests(unittest.TestCase):
+    """One clock showing both AI usage and a watchlist."""
+
+    @staticmethod
+    def _usage(now=1791900000):
+        return {'updated_at': now, 'accounts': {'c': {
+            'key': 'c', 'provider': 'claude', 'alias': 'CLAUDE A', 'status': 'ok',
+            'fetched_at': now, 'last_success_at': now,
+            'windows': [{'label': 'WEEK', 'used_percent': 61.0, 'resets_at': now + 7000}]}}}
+
+    @staticmethod
+    def _feed(now, is_open=True, price=343.0):
+        return {'updated_at': now, 'source': 'FINNHUB',
+                'market': {'is_open': is_open, 'session': 'regular'},
+                'symbols': [{'symbol': 'AAPL', 'price': price, 'change': 1.0, 'percent': 0.3,
+                             'previous_close': price - 1, 'at': now}]}
+
+    def test_the_market_section_only_appears_while_the_market_is_open(self):
+        from token_tv.combo import market_rows
+        now = time.time()
+        self.assertIsNotNone(market_rows(dict(self._usage(), stocks=self._feed(now))))
+        self.assertIsNone(market_rows(dict(self._usage(), stocks=self._feed(now, is_open=False))))
+
+    def test_a_stale_or_missing_feed_falls_back_rather_than_showing_old_prices(self):
+        from token_tv.combo import market_rows
+        now = time.time()
+        self.assertIsNone(market_rows(self._usage()))                       # no feed at all
+        self.assertIsNone(market_rows(dict(self._usage(), stocks={})))      # empty feed
+        stale = self._feed(now - 4000)                                      # well past STALE_AFTER
+        self.assertIsNone(market_rows(dict(self._usage(), stocks=stale)))
+
+    def test_closed_market_renders_the_full_size_usage_face(self):
+        now = time.time()
+        closed = dict(self._usage(), stocks=self._feed(now, is_open=False))
+        self.assertEqual(render_page(closed, style='combo'), render_page(closed, style='pixel'))
+        open_ = dict(self._usage(), stocks=self._feed(now))
+        self.assertNotEqual(render_page(open_, style='combo'), render_page(open_, style='pixel'))
+
+    def test_a_price_move_counts_as_changed_data_so_the_budget_cannot_defer_it(self):
+        from token_tv.display import data_digest
+        now = time.time()
+        a = dict(self._usage(), stocks=self._feed(now, price=343.0))
+        b = dict(self._usage(), stocks=self._feed(now, price=343.5))
+        self.assertNotEqual(data_digest(a), data_digest(b))
+        self.assertEqual(data_digest(a), data_digest(dict(self._usage(), stocks=self._feed(now, price=343.0))))
+
+    def test_a_broken_feed_file_never_stops_the_usage_face_publishing(self):
+        from token_tv.live import read_feed
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'snapshot.json'
+            self.assertIsNone(read_feed(None))
+            self.assertIsNone(read_feed(path))              # absent
+            path.write_text('{not json')
+            self.assertIsNone(read_feed(path))              # unreadable
+            path.write_text('[]')
+            self.assertIsNone(read_feed(path))              # wrong shape
+            path.write_text(json.dumps({'market': {'is_open': False}}))
+            self.assertEqual(read_feed(path), {'market': {'is_open': False}})
+
+    def test_the_combo_frame_fits_the_firmware_limit(self):
+        from token_tv.device import FILES, LIMITS
+        now = time.time()
+        frame = render_page(dict(self._usage(), stocks=self._feed(now)), style='combo',
+                            limit=LIMITS[FILES[0]][0])
+        self.assertLessEqual(len(frame), LIMITS[FILES[0]][0])
+        self.assertEqual(Image.open(io.BytesIO(frame)).size, (240, 240))

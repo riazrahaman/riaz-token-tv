@@ -3,6 +3,8 @@
   "countdown_seconds": 900,
   "max_writes_per_hour": 6,
   "reassert_cycles": 12,
+  "stocks_snapshot": "~/.config/token-tv/state-stocks/snapshot.json",
+  "render_seconds": 30,
   "accounts": [
     {
       "key": "claude_a",

@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-10-13
+
+A `combo` face, so one clock can carry both AI usage and a stock watchlist.
+
+### Added
+
+- A `combo` display style that draws three AI usage rows and four watchlist rows on one 240×240
+  frame. It shows each account's code, a usage gauge, the percentage and the window that
+  percentage is of, then each symbol with its price and day change.
+- `stocks_snapshot`, the path to the stock feeder's own snapshot file. The publisher reads it and
+  draws the market section from it, so the feeder never touches the clock.
+- `render_seconds` (default 30 when a feed is configured), a short re-draw tick. Prices move faster
+  than `poll_seconds`, and this re-renders the frame without re-reading any provider.
+
+### Changed
+
+- **One clock, one owner.** Point `stocks.json` at no `device_url` and it becomes a pure feeder,
+  writing only its snapshot. `live.py` is then the single process that backs up, uploads to and
+  re-asserts the clock, which removes the two-publishers-one-device problem by construction rather
+  than by coordination. Two publishers on one clock previously fought over `tokentv.jpg` and over
+  which `display-original.json` was authoritative.
+- The market section only appears while the market is open and the feed is fresh. Outside the
+  session `combo` renders the full-size usage face, so the readable layout is what the clock shows
+  for most of the day and no screen space is spent on prices that stopped moving hours ago.
+- `data_digest` now covers the watchlist, so a price move counts as changed data and is never
+  deferred by the write budget.
+- A dashboard-initiated publish is identified explicitly rather than inferred from whether the
+  cycle refreshed, so the new fast re-draw tick is not mistaken for a user action.
+
+### Notes
+
+- The composite drops the provider mascots and the reset countdown; at this row height they would
+  not be legible. The window label is kept, because 75% of a five-hour window and 75% of a week are
+  different facts.
+- Consolidating two clocks onto one roughly doubles that device's flash write load.
+
 ## [0.2.0] — 2026-10-13
 
 The clock keeps every frame in flash, and the only guard against rewriting it was a check for
@@ -62,5 +98,6 @@ that actually changed.
 
 First tagged release.
 
+[0.3.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.3.0
 [0.2.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.2.0
 [0.1.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.1.0

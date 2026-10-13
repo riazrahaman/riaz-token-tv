@@ -23,7 +23,7 @@ RULE = '#202730'
 PROVIDER_INK = {'claude': '#d68e68', 'ollama': '#b48cf2', 'antigravity': '#cbd1d7'}
 FONT_MAIN = '/usr/share/fonts/truetype/dejavu/DejaVuSans'
 FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
-STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy')
+STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo')
 # Gauge-only levels; labels/percentages always use TEXT, logos retain provider ink.
 GAUGE_LEVELS = ((50, '#76a99a'), (80, '#93c9b9'), (90, '#d1b275'), (101, '#d8877e'))
 STATUS = {'loading': 'WAIT', 'auth_required': 'LOGIN', 'identity_mismatch': 'CHECK',
@@ -167,6 +167,12 @@ def data_digest(snapshot):
         windows = [(w.get('label'), None if w.get('used_percent') is None else round(w['used_percent'], 1))
                    for w in row.get('windows', [])]
         rows.append((key, row.get('status'), row.get('alias'), windows))
+    stocks = snapshot.get('stocks')
+    if isinstance(stocks, dict):
+        # A price move is a changed reading too, so it must not be deferred by the write budget.
+        rows.append(((stocks.get('market') or {}).get('is_open'),
+                     [(s.get('symbol'), s.get('price'), s.get('percent'))
+                      for s in stocks.get('symbols') or [] if isinstance(s, dict)]))
     return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
@@ -345,6 +351,11 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
         from token_tv.space import render_space
         image = render_space(snapshot)
         return image, {'fits': not limit or len(image) <= limit}
+    if style == 'combo':  # AI usage plus the watchlist, on one clock
+        from token_tv.combo import render_combo
+        data, quality, subsampling = encode_jpeg(render_combo(snapshot), limit)
+        return data, {'quality': quality, 'subsampling': subsampling,
+                      'fits': not limit or len(data) <= limit}
     from token_tv.themes import RENDERERS
     renderer = {'pixel': render_pixel, **RENDERERS}[style]
     data, quality, subsampling = encode_jpeg(renderer(snapshot), limit)

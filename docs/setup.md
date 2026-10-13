@@ -120,6 +120,22 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
 
   `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
   defaults to `0`: a cap also throttles how fast the ticker refreshes.
+
+### Both faces on one clock
+
+To put AI usage and the watchlist on a single clock, make the stock runner a feeder and let the
+usage runner own the device:
+
+1. Remove `device_url` from `stocks.json`. The runner then only writes its snapshot, and never
+   contacts a clock. Two publishers pointed at one clock fight over the same filename and over
+   which saved original is authoritative, so exactly one process must own the device.
+2. In `config.json`, add `"stocks_snapshot": "~/.config/token-tv/state-stocks/snapshot.json"` and
+   set `"display_style": "combo"`.
+3. Optionally set `render_seconds` (default 30). Prices move faster than `poll_seconds`, and this
+   re-draws the frame without re-reading any provider.
+
+The market section appears only while the market is open and the feed is fresh. Outside the
+session, `combo` renders the ordinary full-size usage face.
 - To give the clock back its original photo and theme, stop TokenTV and run
   `token-tv run --restore-display`.
 - **macOS (untested on a real Mac):** Claude Code keeps its login in the Keychain, so TokenTV

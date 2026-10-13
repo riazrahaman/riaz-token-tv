@@ -17,6 +17,21 @@ from token_tv.sources import load_config
 from token_tv.state import UsageStore
 
 
+def read_feed(path):
+    """The stock feeder's own snapshot, or None.
+
+    The feeder runs with no clock configured, so it only writes this file and the publisher here
+    stays the single owner of the device. Any problem reading it leaves the market section off the
+    face: a missing feed must never stop the usage face from publishing."""
+    if not path:
+        return None
+    try:
+        data = json.loads(Path(path).expanduser().read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def write_json(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -193,6 +208,10 @@ def main():
     # Re-assert the photo theme periodically: a reboot or a visit to the clock's own web UI drops
     # it back to its theme, and `activate` only ran when the file name changed, i.e. once.
     reassert_after = max(1, int(config.get("reassert_cycles", 12)))
+    # The combo face reads the stock feeder's snapshot; prices move faster than poll_seconds, so a
+    # short render tick re-draws without re-reading any provider.
+    feed_path = config.get("stocks_snapshot")
+    render_seconds = max(0, int(config.get("render_seconds", 30 if feed_path else 0)))
     stopping = threading.Event()
     original = None
     active_file = None
@@ -202,11 +221,14 @@ def main():
     last_data = None
     cycles = 0
 
-    def cycle(refresh=True):
+    def cycle(refresh=True, user=False):
         nonlocal original, active_file, last_upload, last_write, last_style, last_data, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
+        feed = read_feed(feed_path)
+        if feed is not None:
+            snapshot['stocks'] = feed
         style = preferences.snapshot()['style']
         if not args.once and device:
             receipts = []
@@ -240,7 +262,7 @@ def main():
                 # The cap exists to spare flash, not to withhold the frame that matters.
                 changed = data_digest(snapshot)
                 data_changed = changed != last_data
-                forced = not refresh or lost or style != last_style or data_changed
+                forced = user or lost or style != last_style or data_changed
                 if (name, digest) != last_upload:  # identical frames are not rewritten to flash
                     if forced or may_write(last_write, now, budget):
                         # Written only on upload, so the local copy stays a record of what the
@@ -281,18 +303,22 @@ def main():
         return
 
     def poll():
-        next_refresh = 0
+        next_refresh, user = 0, False
         while not stopping.is_set():
             preferences.changed.clear()
             refresh = time.monotonic() >= next_refresh
             try:
-                cycle(refresh)
+                cycle(refresh, user)
             except Exception:
                 # Never serialize exception text, which may include auth material.
                 print("TokenTV poll failed; retained previous snapshot.", flush=True)
             if refresh:
                 next_refresh = time.monotonic() + interval
-            preferences.changed.wait(max(0, next_refresh - time.monotonic()))
+            wait = max(0, next_refresh - time.monotonic())
+            if render_seconds:  # re-draw the feed without re-reading any provider
+                wait = min(wait, render_seconds)
+            # wait() reports whether the dashboard asked for this pass, which bypasses the budget.
+            user = preferences.changed.wait(wait)
 
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
