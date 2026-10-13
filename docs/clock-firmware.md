@@ -183,6 +183,19 @@ TokenTV does not, and for the normal use there is no reason to. For completeness
 
   Keep any other push frequency low too.
 
+## Two behaviours worth knowing before you automate the album
+
+- **`GET /photo/delete?name=` re-enables every remaining photo.** Observed on an SD_PRO unit: an
+  album with four disabled files and one enabled one came back from a single delete with *all*
+  remaining files enabled, so the clock began rotating through them instead of showing the one
+  that was selected. Whatever the firmware does to the per-file state on delete, it does not
+  preserve it. Re-assert the selection with `/photo/toggle?name=&state=0` immediately afterwards,
+  or let the publisher's `reassert_cycles` watchdog pick it up on its next pass.
+- **Settings are not in the filesystem.** The images live in LittleFS, which is copy-on-write and
+  wear-levelled, but `/api/set` writes land in the ESP8266's emulated EEPROM: one 4 KB sector,
+  rewritten whole on every commit, no wear levelling, and it holds the Wi-Fi credentials. Treat
+  those keys as occasional settings, never as somewhere to put changing data.
+
 ## Scope
 
 TokenTV never flashes firmware, and it only ever writes its own `tokentv.jpg` / `tokentv.gif` plus
