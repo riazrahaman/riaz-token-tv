@@ -108,6 +108,18 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
 - The config holds aliases, emails and CLI home paths only. Never put passwords, API keys or
   tokens in it.
 - Add `"device_url": "http://<clock-ip>"` to drive the clock.
+- Optional keys that bound how often the clock's flash is rewritten. All have defaults, so a
+  config that omits them behaves sensibly; see [the flash-wear notes](clock-firmware.md) for the
+  measurements behind them.
+
+  | Key | Default | What it does |
+  | --- | --- | --- |
+  | `countdown_seconds` | `900` | Rounds the displayed countdown up to whole buckets, so it changes on a bucket edge rather than every minute. |
+  | `max_writes_per_hour` | `6` | Spaces uploads. A reading that actually changed is never deferred; only a ticking countdown waits. `0` means no cap. |
+  | `reassert_cycles` | `12` | How often to re-select the photo theme, so a clock that rebooted goes back to showing TokenTV. |
+
+  `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
+  defaults to `0`: a cap also throttles how fast the ticker refreshes.
 - To give the clock back its original photo and theme, stop TokenTV and run
   `token-tv run --restore-display`.
 - **macOS (untested on a real Mac):** Claude Code keeps its login in the Keychain, so TokenTV
