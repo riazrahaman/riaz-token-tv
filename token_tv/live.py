@@ -9,12 +9,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import FILES, BackupMismatch, open_display
+from token_tv.device import FILES, LIMITS, BackupMismatch, open_display
 from token_tv.catalog import payload as theme_payload
-from token_tv.display import STYLES, render_page, watch_payload
+from token_tv.display import STYLES, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
+
+
+def within_budget(writes, now, budget):
+    """True when another upload fits the trailing hour, after dropping the writes that aged out.
+
+    `writes` is trimmed in place. A busy five-hour window changes the frame on every poll, so the
+    byte dedupe cannot bound flash wear on its own; this does. A budget of 0 means no cap."""
+    writes[:] = [t for t in writes if now - t < 3600]
+    return not budget or len(writes) < budget
 
 
 def write_json(path, data):
@@ -76,7 +85,7 @@ class DisplayPreferences:
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
 
 
-def handler(store, preferences=None):
+def handler(store, preferences=None, quantum=0):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -102,7 +111,8 @@ def handler(store, preferences=None):
                 if style not in STYLES:
                     self.send_error(400, 'Unknown display style')
                     return
-                body = render_page(snapshot, int(path[7]), style)
+                # The same bucketing as the published frame, so the preview matches the clock.
+                body = render_page(snapshot, int(path[7]), style, quantum)
                 content_type = "image/gif" if body[:4] == b"GIF8" else "image/jpeg"
             elif path == '/themes':
                 body = json.dumps(theme_payload()).encode()
@@ -185,13 +195,27 @@ def main():
     store = UsageStore(config["accounts"])
     preferences = DisplayPreferences(args.config, config)
     interval = max(60, int(config.get("poll_seconds", 300)))
+    # A minute-level countdown makes every frame distinct, so the byte dedupe never fires while a
+    # short window leads. Bucket the countdown, and cap the writes the loop may spend per hour.
+    quantum = max(0, int(config.get("countdown_seconds", 900)))
+    budget = max(0, int(config.get("max_writes_per_hour", 6)))
+    # Re-assert the photo theme periodically: a reboot or a visit to the clock's own web UI drops
+    # it back to its theme, and `activate` only ran when the file name changed, i.e. once.
+    reassert_after = max(1, int(config.get("reassert_cycles", 12)))
     stopping = threading.Event()
     original = None
     active_file = None
     last_upload = None
+    writes = []  # upload timestamps inside the trailing hour
+    cycles = 0
+
+    def spend(now, forced):
+        """A style the user just applied always goes through, so the dashboard never reports a
+        change as delivered that the clock never received."""
+        return True if forced else within_budget(writes, now, budget)
 
     def cycle(refresh=True):
-        nonlocal original, active_file, last_upload
+        nonlocal original, active_file, last_upload, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
@@ -203,19 +227,39 @@ def main():
                 if original is None:
                     original = load_original(device, backup_path)
                 phase = "upload"
-                image = render_page(snapshot, 0, style)
+                now = time.time()
+                cycles += 1
+                image, encoded = render_frame(snapshot, 0, style, quantum,
+                                              LIMITS[FILES[0]][0] if style != 'space' else LIMITS[FILES[1]][0])
                 name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
+                (state_dir / name).write_bytes(image)  # the local frame always reflects the latest render
+                throttled = uploaded = False
                 if (name, digest) != last_upload:  # identical frames are not rewritten to flash
-                    (state_dir / name).write_bytes(image)
-                    receipts.append(dict(device.upload(name, image), sha256=digest))
-                    last_upload = (name, digest)
-                if active_file != name:
+                    if spend(now, forced=not refresh):
+                        receipts.append(dict(device.upload(name, image), sha256=digest, **encoded))
+                        writes.append(now)
+                        last_upload = (name, digest)  # left alone when throttled, so it retries
+                        uploaded = True
+                    else:
+                        throttled = True
+                # Re-assert the theme periodically, not only when the file name changes.
+                due = active_file != name or cycles % reassert_after == 0
+                if due:
                     phase = "activate"
+                    # `activate` re-reads the clock and only writes what is wrong, so in steady
+                    # state this is a handful of GETs. Ultra clocks report no file list.
+                    if not uploaded:  # an upload this cycle already put the file back
+                        files = device.capture().get("files")
+                        if files is not None and not any(f["name"] == name for f in files):
+                            last_upload = None  # the clock lost it; the dedupe must not hide that
                     device.activate(original, name)
                     active_file = name
-                write_json(state_dir / "display-receipt.json", {"at": int(time.time()), "style": style, "uploads": receipts})
-                preferences.delivered(style, True)
+                write_json(state_dir / "display-receipt.json",
+                           {"at": int(time.time()), "style": style, "uploads": receipts,
+                            "throttled": throttled, "reasserted": due, "encoded": encoded,
+                            "writes_this_hour": len(writes)})
+                preferences.delivered(style, not throttled)
             except (OSError, ValueError, KeyError) as error:
                 if isinstance(error, BackupMismatch):
                     print(mismatch_message(error, backup_path), flush=True)
@@ -250,7 +294,7 @@ def main():
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

@@ -46,7 +46,8 @@ def scoped_env(provider, root):
 
 def load_config(path):
     data = json.loads(Path(path).read_text())
-    if set(data) - {"accounts", "device_url", "poll_seconds", "font", "display_style"}:
+    if set(data) - {"accounts", "device_url", "poll_seconds", "font", "display_style",
+                    "countdown_seconds", "max_writes_per_hour", "reassert_cycles"}:
         raise ValueError("Unsupported configuration field")
     if data.get('display_style', 'pixel') not in STYLES:
         raise ValueError('Unknown display style')

@@ -129,6 +129,53 @@ def account_label(row):
     return row['alias'] if row['alias'].startswith(prefix) else prefix + 'A'
 
 
+def quantise(snapshot, seconds):
+    """A copy whose countdowns are rounded up to whole `seconds` buckets, so the clock face only
+    changes when the real remaining time crosses a bucket edge.
+
+    The published frame is deduplicated by its bytes, and a minute-level countdown makes every
+    frame distinct, so a five-minute poll rewrites the flash twelve times an hour. Rounding up
+    matches `time_left`'s own `+59`. Missing and elapsed resets are left alone: a dash must never
+    become a number, and a window that has already reset is not pushed back into the future."""
+    if not seconds or seconds <= 0:
+        return snapshot
+    now = time.time()
+    accounts = {}
+    for key, row in snapshot.get('accounts', {}).items():
+        windows = []
+        for window in row.get('windows', []):
+            reset = window.get('resets_at')
+            remaining = (reset - now) if reset else 0
+            if reset and remaining > 0:
+                window = dict(window, resets_at=now + math.ceil(remaining / seconds) * seconds)
+            windows.append(window)
+        accounts[key] = dict(row, windows=windows)
+    return dict(snapshot, accounts=accounts)
+
+
+# Enough quality to stay legible on a 240×240 panel, stepping down only to fit the firmware's limit.
+JPEG_QUALITY = (92, 85, 78)
+
+
+def encode_jpeg(image, limit=0):
+    """JPEG bytes that fit `limit`, trading quality down and then chroma before giving up.
+
+    The firmware rejects an oversized file, and a busy face can exceed the limit on its worst
+    frame, so a fixed quality makes the clock silently stop updating. Returns (bytes, quality,
+    subsampling); the caller records them in its receipt. Without a limit the first setting wins,
+    which is the historic behaviour."""
+    tried = []
+    for subsampling in (0, 2):
+        for quality in JPEG_QUALITY:
+            buffer = io.BytesIO()
+            image.save(buffer, format='JPEG', quality=quality, subsampling=subsampling)
+            data = buffer.getvalue()
+            if not limit or len(data) <= limit:
+                return data, quality, subsampling
+            tried.append((data, quality, subsampling))
+    return min(tried, key=lambda t: len(t[0]))  # too big even at the floor; the caller reports it
+
+
 def quota_period(value):
     return {'WEEK': 'WK', 'BUDGET': 'BUD'}.get(value['label'], value['label'])
 
@@ -261,21 +308,31 @@ def render_pixel(snapshot):
     return image
 
 
-def render_page(snapshot, page=0, style='pixel'):
+def render_page(snapshot, page=0, style='pixel', quantum=0, limit=0):
+    """`quantum` rounds countdowns up to whole seconds-buckets and `limit` caps the JPEG size;
+    both default to off so demos, scripts and the doc images render exactly as before."""
+    return render_frame(snapshot, page, style, quantum, limit)[0]
+
+
+def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
+    """(bytes, meta) for publishers that record how the frame was encoded. `meta` carries the
+    chosen `quality`/`subsampling` for a JPEG, and `fits` is False when even the floor was too
+    big — the caller reports that rather than letting the firmware reject it silently."""
     # Keep the former second-frame URL usable while publishing only one LCD image.
     if page not in (0, 1):
         raise IndexError('Unknown frame')
     if style not in STYLES:
         raise ValueError('Unknown display style')
+    snapshot = quantise(snapshot, quantum)
     if style == 'space':  # animated: returns GIF bytes
         from token_tv.space import render_space
-        return render_space(snapshot)
+        image = render_space(snapshot)
+        return image, {'fits': not limit or len(image) <= limit}
     from token_tv.themes import RENDERERS
     renderer = {'pixel': render_pixel, **RENDERERS}[style]
-    image = renderer(snapshot)
-    buffer = io.BytesIO()
-    image.save(buffer, format='JPEG', quality=92, subsampling=0)
-    return buffer.getvalue()
+    data, quality, subsampling = encode_jpeg(renderer(snapshot), limit)
+    return data, {'quality': quality, 'subsampling': subsampling,
+                  'fits': not limit or len(data) <= limit}
 
 
 HTML = '''<!doctype html>

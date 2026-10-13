@@ -121,3 +121,88 @@ class ConfiguredServicesOnlyTest(unittest.TestCase):
         for style in STYLES:
             self.assertTrue(render_page(data, style=style))  # every face copes with one row
         self.assertEqual(len(overview_rows({'accounts': {}})), 3)  # empty config keeps the placeholders
+
+
+class FlashWearTests(unittest.TestCase):
+    """The clock stores frames in flash, so the publisher must bound how often it rewrites them."""
+
+    @staticmethod
+    def _snapshot(now, remaining, used=41.0):
+        accounts = {}
+        for offset, provider in enumerate(('claude', 'ollama', 'antigravity')):
+            accounts[provider + '_a'] = {
+                'key': provider + '_a', 'provider': provider, 'alias': provider.upper() + ' A',
+                'status': 'ok', 'fetched_at': now, 'last_success_at': now,
+                'windows': [{'label': '5H', 'used_percent': used + offset,
+                             'resets_at': None if remaining is None else now + remaining}]}
+        return {'updated_at': now, 'accounts': accounts}
+
+    def test_bucketing_the_countdown_stops_a_frame_changing_every_poll(self):
+        from unittest import mock
+        base = 1791900000
+        for style in STYLES:
+            if style == 'space':  # its own 30-minute seed bucket already dedupes it
+                continue
+            frames = {0: set(), 900: set()}
+            for quantum in frames:
+                for poll in range(12):  # one hour at the default five-minute poll
+                    now = base + poll * 300
+                    with mock.patch('time.time', lambda now=now: now):
+                        frames[quantum].add(render_page(self._snapshot(now, 8000 - poll * 300),
+                                                        style=style, quantum=quantum))
+            self.assertEqual(len(frames[0]), 12, style)  # a minute-level countdown never dedupes
+            self.assertLessEqual(len(frames[900]), 4, style)
+
+    def test_bucketing_leaves_missing_and_elapsed_resets_alone(self):
+        from token_tv.display import quantise
+        now = 1791900000
+        for remaining in (None, -600):
+            snapshot = self._snapshot(now, remaining)
+            before = snapshot['accounts']['claude_a']['windows'][0]['resets_at']
+            after = quantise(snapshot, 900)['accounts']['claude_a']['windows'][0]['resets_at']
+            self.assertEqual(before, after)  # a dash must never become a number
+
+    def test_bucketing_does_not_mutate_the_snapshot_the_dashboard_serves(self):
+        from token_tv.display import quantise
+        now = 1791900000
+        snapshot = self._snapshot(now, 1000)
+        original = snapshot['accounts']['claude_a']['windows'][0]['resets_at']
+        quantise(snapshot, 900)
+        self.assertEqual(snapshot['accounts']['claude_a']['windows'][0]['resets_at'], original)
+
+    def test_the_write_budget_bounds_uploads_even_when_every_frame_differs(self):
+        from token_tv.live import within_budget
+        writes, allowed = [], 0
+        for poll in range(12):  # an hour of five-minute polls, every frame distinct
+            now = 1791900000 + poll * 300
+            if within_budget(writes, now, 6):
+                writes.append(now)
+                allowed += 1
+        self.assertEqual(allowed, 6)
+        # An hour later the budget has refilled.
+        self.assertTrue(within_budget(writes, 1791900000 + 7200, 6))
+
+    def test_a_zero_budget_means_no_cap(self):
+        from token_tv.live import within_budget
+        writes = []
+        for poll in range(50):
+            now = 1791900000 + poll * 10
+            self.assertTrue(within_budget(writes, now, 0))
+            writes.append(now)
+
+
+class QualityLadderTests(unittest.TestCase):
+    def test_a_busy_frame_steps_quality_down_until_it_fits(self):
+        from token_tv.display import encode_jpeg
+        from token_tv.themes import RENDERERS
+        image = RENDERERS['retro'](FlashWearTests._snapshot(1791900000, 8000, used=88.0))
+        full, quality, _ = encode_jpeg(image, 0)
+        tight, lower, _ = encode_jpeg(image, len(full) - 2000)
+        self.assertLessEqual(len(tight), len(full) - 2000)
+        self.assertLess(lower, quality)
+
+    def test_an_impossible_limit_returns_the_smallest_attempt_and_reports_it(self):
+        from token_tv.display import render_frame
+        data, meta = render_frame(FlashWearTests._snapshot(1791900000, 8000), style='retro', limit=10)
+        self.assertFalse(meta['fits'])  # the caller reports it rather than the clock rejecting it
+        self.assertTrue(data)

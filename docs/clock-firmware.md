@@ -156,8 +156,16 @@ TokenTV does not, and for the normal use there is no reason to. For completeness
   sample photos and themes.
 - Restoring from the vendor `.bin` files restores a bootable clock but **not** the filesystem
   contents, because those files are bootloader plus application only.
-- Frequent image writes wear the flash. TokenTV already skips a re-upload when the rendered bytes
-  are unchanged; keep any other push frequency low too.
+- Frequent image writes wear the flash. TokenTV skips a re-upload when the rendered bytes are
+  unchanged, but that dedupe alone is not enough: when a short window leads, the countdown and the
+  used percentage both move on every poll, so every frame differs and the dedupe never fires —
+  measured at 12 distinct frames an hour, about 288 writes a day. Two settings bound it:
+  - `countdown_seconds` (default 900) rounds the rendered countdown up to whole buckets, which
+    alone cuts a steady hour from 12 writes to 4.
+  - `max_writes_per_hour` (default 6) is the real cap, and the one that holds while a percentage
+    is climbing. A style you apply from the dashboard is never throttled.
+
+  Keep any other push frequency low too.
 
 ## Scope
 

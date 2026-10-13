@@ -26,8 +26,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import FILES, BackupMismatch, open_display
-from token_tv.display import pixel_text
+from token_tv.device import FILES, LIMITS, BackupMismatch, open_display
+from token_tv.display import encode_jpeg, pixel_text
 
 QUOTE_URL = 'https://finnhub.io/api/v1/quote'
 STATUS_URL = 'https://finnhub.io/api/v1/stock/market-status'
@@ -295,11 +295,12 @@ def render_image(rows, meta, style=DEFAULT_STYLE):
     return image
 
 
-def render_watchlist(rows, meta, style=DEFAULT_STYLE):
-    """The 240×240 JPEG bytes for a watchlist frame."""
-    buffer = io.BytesIO()
-    render_image(rows, meta, style=style).save(buffer, format='JPEG', quality=92, subsampling=0)
-    return buffer.getvalue()
+def render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=0):
+    """The 240×240 JPEG bytes for a watchlist frame.
+
+    A watchlist is the busiest face TokenTV draws, so it sits closest to the firmware's size
+    limit; `limit` steps the quality down rather than letting the clock reject the upload."""
+    return encode_jpeg(render_image(rows, meta, style=style), limit)[0]
 
 
 def snapshot_payload(rows, meta):
@@ -312,7 +313,7 @@ def snapshot_payload(rows, meta):
 # ---------------------------------------------------------------------------
 # Config (its own strict loader; never ``sources.load_config``)
 # ---------------------------------------------------------------------------
-STOCK_KEYS = ('device_url', 'symbols', 'interval', 'palette', 'state_dir')
+STOCK_KEYS = ('device_url', 'symbols', 'interval', 'palette', 'state_dir', 'reassert_cycles')
 PALETTE_ROLES = ('background', 'text', 'rise', 'fall', 'dim')
 CREDENTIAL_WORDS = ('token', 'api_key', 'apikey', 'secret', 'password', 'credential', 'auth', 'key')
 SYMBOL_PATTERN = re.compile(r'[A-Z][A-Z0-9.\-]{0,9}')
@@ -423,11 +424,12 @@ def mismatch_message(error, backup_path):
 
 
 def publish(device, image, state_dir, backup_path, original, active_file, last_upload, *,
-            style=DEFAULT_STYLE, now=None):
+            style=DEFAULT_STYLE, now=None, reassert=False):
     """Upload only new bytes, activate only a new file, and write a receipt.
 
     Returns (original, active_file, last_upload, uploaded). A ``BackupMismatch`` is re-raised so
-    the caller can stop without touching the clock.
+    the caller can stop without touching the clock. `reassert` re-selects the photo theme even
+    when the file name is unchanged, for a clock that rebooted back to its own theme.
     """
     state_dir = Path(state_dir)
     at = int(now if now is not None else time.time())
@@ -446,12 +448,17 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
             receipts.append(dict(device.upload(name, image), sha256=digest))
             last_upload = (name, digest)
             uploaded = True
-        if active_file != name:
+        reasserted = active_file != name or reassert
+        if reasserted:
             phase = 'activate'
+            if not uploaded:  # an upload this cycle already put the file back
+                files = device.capture().get('files')
+                if files is not None and not any(f['name'] == name for f in files):
+                    last_upload = None  # the clock lost our file; the dedupe must not hide that
             device.activate(original, name)
             active_file = name
         write_json(state_dir / 'display-receipt.json',
-                   {'at': at, 'style': style, 'uploads': receipts})
+                   {'at': at, 'style': style, 'uploads': receipts, 'reasserted': reasserted})
     except BackupMismatch:
         write_json(state_dir / 'display-receipt.json',
                    {'at': at, 'style': style, 'status': 'error', 'phase': phase, 'uploads': receipts})
@@ -522,10 +529,15 @@ def main(argv=None):
     interval = max(MIN_INTERVAL, int(interval))
 
     original = active_file = last_upload = None
+    # Re-assert the photo theme periodically: a reboot or a visit to the clock's own web UI drops
+    # it back to its theme, and `activate` only ran when the file name changed, i.e. once.
+    reassert_after = max(1, int(config.get('reassert_cycles', 12)))
     status, failures = {}, 0
+    cycles = 0
     try:
         while True:
             now = time.time()
+            cycles += 1
             try:
                 status = fetch_market_status(token)
             except StockError:
@@ -535,12 +547,13 @@ def main(argv=None):
             is_open = _status_open(status)
             meta = {'is_open': is_open, 'session': status.get('session'), 'source': 'FINNHUB',
                     'now': now, 'palette': config.get('palette')}
-            image = render_watchlist(rows, meta, style=DEFAULT_STYLE)
+            image = render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=LIMITS[FILES[0]][0])
             write_json(state_dir / 'snapshot.json', snapshot_payload(rows, meta))
             if device:
                 try:
                     original, active_file, last_upload, _ = publish(
-                        device, image, state_dir, backup_path, original, active_file, last_upload, now=now)
+                        device, image, state_dir, backup_path, original, active_file, last_upload,
+                        now=now, reassert=cycles % reassert_after == 0)
                 except BackupMismatch as error:
                     print(mismatch_message(error, backup_path), flush=True)
                     return 1

@@ -1,5 +1,8 @@
 {
   "poll_seconds": 300,
+  "countdown_seconds": 900,
+  "max_writes_per_hour": 6,
+  "reassert_cycles": 12,
   "accounts": [
     {
       "key": "claude_a",
