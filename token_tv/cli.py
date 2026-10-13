@@ -27,7 +27,7 @@ PROVIDERS = {
 
 # Antigravity's CLI keeps its login in the OS keychain and reports no email, so this address is
 # a label only: it is never matched against anything the provider prints (see docs/setup.md).
-ANTIGRAVITY_EMAIL = 'rahaman.riaz@gmail.com'
+ANTIGRAVITY_EMAIL = 'label-only@example.com'
 
 
 def default_config():
