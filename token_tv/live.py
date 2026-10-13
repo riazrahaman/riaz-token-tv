@@ -9,12 +9,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
+from token_tv.device import (FILES, LIMITS, BackupMismatch, SettingsUnsupported, may_write,
+                             open_display)
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import STYLES, data_digest, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
+
+
+def wanted_settings(config):
+    """The clock settings the config asks for, keyed as the clock writes them.
+
+    `night` is a small object rather than five flat keys because the window and its brightness only
+    make sense together. Anything absent is left exactly as the clock has it."""
+    wanted = {}
+    if config.get("brightness") is not None:
+        wanted["lcd_brightness"] = int(config["brightness"])
+    night = config.get("night")
+    if isinstance(night, dict):
+        if night.get("enabled") is not None:
+            wanted["nightmode"] = 1 if night["enabled"] else 0
+        for key, name in (("start", "starttime"), ("stop", "stoptime"), ("brightness", "nightbrightness")):
+            if night.get(key) is not None:
+                wanted[name] = int(night[key])
+    return wanted
 
 
 def read_feed(path):
@@ -198,6 +217,30 @@ def main():
         device.restore(original)
         print("Original display selection restored.")
         return
+    # Identity before anything is written: a lease can move an address to a different clock, and
+    # these are indistinguishable over HTTP, so publishing to the wrong one is otherwise silent.
+    expected_mac = str(config.get("device_mac") or "").strip().upper()
+    if device and expected_mac:
+        try:
+            found = device.identity().upper()
+        except (OSError, ValueError, SettingsUnsupported) as error:
+            raise SystemExit(f"Could not read the clock's MAC address to confirm it: {type(error).__name__}")
+        if found != expected_mac:
+            raise SystemExit(f"The clock at this address reports {found}, but the config expects "
+                             f"{expected_mac}. Refusing to publish to a clock that may not be yours.")
+    # Brightness and the night window are stored in the clock's EEPROM, so they are written once at
+    # startup and only where they already differ.
+    if device:
+        wanted = wanted_settings(config)
+        if wanted:
+            try:
+                written = device.apply_settings(wanted)
+                if written:
+                    print("Clock settings updated: " + ", ".join(sorted(written)), flush=True)
+            except SettingsUnsupported as error:
+                print(f"Clock settings skipped: {error}.", flush=True)
+            except (OSError, ValueError) as error:
+                print(f"Clock settings could not be applied ({type(error).__name__}).", flush=True)
     store = UsageStore(config["accounts"])
     preferences = DisplayPreferences(args.config, config)
     interval = max(60, int(config.get("poll_seconds", 300)))

@@ -11,6 +11,20 @@ FILES = ("tokentv.jpg", "tokentv.gif")
 LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv.gif": (400000, "image/gif")}
 LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
 MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
+# The clock writes settings with one name and reports them under another, so a read-and-compare has
+# to map between the two. Only the display settings are listed: Wi-Fi, the weather key and the
+# colours are deliberately absent, because nothing here should be able to write them.
+SETTING_READS = {"lcd_brightness": "brightness", "nightmode": "nightmode", "starttime": "starttime",
+                 "stoptime": "stoptime", "nightbrightness": "nightbrightness"}
+SETTING_RANGE = {"lcd_brightness": (2, 99), "nightbrightness": (2, 99), "nightmode": (0, 1),
+                 "starttime": (0, 23), "stoptime": (0, 23)}
+
+
+def _as_int(value):
+    """The clock reports some settings as numbers and some as booleans."""
+    if isinstance(value, bool):
+        return int(value)
+    return value if isinstance(value, int) else None
 
 
 def may_write(last_write, now, budget):
@@ -23,6 +37,10 @@ def may_write(last_write, now, budget):
     if not budget:
         return True
     return last_write is None or (now - last_write) >= 3600 / budget
+
+
+class SettingsUnsupported(Exception):
+    """This clock profile has no equivalent of the setting being asked for."""
 
 
 class BackupMismatch(ValueError):
@@ -42,6 +60,43 @@ class PhotoDisplay:
         with urlopen(Request(self.base_url + path, data=data, headers=headers or {}), timeout=20) as response:
             body = response.read()
             return response.status, body
+
+    def identity(self):
+        """The clock's MAC address, its one stable name.
+
+        An address can move when the router hands out a new lease, and these clocks are
+        indistinguishable by colour over HTTP, so publishing to the wrong one is otherwise easy and
+        silent."""
+        _, raw = self.request("/mac")
+        return raw.decode("ascii", "replace").strip()
+
+    def settings(self):
+        """The clock's own settings, as it reports them."""
+        _, raw = self.request("/config")
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+
+    def apply_settings(self, desired, current=None):
+        """Write only the settings that differ, and report what was written.
+
+        These are stored in the ESP8266's emulated EEPROM: a single 4 KB sector, rewritten whole on
+        every commit, with no wear levelling, and it holds the Wi-Fi credentials too. So this is for
+        settings that change occasionally and never for anything resembling a data feed — hence the
+        read-and-compare rather than writing the same value every cycle."""
+        current = self.settings() if current is None else current
+        written = {}
+        for key, value in desired.items():
+            if key not in SETTING_READS:
+                raise ValueError("Unsupported clock setting")
+            value = int(value)
+            low, high = SETTING_RANGE[key]
+            if not low <= value <= high:
+                raise ValueError("Clock setting out of range")
+            if _as_int(current.get(SETTING_READS[key])) == value:
+                continue  # already what we want; writing it again would only wear the sector
+            self.request("/api/set?" + urlencode({"key": key, "value": value}, quote_via=quote))
+            written[key] = value
+        return written
 
     def check_backup(self, original):
         # SD_PRO backups predate the model key, so a missing key means SD_PRO.
@@ -112,6 +167,16 @@ class UltraDisplay(PhotoDisplay):
     """SmallTV-Ultra (Ultra-V9) image API, read from the clock's own image.html and settings.html."""
     MODEL = "ultra"
     PHOTO_THEME = 3
+
+    def identity(self):
+        raise SettingsUnsupported("This clock does not report a MAC address")
+
+    def settings(self):
+        raise SettingsUnsupported("This clock does not expose /config")
+
+    def apply_settings(self, desired, current=None):
+        # The Ultra firmware writes settings through /set, not /api/set, and the key names differ.
+        raise SettingsUnsupported("Brightness and night mode are not supported on this clock")
 
     def capture(self):
         _, raw = self.request("/app.json")

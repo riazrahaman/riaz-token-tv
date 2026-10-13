@@ -5,6 +5,14 @@
   "reassert_cycles": 12,
   "stocks_snapshot": "~/.config/token-tv/state-stocks/snapshot.json",
   "render_seconds": 30,
+  "device_mac": "8C:8C:29:XX:XX:XX",
+  "brightness": 52,
+  "night": {
+    "enabled": true,
+    "start": 23,
+    "stop": 7,
+    "brightness": 19
+  },
   "accounts": [
     {
       "key": "claude_a",

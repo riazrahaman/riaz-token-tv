@@ -117,6 +117,13 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   | `countdown_seconds` | `900` | Rounds the displayed countdown up to whole buckets, so it changes on a bucket edge rather than every minute. |
   | `max_writes_per_hour` | `6` | Spaces uploads. A reading that actually changed is never deferred; only a ticking countdown waits. `0` means no cap. |
   | `reassert_cycles` | `12` | How often to re-select the photo theme, so a clock that rebooted goes back to showing TokenTV. |
+  | `brightness` | *(unset)* | Panel brightness, 2–99. Applied at startup, and only if it differs. |
+  | `night` | *(unset)* | `{enabled, start, stop, brightness}` — the clock's own night-dimming window. |
+  | `device_mac` | *(unset)* | Refuse to publish unless the clock at `device_url` reports this MAC. |
+
+  `brightness`, `night` and the clock's other settings are stored in its EEPROM: one 4 KB sector,
+  rewritten whole on every change, with no wear levelling, and it holds the Wi-Fi credentials too.
+  TokenTV reads before writing and only sends what differs. Do not drive these from changing data.
 
   `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
   defaults to `0`: a cap also throttles how fast the ticker refreshes.

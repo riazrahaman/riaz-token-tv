@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-10-13
+
+The clock's own brightness, night window and identity, which TokenTV had never touched.
+
+### Added
+
+- `brightness` (2–99) and a `night` block (`enabled`, `start`, `stop`, `brightness`) are applied to
+  the clock through `/api/set` at startup. Declaring them in the config makes the settings
+  reproducible and survivable rather than something set by hand in the clock's web UI.
+- `device_mac`. The clock's MAC is its one stable name: an address can move when the router hands
+  out a new lease, and these clocks are indistinguishable over HTTP. When set, the publisher reads
+  `/mac` and refuses to start if the clock at that address is not the expected one.
+- `device.identity()`, `device.settings()` and `device.apply_settings()`.
+
+### Notes
+
+- **These settings live in the ESP8266's emulated EEPROM**: a single 4 KB sector, rewritten whole
+  on every commit, with no wear levelling, holding the Wi-Fi credentials alongside them.
+  `apply_settings` therefore reads first and writes only what actually differs, and these keys must
+  never be driven from changing data. Only display settings are writable; Wi-Fi, the weather key
+  and the accent colours are deliberately not in the table.
+- The SmallTV-Ultra profile raises `SettingsUnsupported` rather than calling routes it does not
+  have; the publisher reports that and carries on.
+
 ## [0.3.0] — 2026-10-13
 
 A `combo` face, so one clock can carry both AI usage and a stock watchlist.
@@ -98,6 +122,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.0
 [0.3.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.3.0
 [0.2.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.2.0
 [0.1.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.1.0

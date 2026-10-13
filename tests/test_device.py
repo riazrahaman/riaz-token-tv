@@ -281,3 +281,85 @@ class UltraTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClockSettingsTests(unittest.TestCase):
+    """Brightness and the night window live in the ESP8266's emulated EEPROM: one 4 KB sector,
+    rewritten whole on every commit, no wear levelling, and it holds the Wi-Fi credentials too."""
+
+    class Fake:
+        def __init__(self, config):
+            self.config = config
+            self.writes = []
+
+        def request(self, path, data=None, headers=None):
+            if path == '/config':
+                return 200, json.dumps(self.config).encode()
+            if path == '/mac':
+                return 200, b'8C:8C:29:AD:ED:9B'
+            self.writes.append(path)
+            return 200, b'ok'
+
+    def _display(self, config):
+        from token_tv.device import PhotoDisplay
+        display = PhotoDisplay('http://127.0.0.1')
+        fake = self.Fake(config)
+        display.request = fake.request
+        return display, fake
+
+    def test_a_setting_already_at_the_wanted_value_is_not_rewritten(self):
+        display, fake = self._display({'brightness': 52, 'nightmode': 1, 'starttime': 23,
+                                       'stoptime': 7, 'nightbrightness': 19})
+        written = display.apply_settings({'lcd_brightness': 52, 'nightmode': 1, 'starttime': 23,
+                                          'stoptime': 7, 'nightbrightness': 19})
+        self.assertEqual(written, {})
+        self.assertEqual(fake.writes, [])  # nothing reached the EEPROM
+
+    def test_only_the_differing_settings_are_written(self):
+        display, fake = self._display({'brightness': 52, 'nightmode': 1, 'starttime': 23,
+                                       'stoptime': 7, 'nightbrightness': 19})
+        written = display.apply_settings({'lcd_brightness': 40, 'nightmode': 1, 'stoptime': 7})
+        self.assertEqual(written, {'lcd_brightness': 40})
+        self.assertEqual(len(fake.writes), 1)
+        self.assertIn('key=lcd_brightness', fake.writes[0])
+        self.assertIn('value=40', fake.writes[0])
+
+    def test_a_boolean_reading_compares_equal_to_its_number(self):
+        display, fake = self._display({'nightmode': True})
+        self.assertEqual(display.apply_settings({'nightmode': 1}), {})
+        self.assertEqual(fake.writes, [])
+
+    def test_out_of_range_and_unknown_settings_are_refused_before_any_write(self):
+        display, fake = self._display({'brightness': 52})
+        for bad in ({'lcd_brightness': 1}, {'lcd_brightness': 100}, {'starttime': 24}):
+            with self.assertRaises(ValueError):
+                display.apply_settings(bad)
+        with self.assertRaises(ValueError):
+            display.apply_settings({'ssid': 1})       # not a display setting; must never be writable
+        with self.assertRaises(ValueError):
+            display.apply_settings({'weatherkey': 1})
+        self.assertEqual(fake.writes, [])
+
+    def test_identity_returns_the_bare_mac(self):
+        display, _ = self._display({})
+        self.assertEqual(display.identity(), '8C:8C:29:AD:ED:9B')
+
+    def test_the_ultra_profile_refuses_rather_than_calling_a_route_it_lacks(self):
+        from token_tv.device import UltraDisplay, SettingsUnsupported
+        ultra = UltraDisplay('http://127.0.0.1')
+        for call in (ultra.identity, ultra.settings):
+            with self.assertRaises(SettingsUnsupported):
+                call()
+        with self.assertRaises(SettingsUnsupported):
+            ultra.apply_settings({'lcd_brightness': 40})
+
+    def test_the_config_maps_onto_the_clock_s_own_setting_names(self):
+        from token_tv.live import wanted_settings
+        self.assertEqual(wanted_settings({}), {})
+        self.assertEqual(
+            wanted_settings({'brightness': 40, 'night': {'enabled': True, 'start': 23, 'stop': 7,
+                                                         'brightness': 19}}),
+            {'lcd_brightness': 40, 'nightmode': 1, 'starttime': 23, 'stoptime': 7,
+             'nightbrightness': 19})
+        # A partial night block leaves everything it does not mention alone.
+        self.assertEqual(wanted_settings({'night': {'enabled': False}}), {'nightmode': 0})
