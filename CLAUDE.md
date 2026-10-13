@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+[docs/architecture.md](docs/architecture.md) explains the design, the technology stack and the
+publish-loop guards in prose, with three interactive diagrams under `docs/diagrams/`.
+
 Read [AGENTS.md](AGENTS.md) first — it holds the behavioural rules (credentials, publishing,
 unknown-vs-zero) and the user-facing setup script. This file covers commands and architecture.
 

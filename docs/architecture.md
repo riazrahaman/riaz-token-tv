@@ -1,0 +1,120 @@
+# Architecture
+
+How TokenTV is put together, what each part owns, and why the publish path looks the way it does.
+Three interactive diagrams accompany this page; open them from a checkout:
+
+| Diagram | Question it answers |
+| --- | --- |
+| [System architecture](diagrams/tokentv-architecture.html) | What are the parts, and which of them talks to the clock? |
+| [Render and publish path](diagrams/tokentv-dataflow.html) | How does a provider reading become a picture on a clock? |
+| [One publish cycle](diagrams/tokentv-sequence.html) | What decides whether this cycle writes to flash at all? |
+
+Each diagram cites the source lines it was built from, so a claim can be checked against the code
+rather than taken on trust. They were generated with [Archify](https://github.com/tt-a1i/archify)
+and pass its validation, artifact, and real-browser checks.
+
+## The idea
+
+The clock is a ~$5 GeekMagic-style 240×240 Wi-Fi desk clock running vendor firmware. TokenTV never
+flashes it and never replaces that firmware. Instead it uses a feature the firmware already has: a
+photo album with an HTTP upload endpoint, and a theme that displays a photo full-screen.
+
+So a computer that stays on reads your usage, draws a 240×240 picture, uploads it to the album, and
+selects the photo theme. The clock believes it is showing a holiday snap. Everything clever happens
+on the host; the device stays stock, which is what makes the project safe to run on hardware with
+no source and no warranty.
+
+## Technology stack
+
+| Layer | Choice | Why |
+| --- | --- | --- |
+| Language | Python 3.10+ | Already present on the machines that run the provider CLIs. |
+| Imaging | Pillow | The only runtime dependency. Every face is drawn in code, not composited from assets. |
+| HTTP (out) | `urllib.request` from the standard library | Both the provider APIs and the clock speak plain HTTP; a client library would earn nothing. |
+| HTTP (in) | `http.server.ThreadingHTTPServer` | The dashboard is a local control panel, not a public service. |
+| Concurrency | `threading` + `ThreadPoolExecutor` | One poll thread, one HTTP server, up to four parallel account reads. |
+| Dashboard | Hand-written HTML, CSS and ES modules in `token_tv/web/` | No build step, so the package installs and runs unchanged. |
+| Packaging | setuptools via `pyproject.toml`, plus a thin `npx` shim in `bin/` | `pip install -e .` for users with Python; `npx` for a zero-install demo. |
+| Tests | `unittest` from the standard library | No test runner to install; `python3 -B -m unittest discover -s tests`. |
+| Credentials | The provider's own login, read in place | TokenTV never asks for a password and never stores a token. |
+
+There is no database, no message queue, no container, and no cloud component. The persistent state
+is a handful of JSON files and the last image that was uploaded.
+
+## The parts
+
+`cli.py` is the entry point and owns the subcommands (`setup`, `start`, `doctor`, `demo`,
+`connect`, `run`, `stocks`). `sources.py` reads each provider through its own login — a CLI
+subprocess for Antigravity, HTTPS for Anthropic and Ollama — and `usage.py` normalises whatever
+comes back into a common window shape of `label`, `used_percent` and `resets_at`. `state.py` holds
+the result in a thread-safe `UsageStore` that the poll loop and the web handler share.
+
+`display.py` owns the snapshot-to-picture step: the `pixel` face, the shared drawing helpers, the
+`STYLES` list, and `render_frame`. The other still faces live in `themes.py`, and `space.py`
+produces an animated GIF instead of a JPEG. `device.py` is the only module that talks to the clock;
+it implements two firmware profiles and refuses to upload an oversized file.
+
+`live.py` ties it together: it runs the dashboard on `127.0.0.1:8787` and the publish loop that
+calls everything above. `stocks.py` is a second publisher for a share watchlist that mirrors the
+same pattern against its own clock.
+
+## Why the publish loop is careful
+
+The clock stores every uploaded frame in flash. A naive loop that uploads on each poll would rewrite
+that flash a few hundred times a day, and flash wears out.
+
+The obvious guard — skip the upload when the rendered bytes are identical — turns out not to be
+enough, and the reason is worth stating plainly because it is easy to get wrong. When a short usage
+window leads, the face shows a countdown in minutes. That countdown changes on *every* poll, so
+every frame differs and the byte comparison never matches. Measured at the default five-minute
+poll, that is twelve distinct frames an hour, every hour you are working.
+
+Four mechanisms cooperate, and changing one in isolation usually defeats the others:
+
+1. **Byte dedupe.** An identical frame is never rewritten.
+2. **`quantise`** rounds the countdown up to whole buckets (`countdown_seconds`, default 900), so
+   the face changes when the remaining time crosses a bucket edge rather than every minute. On its
+   own this takes a steady hour from twelve writes to four.
+3. **`may_write`** spaces uploads (`max_writes_per_hour`). It spaces rather than spending a quota
+   deliberately: a quota lets a busy hour burn its whole allowance in the first twenty-five minutes
+   and then freeze the clock on a stale frame, which is the opposite of useful.
+4. **`data_digest`** fingerprints the readings themselves and ignores the countdown. When a
+   percentage or a status actually changes, the frame bypasses the budget and goes out at once.
+
+The fourth exists because a write budget that defers real news is worse than no budget. The cap is
+there to absorb idle churn, not to withhold a number you are waiting for.
+
+Two further guards protect delivery rather than flash. `activate()` is re-asserted every
+`reassert_cycles`, because it used to run only when the output file name changed — that is, once —
+and a clock that reboots or is touched through its own web UI silently reverts to its own theme
+while uploads keep succeeding into a photo nobody is showing. And `encode_jpeg` steps quality down
+(92 → 85 → 78, then chroma subsampling) until the frame fits the firmware's size limit, because a
+busy face can otherwise exceed it and stop updating with no visible error.
+
+## Honest edges
+
+**`stocks.py` is a near-duplicate of `live.py`.** It has its own config loader, `write_json`,
+`load_original`, `mismatch_message` and `publish`. A change to the publish path usually has to be
+made twice. Both publishers write the same filenames, so two of them pointed at one clock will
+fight; each needs its own device.
+
+**Configuration is allowlisted in two places**, `sources.load_config` and `stocks.STOCK_KEYS`.
+A new key added to only one of them makes the other process exit at startup.
+
+**The clock has no authentication.** Anyone on the network can change its settings, delete its
+photos, or post firmware to `/update_ota`, and `GET /config` returns the Wi-Fi password in
+plaintext. Treat the device as LAN-only. TokenTV never calls `/update_ota`, and never deletes a
+photo it did not create.
+
+**Device detection happens once**, at startup, so a clock that was offline then stays misclassified
+until the process restarts.
+
+## Where state lives
+
+Inside the `--state-dir`: `display-original.json` records the clock's theme and photo selection as
+found, for `--restore-display`, and is only trustworthy if it was captured before TokenTV first took
+the clock over. `display-receipt.json` describes the last publish, including whether it was
+throttled, re-asserted, or driven by changed data. `snapshot.json` holds the current reading and is
+overwritten each cycle, so there is no history. `tokentv.jpg` and `tokentv.gif` are written only on
+a successful upload, which makes them a record of what the clock is actually showing rather than of
+the most recent render.
