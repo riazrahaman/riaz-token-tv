@@ -386,3 +386,19 @@ async function initVisitCounter() {
   }
 }
 if (/^https?:$/.test(location.protocol)) initVisitCounter();
+
+/* ---------------- Concept Video Sound Toggle ---------------- */
+const conceptVid = document.getElementById("conceptVideo");
+const soundToggle = document.getElementById("soundToggle");
+if (conceptVid && soundToggle) {
+  soundToggle.addEventListener("click", () => {
+    if (conceptVid.muted) {
+      conceptVid.muted = false;
+      conceptVid.play().catch(() => {});
+      soundToggle.innerHTML = '<span class="sound-icon">🔊</span> <span class="sound-text">Mute</span>';
+    } else {
+      conceptVid.muted = true;
+      soundToggle.innerHTML = '<span class="sound-icon">🔇</span> <span class="sound-text">Unmute</span>';
+    }
+  });
+}
