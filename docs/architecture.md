@@ -76,6 +76,56 @@ multi-market routing: it polls US equities via Finnhub and Indian equities/indic
 v8 chart API based on active market hours, exporting normalized snapshots for combo faces and optionally
 driving a dedicated stock clock.
 
+### System Architecture & Code Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           HOST COMPUTER (Python 3.10+)                          │
+│                                                                                 │
+│   [Provider Logins / APIs]                                                      │
+│    Anthropic · Ollama · Antigravity (Usage)                                     │
+│    Finnhub (US Equities) · Yahoo Finance v8 (Indian Equities)                   │
+│                                                                                 │
+│         │                                        │                              │
+│         ▼                                        ▼                              │
+│    sources.py (Usage)                       stocks.py (Feeder)                  │
+│    Normalizes quotas, windows               Follow-the-Sun Market Evaluator     │
+│         │                                        │                              │
+│         ▼                                        ▼                              │
+│    state.py (UsageStore)                    snapshot.json (State file)          │
+│         │                                        │                              │
+│         └───────────────────┬────────────────────┘                              │
+│                             ▼                                                   │
+│                     combo.py / display.py                                       │
+│          Multi-layer Pillow rendering (240×240)                                 │
+│          Adaptive INR font scaling, exchange badges                             │
+│                             │                                                   │
+│                             ▼                                                   │
+│                         live.py                                                 │
+│          Flash-write budgeting & byte deduplication                             │
+│                             │                                                   │
+│                             ▼                                                   │
+│                         device.py                                               │
+│          HTTP POST /photo/upload (SD_PRO profile)                               │
+└─────────────────────────────┼───────────────────────────────────────────────────┘
+                              │ LAN only (HTTP)
+                              ▼
+               ┌──────────────────────────────┐
+               │   $5 ESP8266 Wi-Fi Clock     │
+               │   Channel 1: Photo Album     │
+               │   Stock LittleFS (No Flash)  │
+               └──────────────────────────────┘
+```
+
+The execution flow per cycle:
+1. **Market Evaluation & Fetch**: `select_active_market()` checks current time against exchange trading hours:
+   - *Indian Market (09:15–15:30 IST / 03:45–10:00 UTC)*: `fetch_yahoo_quote()` polls Yahoo Finance v8 chart API (`query1.finance.yahoo.com/v8/finance/chart`) with desktop user-agent and zero API key. Strips `.NS`/`.BO` suffixes and aliases indices (`^NSEI` → `NIFTY`, `^BSESN` → `SENSEX`).
+   - *US Market (09:30–16:00 ET / 13:30–20:00 UTC)*: `fetch_quote()` polls Finnhub via Keychain-stored API key.
+   - *Inter-Market Closed Periods*: Feeder marks session closed, yielding screen real estate back to full-size AI usage.
+2. **Atomic State Serialization**: Normalized telemetry is written to `state-stocks/snapshot.json` and appended to `history.jsonl`.
+3. **Host-Side Compositing**: `combo.py` loads `UsageStore` and `snapshot.json`. If market is open, it renders the split face with active exchange badges (`NSE` or `US`) and adaptive scale-2 font scaling for INR prices $\ge 7$ chars.
+4. **Flash Preservation & Delivery**: `live.py` applies deduplication and spaced write budgets before pushing frames to the clock's LittleFS photo album endpoint.
+
 ## Why the publish loop is careful
 
 The clock stores every uploaded frame in flash. A naive loop that uploads on each poll would rewrite
