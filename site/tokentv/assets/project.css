@@ -74,3 +74,14 @@
 .lede a,.ledger a,.prov a,section.chapter p a{color:var(--ink);text-decoration:underline;
   text-underline-offset:3px;text-decoration-color:var(--rule)}
 .lede a:hover,.ledger a:hover,.prov a:hover,section.chapter p a:hover{text-decoration-color:var(--accent)}
+
+/* ---------- wide figures on phones ----------
+   A 900-unit diagram squeezed into 358px makes its 11px labels about 4px: unreadable. The guide
+   solves the same problem for its map by scrolling sideways instead of shrinking, so do that. */
+@media (max-width:900px){
+  .fig{padding-bottom:10px;scrollbar-width:thin;scrollbar-color:var(--ink-3) var(--paper-2)}
+  .fig svg{min-width:720px;max-width:none}
+  .fig figcaption{position:sticky;left:0;max-width:calc(100vw - 64px)}
+  .fig-hint{display:block}
+}
+.fig-hint{display:none;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:-14px 0 18px}

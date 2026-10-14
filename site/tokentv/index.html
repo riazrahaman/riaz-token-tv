@@ -136,36 +136,60 @@
   </div>
 
   <figure class="fig">
-    <svg viewBox="0 0 880 150" role="img" aria-label="Pipeline: providers to sources to state to render to device to clock">
-      <g>
-        <rect class="node" x="4"   y="36" width="118" height="54" rx="8"/>
-        <rect class="node" x="152" y="36" width="118" height="54" rx="8"/>
-        <rect class="node" x="300" y="36" width="118" height="54" rx="8"/>
-        <rect class="node" x="448" y="36" width="118" height="54" rx="8"/>
-        <rect class="node" x="596" y="36" width="118" height="54" rx="8"/>
-        <rect class="node" x="744" y="36" width="130" height="54" rx="8"/>
+    <svg viewBox="0 0 900 350" role="img" aria-label="System architecture: provider APIs feed the host, which renders a frame and uploads it to the clock over the LAN">
+      <rect class="chipbox" x="176" y="16" width="562" height="300" rx="10"/>
+      <text class="dim" x="182" y="34">HOST COMPUTER &middot; PYTHON + PILLOW</text>
+
+      <g class="node">
+        <rect x="20"  y="52"  width="124" height="40" rx="7"/>
+        <rect x="20"  y="100" width="124" height="40" rx="7"/>
+        <rect x="20"  y="148" width="124" height="40" rx="7"/>
+        <rect x="20"  y="256" width="124" height="40" rx="7"/>
+        <rect x="192" y="100" width="118" height="40" rx="7"/>
+        <rect x="330" y="100" width="118" height="40" rx="7"/>
+        <rect x="468" y="100" width="118" height="40" rx="7"/>
+        <rect x="606" y="100" width="118" height="40" rx="7"/>
+        <rect x="330" y="186" width="118" height="40" rx="7"/>
+        <rect x="468" y="186" width="118" height="40" rx="7"/>
+        <rect x="192" y="256" width="118" height="40" rx="7"/>
+        <rect x="330" y="256" width="118" height="40" rx="7"/>
+        <rect x="780" y="100" width="104" height="40" rx="7"/>
       </g>
-      <text class="lbl" x="63"  y="58" text-anchor="middle">Providers</text>
-      <text class="dim" x="63"  y="74" text-anchor="middle">HTTPS &middot; CLI</text>
-      <text class="lbl" x="211" y="58" text-anchor="middle">sources.py</text>
-      <text class="dim" x="211" y="74" text-anchor="middle">read + normalise</text>
-      <text class="lbl" x="359" y="58" text-anchor="middle">state.py</text>
-      <text class="dim" x="359" y="74" text-anchor="middle">UsageStore</text>
-      <text class="lbl" x="507" y="58" text-anchor="middle">render</text>
-      <text class="dim" x="507" y="74" text-anchor="middle">240&times;240 JPEG</text>
-      <text class="lbl" x="655" y="58" text-anchor="middle">device.py</text>
-      <text class="dim" x="655" y="74" text-anchor="middle">upload</text>
-      <text class="lbl" x="809" y="58" text-anchor="middle">Clock</text>
-      <text class="dim" x="809" y="74" text-anchor="middle">photo album</text>
+
+      <text class="lbl" x="82"  y="77"  text-anchor="middle">Anthropic</text>
+      <text class="lbl" x="82"  y="125" text-anchor="middle">Ollama</text>
+      <text class="lbl" x="82"  y="173" text-anchor="middle">Antigravity</text>
+      <text class="lbl" x="82"  y="281" text-anchor="middle">Finnhub</text>
+      <text class="lbl" x="251" y="125" text-anchor="middle">sources.py</text>
+      <text class="lbl" x="389" y="125" text-anchor="middle">state.py</text>
+      <text class="lbl" x="527" y="125" text-anchor="middle">render</text>
+      <text class="lbl" x="665" y="125" text-anchor="middle">device.py</text>
+      <text class="lbl" x="389" y="211" text-anchor="middle">dashboard</text>
+      <text class="lbl" x="527" y="211" text-anchor="middle">state files</text>
+      <text class="lbl" x="251" y="281" text-anchor="middle">feeder</text>
+      <text class="lbl" x="389" y="281" text-anchor="middle">snapshot</text>
+      <text class="lbl" x="832" y="125" text-anchor="middle">Clock</text>
+
       <g class="edge">
-        <path d="M122 63 H148"/><path d="M270 63 H296"/><path d="M418 63 H444"/>
-        <path d="M566 63 H592"/><path class="hot" d="M714 63 H740"/>
+        <path d="M144 72  H168 V116 H188"/>
+        <path d="M144 120 H188"/>
+        <path d="M144 168 H168 V124 H188"/>
+        <path d="M310 120 H326"/>
+        <path d="M448 120 H464"/>
+        <path d="M586 120 H602"/>
+        <path d="M389 140 V182"/>
+        <path d="M527 140 V182"/>
+        <path d="M144 276 H188"/>
+        <path d="M310 276 H326"/>
+        <path d="M448 276 H527 V144"/>
+        <path class="hot" d="M724 120 H776"/>
       </g>
-      <text class="dim" x="727" y="110" text-anchor="middle">the only step</text>
-      <text class="dim" x="727" y="122" text-anchor="middle">that writes flash</text>
+      <text class="dim" x="750" y="110" text-anchor="middle">HTTP</text>
+      <text class="dim" x="832" y="158" text-anchor="middle">LAN only</text>
     </svg>
-    <figcaption>Everything left of the final arrow happens in memory on the host. Only the last step touches the device.</figcaption>
+    <figcaption>One process owns the clock. The watchlist runner is a feeder: it writes a snapshot file and never touches the device, which is what stops two publishers fighting over the same photo.</figcaption>
   </figure>
+  <p class="fig-hint">&harr; scroll the diagram sideways</p>
 
   <div class="split">
     <div class="rule-card">
@@ -230,6 +254,51 @@
     <li><b>A spaced write budget</b> &mdash; uploads are <em>spaced</em> rather than given a quota. A quota lets a busy hour spend its whole allowance in the first twenty-five minutes and then freeze the display on a stale frame, which is the opposite of useful.</li>
     <li><b>A data-change override</b> &mdash; the readings are fingerprinted separately from the countdown, so a percentage or price that actually moved bypasses the budget and goes out at once. A budget that defers real news is worse than no budget.</li>
   </ol>
+
+  <figure class="fig">
+    <svg viewBox="0 0 880 310" role="img" aria-label="Publish cycle: identical bytes are skipped, a changed reading uploads at once, otherwise the write budget decides">
+      <g class="node">
+        <rect x="14"  y="18"  width="118" height="40" rx="7"/>
+        <rect x="14"  y="96"  width="118" height="40" rx="7"/>
+        <rect x="726" y="96"  width="140" height="40" rx="7"/>
+        <rect x="280" y="246" width="120" height="40" rx="7"/>
+        <rect x="726" y="246" width="140" height="40" rx="7"/>
+      </g>
+      <text class="lbl" x="73"  y="43"  text-anchor="middle">poll</text>
+      <text class="lbl" x="73"  y="121" text-anchor="middle">render frame</text>
+      <text class="lbl" x="796" y="121" text-anchor="middle">upload</text>
+      <text class="lbl" x="340" y="271" text-anchor="middle">skip</text>
+      <text class="lbl" x="796" y="271" text-anchor="middle">defer</text>
+
+      <g class="node">
+        <path d="M250 116 L320 92 L390 116 L320 140 Z"/>
+        <path d="M430 116 L500 92 L570 116 L500 140 Z"/>
+        <path d="M430 206 L500 182 L570 206 L500 230 Z"/>
+      </g>
+      <text x="320" y="120" text-anchor="middle">bytes same?</text>
+      <text x="500" y="120" text-anchor="middle">data changed?</text>
+      <text x="500" y="210" text-anchor="middle">budget allows?</text>
+
+      <g class="edge">
+        <path d="M73 58 V92"/>
+        <path d="M132 116 H246"/>
+        <path d="M390 116 H426"/>
+        <path class="hot" d="M570 116 H722"/>
+        <path d="M500 140 V178"/>
+        <path d="M320 140 V242"/>
+        <path class="hot" d="M570 206 H664 V116"/>
+        <path d="M500 230 V266 H722"/>
+      </g>
+      <text class="dim" x="408" y="108" text-anchor="middle">no</text>
+      <text class="dim" x="648" y="108" text-anchor="middle">yes</text>
+      <text class="dim" x="514" y="162" text-anchor="middle">no</text>
+      <text class="dim" x="334" y="186" text-anchor="middle">yes</text>
+      <text class="dim" x="620" y="198" text-anchor="middle">yes</text>
+      <text class="dim" x="514" y="252" text-anchor="middle">no</text>
+    </svg>
+    <figcaption>The two red paths both end in an upload. A reading that genuinely moved never waits for the budget &mdash; the cap exists to absorb idle churn, not to withhold new numbers.</figcaption>
+  </figure>
+  <p class="fig-hint">&harr; scroll the diagram sideways</p>
 
   <div class="split">
     <div class="rule-card">
