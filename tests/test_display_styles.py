@@ -13,7 +13,7 @@ from unittest.mock import Mock
 
 from PIL import Image
 
-from token_tv.display import STYLES, gauge_color, render_page
+from token_tv.display import ANIMATED_STYLES, STYLES, gauge_color, render_page
 from token_tv.live import DisplayPreferences, handler
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -89,7 +89,7 @@ class DisplayStyleTests(unittest.TestCase):
             else:
                 self.assertEqual(image.format, 'JPEG')
                 self.assertLess(len(frame), 60000)
-        self.assertEqual(sum(f[:4] == b'GIF8' for f in frames[:len(STYLES)]), 1)
+        self.assertEqual(sum(f[:4] == b'GIF8' for f in frames[:len(STYLES)]), len(ANIMATED_STYLES))
         with self.assertRaises(ValueError):
             render_page(sample, style='unknown')
 
