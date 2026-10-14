@@ -21,7 +21,7 @@ runs TokenTV code, so there is nothing to flash and no firmware to restore.
    current monthly credit period's spend against your monthly credit budget), and the Antigravity CLI usage command. It polls every five minutes
    by default.
 2. **Draw a face.** Python and Pillow draw a 240×240 image: used percentage, window,
-   reset time and account label. An old reading is marked OLD, and missing data shows a dash
+   reset time and account label (or combined with live follow-the-sun stock quotes from Finnhub and Yahoo Finance for US and Indian equities). An old reading is marked OLD, and missing data shows a dash
    instead of a fake 0%.
 3. **Upload a picture.** The image goes to the clock's `/photo/upload` page as a normal
    file upload: `tokentv.jpg` (kept under 60 KB), or `tokentv.gif` for the animated face.

@@ -60,8 +60,10 @@ Do not solve this by coordinating two publishers — the ownership split is what
 **Config keys are allowlisted in two places.** `sources.load_config` and `stocks.STOCK_KEYS` both
 reject unknown fields with `Unsupported configuration field`. Current extras: `countdown_seconds`,
 `max_writes_per_hour`, `reassert_cycles`, `stocks_snapshot`, `render_seconds`, `device_mac`,
-`brightness`, `night`. Adding a key without updating the
+`brightness`, `night`, and `symbols_in` (for Indian tickers). Adding a key without updating the
 right allowlist makes the process exit at startup — which, under a supervisor, is a crash-loop.
+
+**Stocks supports Follow-the-Sun multi-market routing.** `stocks.py` handles US equities (via Finnhub with API key) during US market hours (09:30–16:00 ET) and Indian equities/indices (via Yahoo Finance v8 chart API, zero-config) during Indian market hours (09:15–15:30 IST). During off-hours, it marks the market closed so combo faces display full-screen AI usage. Symbol names are sanitized (e.g. `^NSEI` $\rightarrow$ `NIFTY`, stripping `.NS`/`.BO`), and prices $\ge 7$ chars drop to scale 2 font to prevent visual overlap.
 
 **The version lives in three files.** `token_tv/__init__.py`, `pyproject.toml` and `package.json`.
 `tests/test_catalog.py` asserts `__init__` and `pyproject` agree.

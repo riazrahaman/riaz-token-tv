@@ -113,10 +113,12 @@ take. The `combo` face therefore shows less per row than either dedicated face: 
 mascots, no reset countdown. It keeps the window label, because 75% of a five-hour window and 75%
 of a week are different facts and the percentage alone would mislead.
 
-It is also conditional. The market section is drawn only while the market is open and the feed is
-fresh; outside the session `combo` returns the full-size usage face, so the readable layout is what
-the clock shows for most of the day and no screen space goes to prices that stopped moving hours
-ago.
+It is also conditional and follow-the-sun aware. The stock feeder evaluates market operating hours:
+- **NSE/BSE (India)**: 09:15–15:30 IST (03:45–10:00 UTC) via Yahoo Finance v8 chart API (zero-config, no key).
+- **US Equities**: 09:30–16:00 ET (13:30–20:00 UTC) via Finnhub.
+- **Inter-Market Closed Periods**: Outside active sessions, the feeder marks the session closed, and `combo` dynamically drops the ticker row to display the full-size AI usage face. No screen space is wasted on frozen, static prices.
+
+When an active market is open, the header badge indicates the active exchange (`NSE` or `US`), ticker symbols are normalized (e.g. `^NSEI` $\rightarrow$ `NIFTY`, `RELIANCE.NS` $\rightarrow$ `RELIANCE`), and price fonts automatically step down to scale 2 when price strings reach $\ge 7$ characters (common with INR 5-digit valuations like `24150.00`) to prevent pixel collision.
 
 The important part is ownership rather than drawing. Two publishers pointed at one clock fight over
 the same filename and over which saved original is authoritative. So the stock runner drops its

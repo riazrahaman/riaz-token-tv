@@ -128,6 +128,18 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
   defaults to `0`: a cap also throttles how fast the ticker refreshes.
 
+### Stock watchlist & Follow-the-Sun markets
+
+`token-tv stocks` monitors stock tickers and publishes a 240×240 watchlist face (or feeds the combo face). It features follow-the-sun multi-market routing:
+- **US Equities**: Polled from Finnhub (requires free API key via Keychain service `token-tv-finnhub` or `FINNHUB_API_KEY`). Active during regular US hours (09:30–16:00 ET / 13:30–20:00 UTC, Mon–Fri).
+- **Indian Equities (NSE/BSE)**: Polled from Yahoo Finance's public v8 chart API (zero-config, no API key or registration required). Active during regular Indian hours (09:15–15:30 IST / 03:45–10:00 UTC, Mon–Fri).
+- **Off-hours gap**: When neither market is open, the runner enters off-hours mode, allowing combo faces to display full-size AI usage.
+
+Config keys in `stocks.json`:
+- `"symbols"`: List of US tickers (defaults to `["AAPL", "MSFT", "NVDA", "TSLA"]`).
+- `"symbols_in"`: List of Indian tickers or indices (defaults to `["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]`). Indices like `^NSEI` and `^BSESN` automatically display as `NIFTY` and `SENSEX`. Exchange suffixes (`.NS`, `.BO`) are automatically trimmed on screen.
+- `"interval"`: Refresh interval in seconds while a market is open (default 30s).
+
 ### Both faces on one clock
 
 To put AI usage and the watchlist on a single clock, make the stock runner a feeder and let the
@@ -137,12 +149,11 @@ usage runner own the device:
    contacts a clock. Two publishers pointed at one clock fight over the same filename and over
    which saved original is authoritative, so exactly one process must own the device.
 2. In `config.json`, add `"stocks_snapshot": "~/.config/token-tv/state-stocks/snapshot.json"` and
-   set `"display_style": "combo"`.
+   set `"display_style": "combo"` (or animated combo styles: `combo_pulse`, `combo_cyber`, `combo_twinkle`, `combo_patrol`).
 3. Optionally set `render_seconds` (default 30). Prices move faster than `poll_seconds`, and this
    re-draws the frame without re-reading any provider.
 
-The market section appears only while the market is open and the feed is fresh. Outside the
-session, `combo` renders the ordinary full-size usage face.
+The market section appears dynamically while an active market is open and the feed is fresh, displaying the active exchange badge (`NSE` or `US`). Outside market sessions, `combo` renders the ordinary full-size usage face.
 - To give the clock back its original photo and theme, stop TokenTV and run
   `token-tv run --restore-display`.
 - **macOS (untested on a real Mac):** Claude Code keeps its login in the Keychain, so TokenTV
