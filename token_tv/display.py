@@ -23,8 +23,8 @@ RULE = '#202730'
 PROVIDER_INK = {'claude': '#d68e68', 'ollama': '#b48cf2', 'antigravity': '#cbd1d7'}
 FONT_MAIN = '/usr/share/fonts/truetype/dejavu/DejaVuSans'
 FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
-STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle')
-ANIMATED_STYLES = ('space', 'pulse', 'patrol', 'twinkle')
+STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber')
+ANIMATED_STYLES = ('space', 'pulse', 'patrol', 'twinkle', 'cyber')
 # Gauge-only levels; labels/percentages always use TEXT, logos retain provider ink.
 GAUGE_LEVELS = ((50, '#76a99a'), (80, '#93c9b9'), (90, '#d1b275'), (101, '#d8877e'))
 STATUS = {'loading': 'WAIT', 'auth_required': 'LOGIN', 'identity_mismatch': 'CHECK',
@@ -363,6 +363,10 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     if style == 'twinkle':  # animated combo: returns GIF bytes
         from token_tv.combo_twinkle import render_combo_twinkle
         image = render_combo_twinkle(snapshot)
+        return image, {'fits': not limit or len(image) <= limit}
+    if style == 'cyber':  # 3-in-1 animated hybrid: returns GIF bytes
+        from token_tv.combo_cyber import render_combo_cyber
+        image = render_combo_cyber(snapshot)
         return image, {'fits': not limit or len(image) <= limit}
     if style == 'combo':  # AI usage plus the watchlist, on one clock
         from token_tv.combo import render_combo

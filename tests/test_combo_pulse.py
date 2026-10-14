@@ -88,3 +88,13 @@ class ComboPulseTests(unittest.TestCase):
         self.assertEqual(image.size, (240, 240))
         self.assertTrue(getattr(image, "is_animated", False))
         self.assertGreaterEqual(image.n_frames, 10)
+
+    def test_combo_cyber_renders_animated_gif(self):
+        from token_tv.combo_cyber import render_combo_cyber
+        gif_bytes = render_combo_cyber(self.snapshot)
+        self.assertTrue(gif_bytes.startswith(b"GIF89a"))
+        self.assertLess(len(gif_bytes), LIMITS["tokentv.gif"][0])
+        image = Image.open(io.BytesIO(gif_bytes))
+        self.assertEqual(image.size, (240, 240))
+        self.assertTrue(getattr(image, "is_animated", False))
+        self.assertGreaterEqual(image.n_frames, 10)
