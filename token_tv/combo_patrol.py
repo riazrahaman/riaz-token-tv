@@ -12,20 +12,23 @@ from token_tv.combo import (AI_PITCH, AI_TOP, MARKET_LABEL_Y, MARKET_PITCH, MARK
 from token_tv.display import (BACKGROUND, overview_rows, pixel_text, render_pixel)
 from token_tv.stocks import PALETTE
 
-FPS = 10
-FRAMES = 12  # 1.2-second loop
+FPS = 8
+FRAMES = 36  # 4.5-second relaxed loop
 
 
-def _draw_mini_bot(draw, x, y, frame):
-    """Draw a 7x7 animated pixel bot walking along the rule."""
+def _draw_mini_bot(draw, x, y, frame, facing_right=True):
+    """Draw a 7x7 animated pixel bot walking leisurely along the rule."""
     bob = 1 if (frame % 4) in (1, 2) else 0
     cy = y - 4 - bob
-    # Antenna / ear sparkle
-    draw.point((x + 3, cy - 2), fill=(138, 180, 248))
-    # Head & visor
+    # Antenna sparkle
+    ax = x + 4 if facing_right else x + 2
+    draw.point((ax, cy - 2), fill=(138, 180, 248))
+    # Head & body
     draw.rectangle((x + 1, cy - 1, x + 5, cy + 3), fill=(66, 133, 244))
-    draw.line((x + 2, cy + 1, x + 4, cy + 1), fill=(255, 255, 255))
-    # Feet
+    # Visor facing walking direction
+    vx = (x + 3, x + 5) if facing_right else (x + 1, x + 3)
+    draw.line((vx[0], cy + 1, vx[1], cy + 1), fill=(255, 255, 255))
+    # Animated stepping feet
     if (frame % 2) == 0:
         draw.point([(x + 2, cy + 4), (x + 5, cy + 4)], fill=(234, 67, 53))
     else:
@@ -34,10 +37,15 @@ def _draw_mini_bot(draw, x, y, frame):
 
 def render_patrol_frame(snapshot, frame):
     rows = market_rows(snapshot)
+    half = FRAMES // 2
+    facing_right = frame < half
+    step = frame if facing_right else (FRAMES - frame)
+
     if rows is None:
         base = render_pixel(snapshot)
         draw = ImageDraw.Draw(base)
-        _draw_mini_bot(draw, int(20 + (frame / FRAMES) * 200), 230, frame)
+        bot_x = int(50 + (step / half) * 140)
+        _draw_mini_bot(draw, bot_x, 230, frame, facing_right)
         return base
 
     image = Image.new('RGB', (SIZE, SIZE), BACKGROUND)
@@ -51,12 +59,9 @@ def render_patrol_frame(snapshot, frame):
     # Base rule
     draw.line([(6, RULE_Y), (SIZE - 6, RULE_Y)], fill=PALETTE['dim'])
 
-    # Mascot patrolling back and forth along the rule
-    # Moves across x from 60 to 180
-    half = FRAMES // 2
-    step = frame if frame < half else (FRAMES - frame)
-    bot_x = int(50 + (step / half) * 130)
-    _draw_mini_bot(draw, bot_x, RULE_Y, frame)
+    # Leisurely stroll along the center of the rule (x=80 to x=160)
+    bot_x = int(80 + (step / half) * 80)
+    _draw_mini_bot(draw, bot_x, RULE_Y, frame, facing_right)
 
     session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
     pixel_text(draw, (6, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
