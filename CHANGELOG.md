@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-10-14
+
+Documentation catching up with 0.4.0, plus a hardware behaviour found while using it.
+
+### Changed
+
+- `CLAUDE.md` and `docs/architecture.md` now cover the two flash regions and why only one of them
+  is forgiving: images go to wear-levelled LittleFS, while everything written through `/api/set`
+  lands in a single unlevelled 4 KB EEPROM sector that also holds the Wi-Fi credentials. That
+  asymmetry is why the settings path reads before it writes, and why the accent colours are not a
+  cheap status channel.
+- Both documents also describe `device_mac` and the `SettingsUnsupported` behaviour of the Ultra
+  profile.
+
+### Fixed
+
+- Documented that **`GET /photo/delete` re-enables every remaining photo**, observed on an SD_PRO
+  unit: deleting one leftover file left all the factory samples enabled and the clock rotating
+  through them. Re-assert the selection straight afterwards, or wait for the `reassert_cycles`
+  watchdog.
+
 ## [0.4.0] — 2026-10-13
 
 The clock's own brightness, night window and identity, which TokenTV had never touched.
@@ -122,6 +143,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.1]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.1
 [0.4.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.0
 [0.3.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.3.0
 [0.2.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.2.0

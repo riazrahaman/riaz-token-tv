@@ -118,6 +118,26 @@ as changed data and is never deferred by the write budget.
 Consolidating two clocks onto one roughly doubles that device's flash write load, concentrated in
 the trading session.
 
+## The clock's own settings
+
+Two flash regions sit behind the HTTP surface, and they behave nothing alike. The photo album is
+LittleFS — copy-on-write and wear-levelled, which is why rewriting a frame every thirty seconds is
+sustainable. Everything written through `/api/set` lands instead in the ESP8266's emulated EEPROM:
+one 4 KB sector, rewritten whole on every commit, no wear levelling, holding the Wi-Fi credentials
+beside the display settings.
+
+That asymmetry decides the design. `brightness` and the `night` block are declared in the config
+and applied once at startup, after reading `/config` and comparing, so a run that changes nothing
+writes nothing. The writable table covers display settings only; Wi-Fi, the weather key and the
+accent colours are deliberately absent, because a bug that wrote them repeatedly would eventually
+cost the clock its network. It also rules out an idea that looks attractive from the outside: using
+the accent colours as a cheap status channel, since they need no image upload. They are not cheap.
+
+`device_mac` addresses a different hazard. These clocks answer identically over HTTP and a router
+can move an address between them, so without a stable name there is nothing preventing the
+publisher pushing one person's usage to another device. When set, it reads `/mac` and refuses to
+start rather than publishing somewhere it should not.
+
 ## Honest edges
 
 **`stocks.py` is a near-duplicate of `live.py`.** It has its own config loader, `write_json`,

@@ -59,7 +59,8 @@ Do not solve this by coordinating two publishers — the ownership split is what
 
 **Config keys are allowlisted in two places.** `sources.load_config` and `stocks.STOCK_KEYS` both
 reject unknown fields with `Unsupported configuration field`. Current extras: `countdown_seconds`,
-`max_writes_per_hour`, `reassert_cycles`, `stocks_snapshot`, `render_seconds`. Adding a key without updating the
+`max_writes_per_hour`, `reassert_cycles`, `stocks_snapshot`, `render_seconds`, `device_mac`,
+`brightness`, `night`. Adding a key without updating the
 right allowlist makes the process exit at startup — which, under a supervisor, is a crash-loop.
 
 **The version lives in three files.** `token_tv/__init__.py`, `pyproject.toml` and `package.json`.
@@ -95,6 +96,23 @@ provider, three rows per face) and `stocks.MAX_SYMBOLS` is 4, matching the four 
 calls it periodically (`reassert_cycles`), not just once, because a reboot or a visit to the clock's
 own web UI drops the clock back to its own theme while uploads keep succeeding into a photo nobody
 is showing.
+
+**Two flash regions, and only one of them is forgiving.** Images go to LittleFS: copy-on-write,
+wear-levelled, ~2.98 MB, fine to rewrite often. Anything written through `/api/set` — brightness,
+the night window, colours, and the Wi-Fi credentials — goes to the ESP8266's **emulated EEPROM**:
+a single 4 KB sector, rewritten whole on every commit, with no wear levelling. `apply_settings`
+therefore reads `/config` first and writes only what differs, and `SETTING_READS` lists display
+settings only, so Wi-Fi and the weather key are not writable at all. Never drive an `/api/set` key
+from changing data; it is the most fragile flash on the device.
+
+**`/photo/delete` re-enables every remaining photo.** Observed on real hardware. After deleting a
+file, re-assert the selection (`/photo/toggle?name=&state=0`) or the clock starts rotating through
+the factory samples. The `reassert_cycles` watchdog also recovers it, but not immediately.
+
+**The clock's identity is its MAC, not its address.** A DHCP lease can move an address between
+clocks and they are indistinguishable over HTTP, so `device_mac` makes the publisher read `/mac`
+and refuse to start on a mismatch. `UltraDisplay` raises `SettingsUnsupported` for `identity()`,
+`settings()` and `apply_settings()` rather than calling routes that profile does not have.
 
 **Fonts differ by host.** `display.py` defaults to DejaVu paths that do not exist on macOS;
 `font()` then falls back to `ImageFont.load_default()`, a tiny bitmap font. The `pixel` face draws
