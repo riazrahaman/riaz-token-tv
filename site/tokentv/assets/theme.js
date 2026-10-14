@@ -94,8 +94,9 @@ function spyNow() {
     const r = sec.getBoundingClientRect();
     if (r.top <= (atBottom ? innerHeight - 1 : y) && r.bottom > 0) hit = sec;
   }
+  if (!hit && scrollY < y + 200 && chapters.length) hit = chapters[0];
   if (hit && hit.getBoundingClientRect().bottom < tocH) hit = null;
-  setCurrent(hit);
+  setCurrent(hit || (scrollY < 300 && chapters.length ? chapters[0] : null));
 }
 
 function startSpy() {
@@ -267,13 +268,27 @@ document.addEventListener("click", ev => {
   const a = ev.target.closest('a[href^="#"]');
   if (!a || ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
   const target = document.getElementById(decodeURIComponent(a.hash.slice(1)));
-  if (!target) return;
+  if (!target && a.hash !== "#idea") return;
   markAuto();
   const sameHash = location.hash === a.hash, prevState = history.state;
   ownNav = a.hash;
   setTimeout(() => { if (ownNav === a.hash) ownNav = null; }, 0);
   if (sameHash) setTimeout(() => history.replaceState(prevState, ""), 0);
   const from = a.closest(".toc, .rail") ? current : (a.closest("section.chapter[id]") || current);
+
+  // If clicking "The idea", scroll cleanly to the top of the page to show the Hero header
+  if (a.hash === "#idea") {
+    ev.preventDefault();
+    scrollTo({ top: 0, behavior: motion() });
+    if (from && from !== chapters[0]) showBack(from);
+    if (!sameHash) {
+      history.pushState({ ...prevState, navOrigin: from ? from.id : null }, "", "#idea");
+      setTimeout(() => { if (location.hash === "#idea") history.replaceState({ ...history.state, cameFrom: from ? from.id : null }, ""); }, 0);
+    }
+    setCurrent(chapters[0]);
+    return;
+  }
+
   if (!from || from === target || from.contains(target) || target.contains(from)) return;
   showBack(from);
   if (sameHash) return;
@@ -291,7 +306,8 @@ backBtn.addEventListener("click", () => {
     focusAfterBack = el;
     history.back();
   } else {
-    el.scrollIntoView({ behavior: motion(), block: "start" });
+    if (el.id === "idea") scrollTo({ top: 0, behavior: motion() });
+    else el.scrollIntoView({ behavior: motion(), block: "start" });
   }
   hideBack();
 });
@@ -307,10 +323,22 @@ addEventListener("popstate", () => {
   const f = focusAfterBack;
   focusAfterBack = null;
   requestAnimationFrame(() => {
-    if (el) el.scrollIntoView({ block: "start" });
+    if (location.hash === "#idea" || (!location.hash && (!el || el.id === "idea"))) {
+      scrollTo({ top: 0, behavior: motion() });
+    } else if (el) {
+      el.scrollIntoView({ block: "start" });
+    }
     if (f) f.focus({ preventScroll: true });
   });
 });
+
+/* ---------------- Initial Scroll Position ---------------- */
+if (location.hash === "#idea" || !location.hash) {
+  if ("scrollRestoration" in history) {
+    history.scrollRestoration = "manual";
+  }
+  window.scrollTo(0, 0);
+}
 
 let ticking = false, wasBottom = false;
 addEventListener("scroll", () => {
