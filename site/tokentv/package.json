@@ -1,0 +1,12 @@
+{
+  "name": "tokentv-page",
+  "private": true,
+  "version": "0.4.1",
+  "description": "Project page for TokenTV",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

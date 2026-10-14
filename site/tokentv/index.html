@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="version" content="0.4.1">
+<title>TokenTV — AI usage on a $5 desk clock</title>
+<meta name="description" content="How a $5 Wi-Fi desk clock shows live AI usage and a stock watchlist without ever being reflashed — the design, the code flow, the hardware, and what was contributed on top of the original.">
+<link rel="canonical" href="https://tokentv.riazrahaman.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TokenTV">
+<meta property="og:url" content="https://tokentv.riazrahaman.com/">
+<meta property="og:title" content="TokenTV — AI usage on a $5 desk clock">
+<meta property="og:description" content="A desk clock that never gets reflashed, and still shows live AI usage and share prices. Design, code flow, hardware, and contributions.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TokenTV — AI usage on a $5 desk clock">
+<meta name="twitter:description" content="A desk clock that never gets reflashed, and still shows live AI usage and share prices.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add("js");try{var t=localStorage.getItem("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="assets/guide.css">
+<link rel="stylesheet" href="assets/project.css">
+</head>
+<body>
+
+<div class="wrap">
+  <div class="mast">
+    <span><span class="dot"></span>Project · TokenTV</span>
+    <span class="mast-right">
+      <a class="mast-link" href="https://riazrahaman.com/"><span class="ml-long">riazrahaman.com</span><span class="ml-short">Home</span> &rarr;</a>
+      <a class="mast-link" href="https://github.com/riazrahaman/riaz-token-tv"><span class="ml-long">Source</span><span class="ml-short">Code</span> &rarr;</a>
+      <button class="theme-btn" id="themeBtn" type="button" title="Theme: Auto (follows your system)">&#9680; <span class="theme-mode">Auto</span></button>
+    </span>
+  </div>
+
+  <header class="hero">
+    <h1>A $5 clock that<br><em>never gets</em><br>reflashed.</h1>
+    <div>
+      <p class="lede">TokenTV puts live AI usage &mdash; and a share watchlist &mdash; on a tiny Wi-Fi desk clock, without replacing a single byte of its firmware. The trick is that the clock never knows. It thinks it is showing a holiday photo. 🕰️</p>
+      <div class="meta">
+        <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
+        <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
+        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span>v0.4.1</span>
+      </div>
+    </div>
+  </header>
+</div>
+
+<nav class="toc" aria-label="Chapters">
+  <div class="wrap">
+    <a href="#idea">💡 The idea</a>
+    <a href="#hardware">🔌 Hardware</a>
+    <a href="#flow">🔀 Code flow</a>
+    <a href="#faces">🎨 Faces</a>
+    <a href="#flash">💾 Flash</a>
+    <a href="#base">🧬 Base code</a>
+    <a href="#built">🔨 Contributions</a>
+    <a href="#next">🔭 What's next</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ======================= THE IDEA ======================= -->
+<section class="chapter" id="idea">
+  <div class="ch-head">
+    <span class="ch-num">Prologue</span>
+    <h2>The clock thinks it is <em>a photo frame</em> <span class="emo-i">🖼️</span></h2>
+    <p>These clocks ship with vendor firmware, no source, and no warranty worth the name. Replacing it means opening the case and soldering. So TokenTV doesn't. It uses a feature the stock firmware already has: a photo album with an HTTP upload endpoint, and a theme that shows a photo full-screen.</p>
+  </div>
+
+  <div class="trio">
+    <div class="role" style="--c:var(--c-run)">
+      <div class="r-emoji">🖥️</div><div class="who">A computer that stays on</div>
+      <h3>Reads and draws</h3>
+      <p>Reads your usage through each provider's own login, then draws a 240&times;240 picture with Pillow.</p>
+    </div>
+    <div class="role" style="--c:var(--c-data)">
+      <div class="r-emoji">📤</div><div class="who">Plain HTTP</div>
+      <h3>Uploads a photo</h3>
+      <p>Posts the image to the clock's album and selects the photo theme. No firmware, no agent, no SDK.</p>
+    </div>
+    <div class="role" style="--c:var(--c-app)">
+      <div class="r-emoji">🕰️</div><div class="who">The clock</div>
+      <h3>Displays a picture</h3>
+      <p>It has no idea what it is showing. That is the whole point: nothing on the device can break.</p>
+    </div>
+  </div>
+
+  <div class="rule-card">
+    <b>Why this constraint is the design.</b> Everything awkward in the project descends from one fact:
+    the only way to change a single pixel is to upload a whole image and have the device store it in
+    flash. That is why there is a write budget, why countdowns are rounded, and why identical frames
+    are never re-sent.
+  </div>
+</section>
+
+<!-- ======================= HARDWARE ======================= -->
+<section class="chapter" id="hardware">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 01</span>
+    <h2>What is <em>actually</em> inside <span class="emo-i">🔌</span></h2>
+    <p>Identified by disassembling the vendor firmware and cross-checking against open-source ports for the same board. The USB-C port is power only &mdash; there is no serial chip &mdash; which is why the device is driven entirely over Wi-Fi.</p>
+  </div>
+
+  <table class="spec">
+    <thead><tr><th>Part</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td>MCU</td><td>ESP8266, ESP-12F class, running the Arduino ESP8266 core on the NONOS SDK &mdash; not an ESP32</td></tr>
+      <tr><td>Flash</td><td>4&nbsp;MB GD25Q32C, brought up in QIO mode</td></tr>
+      <tr><td>Panel</td><td>240&times;240 IPS, ST7789 family, SPI mode 3 at 40&nbsp;MHz, BGR order, inversion on</td></tr>
+      <tr><td>Pins</td><td>SCLK&nbsp;14, MOSI&nbsp;13, DC&nbsp;0, RST&nbsp;2, backlight&nbsp;5 (active-low), CS unused</td></tr>
+      <tr><td>Filesystem</td><td>LittleFS, ~2.98&nbsp;MB, holding photos, fonts and the web pages</td></tr>
+      <tr><td>Settings</td><td>Emulated EEPROM &mdash; a single 4&nbsp;KB sector with no wear levelling</td></tr>
+      <tr><td>Input</td><td>None. No buttons, no touch. It is a display.</td></tr>
+      <tr><td>Discovery</td><td>None. No mDNS, no MQTT, no WebSocket &mdash; you read its address off a 1.5&Prime; screen</td></tr>
+    </tbody>
+  </table>
+
+  <div class="gotcha">
+    <b>The RAM wall.</b> A full 240&times;240 16-bit frame buffer is 115,200 bytes. The ESP8266 has
+    roughly 40&ndash;50&nbsp;KB of usable heap. No firmware for this board &mdash; vendor or
+    open-source &mdash; can buffer a whole frame, so JPEGs are decoded in small tiles and pushed
+    straight at the panel. It is also why rendering on a real computer and shipping one finished
+    image is the right division of labour.
+  </div>
+</section>
+
+<!-- ======================= CODE FLOW ======================= -->
+<section class="chapter" id="flow">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 02</span>
+    <h2>From an API call <em>to a picture</em> <span class="emo-i">🔀</span></h2>
+    <p>Python 3.10+ with Pillow as the only runtime dependency. No database, no queue, no container, no cloud. Persistent state is a handful of JSON files and the last image uploaded.</p>
+  </div>
+
+  <figure class="fig">
+    <svg viewBox="0 0 880 150" role="img" aria-label="Pipeline: providers to sources to state to render to device to clock">
+      <g>
+        <rect class="node" x="4"   y="36" width="118" height="54" rx="8"/>
+        <rect class="node" x="152" y="36" width="118" height="54" rx="8"/>
+        <rect class="node" x="300" y="36" width="118" height="54" rx="8"/>
+        <rect class="node" x="448" y="36" width="118" height="54" rx="8"/>
+        <rect class="node" x="596" y="36" width="118" height="54" rx="8"/>
+        <rect class="node" x="744" y="36" width="130" height="54" rx="8"/>
+      </g>
+      <text class="lbl" x="63"  y="58" text-anchor="middle">Providers</text>
+      <text class="dim" x="63"  y="74" text-anchor="middle">HTTPS &middot; CLI</text>
+      <text class="lbl" x="211" y="58" text-anchor="middle">sources.py</text>
+      <text class="dim" x="211" y="74" text-anchor="middle">read + normalise</text>
+      <text class="lbl" x="359" y="58" text-anchor="middle">state.py</text>
+      <text class="dim" x="359" y="74" text-anchor="middle">UsageStore</text>
+      <text class="lbl" x="507" y="58" text-anchor="middle">render</text>
+      <text class="dim" x="507" y="74" text-anchor="middle">240&times;240 JPEG</text>
+      <text class="lbl" x="655" y="58" text-anchor="middle">device.py</text>
+      <text class="dim" x="655" y="74" text-anchor="middle">upload</text>
+      <text class="lbl" x="809" y="58" text-anchor="middle">Clock</text>
+      <text class="dim" x="809" y="74" text-anchor="middle">photo album</text>
+      <g class="edge">
+        <path d="M122 63 H148"/><path d="M270 63 H296"/><path d="M418 63 H444"/>
+        <path d="M566 63 H592"/><path class="hot" d="M714 63 H740"/>
+      </g>
+      <text class="dim" x="727" y="110" text-anchor="middle">the only step</text>
+      <text class="dim" x="727" y="122" text-anchor="middle">that writes flash</text>
+    </svg>
+    <figcaption>Everything left of the final arrow happens in memory on the host. Only the last step touches the device.</figcaption>
+  </figure>
+
+  <div class="split">
+    <div class="rule-card">
+      <b>One clock, one owner.</b> A second publisher pointed at the same clock fights over the
+      filename and over which saved backup is authoritative. So the watchlist runner drops its
+      device address entirely and becomes a pure feeder, writing only a snapshot file. The usage
+      runner reads that file and stays the single process that backs up, uploads and re-asserts the
+      display. The conflict is removed by construction, not by coordination.
+    </div>
+    <div class="rule-card">
+      <b>Unknown is never zero.</b> A failed read keeps the previous values and marks the row stale
+      rather than reporting 0%. A missing reset time renders as a dash. An identity mismatch blanks
+      the numbers instead of showing another account's. A wrong number is worse than no number on a
+      display you glance at.
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FACES ======================= -->
+<section class="chapter" id="faces">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 03</span>
+    <h2>Eight faces, <em>one snapshot</em> <span class="emo-i">🎨</span></h2>
+    <p>Every face is a Python function that receives the same normalised reading and draws a 240&times;240 image. Swapping face is a dropdown, not a redeploy. All renders below are from the project's sample data.</p>
+  </div>
+
+  <div class="faces">
+    <div class="face feature">
+      <img src="assets/face-combo.png" alt="The combo face: three AI usage rows with gauges above four share rows with prices and day changes" width="260" height="260">
+      <div class="fname">combo</div>
+      <p class="fnote">Both datasets on one screen. Three AI rows with usage gauges and the window each percentage is of, then four share rows. It only draws the market half while the market is open &mdash; outside the session it hands the whole screen back to the usage face, so the readable layout is what you see most of the day.</p>
+    </div>
+    <div class="face"><img src="assets/face-pixel.png" alt="The pixel face" width="200" height="200"><div class="fname">pixel</div><p class="fnote">Hand-drawn 5&times;7 glyphs, no font files</p></div>
+    <div class="face"><img src="assets/face-digital.png" alt="The digital face" width="200" height="200"><div class="fname">digital</div><p class="fnote">Seven-segment, with a clock for short windows</p></div>
+    <div class="face"><img src="assets/face-neon.png" alt="The neon face" width="200" height="200"><div class="fname">neon</div><p class="fnote">Glow and rings</p></div>
+    <div class="face"><img src="assets/face-retro.png" alt="The retro face" width="200" height="200"><div class="fname">retro</div><p class="fnote">Pixel scenes per provider</p></div>
+    <div class="face"><img src="assets/face-hud.png" alt="The hud face" width="200" height="200"><div class="fname">hud</div><p class="fnote">Instrument panel</p></div>
+    <div class="face"><img src="assets/face-gameboy.png" alt="The gameboy face" width="200" height="200"><div class="fname">gameboy</div><p class="fnote">Four shades of green</p></div>
+  </div>
+
+  <p>There is a ninth, <span class="mono">space</span>, which returns an animated GIF rather than a JPEG &mdash; so the publisher picks the filename from the image's magic bytes rather than from the style name.</p>
+</section>
+
+<!-- ======================= FLASH ======================= -->
+<section class="chapter" id="flash">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 04</span>
+    <h2>The part that was <em>actually hard</em> <span class="emo-i">💾</span></h2>
+    <p>The clock keeps every frame in flash, and flash wears out. The obvious guard &mdash; skip the upload when the bytes are identical &mdash; turns out not to be enough, and the reason is worth stating because it is easy to get wrong.</p>
+  </div>
+
+  <div class="gotcha">
+    <b>The dedupe never fires when it matters.</b> When a short usage window leads, the face shows a
+    countdown in minutes. That countdown changes on <em>every</em> poll, so every frame differs and
+    the byte comparison never matches. Measured at the default five-minute poll: twelve distinct
+    frames an hour, every hour you are working.
+  </div>
+
+  <ol class="flow">
+    <li><b>Byte dedupe</b> &mdash; an identical frame is never rewritten.</li>
+    <li><b>Countdown bucketing</b> &mdash; the countdown is rounded up to whole buckets, so the face changes when the remaining time crosses an edge rather than every minute. A steady hour drops from twelve writes to four.</li>
+    <li><b>A spaced write budget</b> &mdash; uploads are <em>spaced</em> rather than given a quota. A quota lets a busy hour spend its whole allowance in the first twenty-five minutes and then freeze the display on a stale frame, which is the opposite of useful.</li>
+    <li><b>A data-change override</b> &mdash; the readings are fingerprinted separately from the countdown, so a percentage or price that actually moved bypasses the budget and goes out at once. A budget that defers real news is worse than no budget.</li>
+  </ol>
+
+  <div class="split">
+    <div class="rule-card">
+      <b>A watchdog, because once was not enough.</b> The call that selects the photo theme used to
+      run only when the output filename changed &mdash; that is, once. A clock that reboots, or that
+      someone opens in its own web UI, silently reverts to its own theme while uploads keep
+      succeeding into a photo nobody is looking at. It is now re-asserted periodically.
+    </div>
+    <div class="rule-card">
+      <b>A quality ladder, because the limit is hard.</b> The firmware rejects an oversized upload
+      outright. A busy face can cross that limit on its worst frame and simply stop updating with no
+      visible error, so the encoder steps quality down, then chroma, until the frame fits, and records
+      what it chose.
+    </div>
+  </div>
+
+  <h3>Two flash regions, and only one of them forgives you</h3>
+  <p>Disassembling the firmware settled a question that had been shaping the design. The photo album is <b>LittleFS</b> &mdash; copy-on-write and wear-levelled, so a rewritten file lands on fresh blocks. That moved the wear estimate from <em>months</em> to the order of a decade, and demoted the write budget from a safety mechanism to good hygiene.</p>
+  <p>The settings are a different story. Everything written through the settings endpoint &mdash; brightness, the night window, the accent colours &mdash; lands in the ESP8266's <b>emulated EEPROM</b>: one 4&nbsp;KB sector, rewritten whole on every commit, no wear levelling, holding the Wi-Fi credentials beside the display settings. That asymmetry kills an idea that looks attractive from the outside: using the accent colours as a cheap status channel, since they need no image upload. They are not cheap. They are the most fragile flash on the device.</p>
+</section>
+
+<!-- ======================= BASE CODE ======================= -->
+<section class="chapter" id="base">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 05</span>
+    <h2>What this was <em>built from</em> <span class="emo-i">🧬</span></h2>
+    <p>TokenTV is a fork, and the original idea is not mine. This section is the honest ledger of which side of the line each piece came from.</p>
+  </div>
+
+  <div class="prov">
+    <section>
+      <span class="who">Upstream &middot; MIT &copy; 2026 click6067-ship-it</span>
+      <h3>🌱 The original</h3>
+      <ul>
+        <li><b>The core insight</b> &mdash; drive a stock-firmware clock by uploading pictures to its photo album</li>
+        <li>The device layer for both clock API profiles, and the backup/restore flow</li>
+        <li>Five clock faces and the web dashboard</li>
+        <li>The Apple Watch endpoint</li>
+        <li>The published demo and the project's <a href="https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/">Hackaday write-up</a></li>
+        <li>SmallTV-Ultra support contributed by <b>Ye Thi Ha Htwe</b></li>
+      </ul>
+    </section>
+    <section>
+      <span class="who">Research prior art</span>
+      <h3>📚 Standing on</h3>
+      <ul>
+        <li><a href="https://github.com/adrienbrault/geekmagic-hacs">adrienbrault/geekmagic-hacs</a> &mdash; the only other project that documents and implements this exact clock's API profile</li>
+        <li><a href="https://github.com/bvweerd/geekmagic-tv-esp8266">bvweerd/geekmagic-tv-esp8266</a> and its forks &mdash; open-source firmware for the same board, which confirmed the pin map and panel</li>
+      </ul>
+    </section>
+  </div>
+</section>
+
+<!-- ======================= CONTRIBUTIONS ======================= -->
+<section class="chapter" id="built">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 06</span>
+    <h2>What I <em>contributed</em> <span class="emo-i">🔨</span></h2>
+    <p>Twenty-three commits over three days, on top of the fork point. Two new providers, a second data domain, the flash-write discipline, and the hardware study that corrected the assumption underneath it all.</p>
+  </div>
+
+  <div class="numbers">
+    <div><b>23</b><span>commits, excluding merges</span></div>
+    <div><b>+2,385</b><span>lines of Python, including tests</span></div>
+    <div><b>129</b><span>tests passing</span></div>
+    <div><b>2</b><span>providers replaced</span></div>
+  </div>
+
+  <ul class="ledger">
+    <li style="--c:var(--c-ai)">
+      <h3>Two providers swapped, and one taken much further</h3>
+      <p>Upstream shipped Codex and Grok. Both were replaced &mdash; Ollama Cloud and Antigravity. Ollama then needed real work: its limit is a monthly credit budget rather than a quota, so the allowance is derived from the account plan, spend is read over the credit period and labelled in dollars, the face counts down to the refill, and the account is verified against the email the API reports.</p>
+      <span class="where">sources.py · usage.py · themes.py</span>
+    </li>
+    <li style="--c:var(--c-data)">
+      <h3>A second data domain: a share watchlist</h3>
+      <p>A Finnhub-backed watchlist face, with its own poll loop, market-session awareness and palette &mdash; proving the device was never really about AI usage, but about any number worth glancing at.</p>
+      <span class="where">stocks.py · 602 lines</span>
+    </li>
+    <li style="--c:var(--c-ship)">
+      <h3>Flash-write discipline</h3>
+      <p>Countdown bucketing, a spaced write budget, a data-change override, a photo-theme watchdog and a JPEG quality ladder &mdash; each one fixing a specific way the display could silently stop being true.</p>
+      <span class="where">display.py · device.py · live.py</span>
+    </li>
+    <li style="--c:var(--c-app)">
+      <h3>Both datasets on one clock</h3>
+      <p>The combo face, plus the ownership split that makes it safe: the watchlist runner became a pure feeder, so exactly one process owns the device. The market half only exists while the market does.</p>
+      <span class="where">combo.py · live.py</span>
+    </li>
+    <li style="--c:var(--c-cfg)">
+      <h3>The clock's own settings, and its identity</h3>
+      <p>Brightness and the night window moved out of the device's web UI and into version-controlled config, applied only where they differ. The clock is now pinned by MAC address, because a DHCP lease can move an address between identical-looking devices and nothing else would notice.</p>
+      <span class="where">device.py · sources.py</span>
+    </li>
+    <li style="--c:var(--c-run)">
+      <h3>A hardware study that changed the design</h3>
+      <p>Disassembling the vendor firmware established the chip, the panel, the route table and the pin map &mdash; and corrected a wrong assumption about the filesystem that had been inflating the flash-wear estimate by an order of magnitude. It also turned up a firmware quirk the hard way: deleting one photo silently re-enables every remaining one.</p>
+      <span class="where">Ghidra · 2,809 functions recovered</span>
+    </li>
+    <li style="--c:var(--c-lang)">
+      <h3>Documentation the fork did not have</h3>
+      <p>A changelog, an architecture document, a firmware and HTTP-surface reference, three generated interactive diagrams that cite the source lines they were built from, and an agent guide for whoever works on it next.</p>
+      <span class="where">+802 lines of prose</span>
+    </li>
+  </ul>
+</section>
+
+<!-- ======================= NEXT ======================= -->
+<section class="chapter" id="next">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 07</span>
+    <h2>What would come <em>next</em> <span class="emo-i">🔭</span></h2>
+    <p><span class="status proposed">Proposed &middot; not built</span></p>
+  </div>
+
+  <p>The limitation worth attacking is not wear. It is the contract: the only way to change a pixel is to store a whole image. A custom firmware could change the device from <em>a picture frame you rewrite</em> into <em>a display you draw on</em> &mdash; accepting a frame over HTTP, decoding it straight to the panel in tiles, and never touching the filesystem at all. The write budget would stop existing, and every existing face would keep working, because the rendering stays on the host.</p>
+
+  <p>It is a weekend's work and a £5 serial adapter, plus a full flash backup first, because the vendor image restores the firmware but not the photos. Whether that is worth opening the case is a separate question from whether it would work.</p>
+
+  <div class="foot-meta" style="margin-top:28px">
+    <span>TokenTV v0.4.1</span><span>&middot;</span>
+    <span>MIT</span><span>&middot;</span>
+    <span><a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a></span><span>&middot;</span>
+    <span>forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a></span>
+  </div>
+</section>
+
+</main>
+
+<script src="assets/theme.js"></script>
+</body>
+</html>
