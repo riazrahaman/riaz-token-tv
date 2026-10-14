@@ -388,17 +388,48 @@ async function initVisitCounter() {
 if (/^https?:$/.test(location.protocol)) initVisitCounter();
 
 /* ---------------- Concept Video Sound Toggle ---------------- */
-const conceptVid = document.getElementById("conceptVideo");
-const soundToggle = document.getElementById("soundToggle");
-if (conceptVid && soundToggle) {
-  soundToggle.addEventListener("click", () => {
-    if (conceptVid.muted) {
-      conceptVid.muted = false;
-      conceptVid.play().catch(() => {});
+(function() {
+  const conceptVid = document.getElementById("conceptVideo");
+  const soundToggle = document.getElementById("soundToggle");
+  if (!conceptVid || !soundToggle) return;
+
+  function updateSoundUI(isMuted) {
+    if (isMuted) {
+      soundToggle.innerHTML = '<span class="sound-icon">🔇</span> <span class="sound-text">Unmute</span>';
+      soundToggle.setAttribute("aria-pressed", "false");
+      soundToggle.classList.remove("is-unmuted");
+    } else {
       soundToggle.innerHTML = '<span class="sound-icon">🔊</span> <span class="sound-text">Mute</span>';
+      soundToggle.setAttribute("aria-pressed", "true");
+      soundToggle.classList.add("is-unmuted");
+    }
+  }
+
+  async function toggleAudio(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const isCurrentlyMuted = conceptVid.muted || conceptVid.volume === 0;
+    if (isCurrentlyMuted) {
+      // Unmute: rewind so voiceover plays from beginning
+      conceptVid.currentTime = 0;
+      conceptVid.removeAttribute("muted");
+      conceptVid.muted = false;
+      conceptVid.defaultMuted = false;
+      conceptVid.volume = 1.0;
+      try {
+        await conceptVid.play();
+      } catch (err) {
+        console.warn("Autoplay audio unlock failed:", err);
+      }
+      updateSoundUI(false);
     } else {
       conceptVid.muted = true;
-      soundToggle.innerHTML = '<span class="sound-icon">🔇</span> <span class="sound-text">Unmute</span>';
+      updateSoundUI(true);
     }
-  });
-}
+  }
+
+  soundToggle.addEventListener("click", toggleAudio);
+  conceptVid.addEventListener("click", toggleAudio);
+})();

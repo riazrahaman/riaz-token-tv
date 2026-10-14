@@ -82,9 +82,40 @@ const server = http.createServer((req, res) => {
     }
     const type = TYPES[path.extname(target).toLowerCase()] || "application/octet-stream";
     const immutable = target.includes(`${path.sep}assets${path.sep}`);
+    const range = req.headers.range;
+
+    if (range && stat.size > 0) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+
+      if (isNaN(start) || isNaN(end) || start > end || end >= stat.size) {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${stat.size}`,
+          "Content-Type": type,
+        });
+        return res.end();
+      }
+
+      const chunksize = end - start + 1;
+      const headers = {
+        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunksize,
+        "Content-Type": type,
+        "Cache-Control": immutable ? "public, max-age=3600" : "public, max-age=300",
+      };
+
+      if (req.method === "HEAD") return send(res, 206, null, headers);
+      res.writeHead(206, { "X-Content-Type-Options": "nosniff", ...headers });
+      fs.createReadStream(target, { start, end }).pipe(res);
+      return;
+    }
+
     const headers = {
       "Content-Type": type,
       "Content-Length": stat.size,
+      "Accept-Ranges": "bytes",
       "Cache-Control": immutable ? "public, max-age=3600" : "public, max-age=300",
     };
     if (req.method === "HEAD") return send(res, 200, null, headers);

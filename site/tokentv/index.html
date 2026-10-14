@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <script>document.documentElement.classList.add("js");try{var t=localStorage.getItem("theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="assets/guide.css">
-<link rel="stylesheet" href="assets/project.css">
+<link rel="stylesheet" href="assets/project.css?v=3">
 </head>
 <body>
 
@@ -109,9 +109,9 @@
   <div class="showcase-grid">
     <div class="demo-card">
       <div class="demo-media">
-        <video id="conceptVideo" autoplay loop muted playsinline poster="assets/tokentv-concept-poster.jpg" preload="metadata">
-          <source src="assets/tokentv-concept.webm" type="video/webm">
+        <video id="conceptVideo" autoplay loop muted playsinline poster="assets/tokentv-concept-poster.jpg" preload="auto">
           <source src="assets/tokentv-concept.mp4" type="video/mp4">
+          <source src="assets/tokentv-concept.webm" type="video/webm">
         </video>
         <button class="sound-toggle-btn" id="soundToggle" type="button" aria-label="Toggle sound">
           <span class="sound-icon">🔇</span> <span class="sound-text">Unmute</span>
@@ -476,6 +476,6 @@
 
 </main>
 
-<script src="assets/theme.js?v=2"></script>
+<script src="assets/theme.js?v=3"></script>
 </body>
 </html>
