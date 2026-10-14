@@ -281,7 +281,7 @@
   </figure>
   <p class="fig-hint">&harr; scroll the diagram sideways</p>
 
-  <div class="split">
+  <div class="split" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
     <div class="rule-card">
       <b>One clock, one owner.</b> A second publisher pointed at the same clock fights over the
       filename and over which saved backup is authoritative. So the watchlist runner drops its
@@ -290,12 +290,30 @@
       display. The conflict is removed by construction, not by coordination.
     </div>
     <div class="rule-card">
+      <b>Follow-the-Sun markets.</b> Financial markets don't share hours. The feeder continuously matches
+      UTC timestamps against world trading sessions: routing to zero-config Yahoo Finance for Indian equities
+      (09:15–15:30 IST) when Asian markets open, and switching over to Finnhub for US equities (09:30–16:00 ET)
+      when New York wakes up. During off-hours, the ticker gracefully folds, returning 100% of the display to AI usage.
+    </div>
+    <div class="rule-card">
       <b>Unknown is never zero.</b> A failed read keeps the previous values and marks the row stale
       rather than reporting 0%. A missing reset time renders as a dash. An identity mismatch blanks
       the numbers instead of showing another account's. A wrong number is worse than no number on a
       display you glance at.
     </div>
   </div>
+
+  <table class="spec" style="margin-top:24px">
+    <thead><tr><th>Layer</th><th>Technology</th><th>Role &amp; Rationale</th></tr></thead>
+    <tbody>
+      <tr><td>Host Runtime</td><td>Python 3.10+</td><td>Native execution alongside official CLI tools; zero build or container footprint.</td></tr>
+      <tr><td>Imaging</td><td>Pillow (PIL)</td><td>Sole dependency; draws 240&times;240 pixel glyphs, adaptive font scales, gauges, and animated GIFs.</td></tr>
+      <tr><td>Market Data</td><td>Finnhub &amp; Yahoo Finance</td><td>Finnhub for US equities (Keychain key); zero-config v8 chart API for Indian NSE/BSE equities.</td></tr>
+      <tr><td>Networking</td><td>urllib.request</td><td>Dependency-free standard library HTTP client for upstream REST polling and LAN uploads.</td></tr>
+      <tr><td>Process Supervisor</td><td>macOS launchd</td><td>Always-on background LaunchAgents (<code>com.tokentv.clock</code> and <code>com.tokentv.stocks</code>) with auto-restart.</td></tr>
+      <tr><td>Storage</td><td>Atomic JSON &amp; LittleFS</td><td>POSIX atomic snapshot files on host; wear-levelled copy-on-write LittleFS on clock.</td></tr>
+    </tbody>
+  </table>
 </section>
 
 <!-- ======================= FACES ======================= -->
@@ -310,7 +328,7 @@
     <div class="face feature">
       <img src="assets/face-combo.png" alt="The combo face: three AI usage rows with gauges above four share rows with prices and day changes" width="260" height="260">
       <div class="fname">combo</div>
-      <p class="fnote">Both datasets on one screen. Three AI rows with usage gauges and the window each percentage is of, then four share rows. It only draws the market half while the market is open &mdash; outside the session it hands the whole screen back to the usage face, so the readable layout is what you see most of the day.</p>
+      <p class="fnote">Both datasets on one screen with follow-the-sun global market routing. Three AI rows with usage gauges and the window each percentage is of, then four share rows. When Indian markets open (09:15–15:30 IST), it displays NSE large caps with dynamic INR font scaling; when US markets open (09:30–16:00 ET), it switches to US equities with an active exchange badge (NSE or US). Outside market sessions, it hands the entire canvas back to the full-size AI usage face.</p>
     </div>
     <div class="face"><img src="assets/face-pixel.png" alt="The pixel face" width="200" height="200"><div class="fname">pixel</div><p class="fnote">Hand-drawn 5&times;7 glyphs, no font files</p></div>
     <div class="face"><img src="assets/face-digital.png" alt="The digital face" width="200" height="200"><div class="fname">digital</div><p class="fnote">Seven-segment, with a clock for short windows</p></div>
