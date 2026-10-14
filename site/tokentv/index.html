@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="0.4.1">
+<meta name="version" content="0.4.2">
 <title>TokenTV — AI usage on a $5 desk clock</title>
 <meta name="description" content="How a $5 Wi-Fi desk clock shows live AI usage and a stock watchlist without ever being reflashed — the design, the code flow, the hardware, and what was contributed on top of the original.">
 <link rel="canonical" href="https://tokentv.riazrahaman.com/">
@@ -37,11 +37,11 @@
   <header class="hero">
     <h1>A $5 clock that<br><em>never gets</em><br>reflashed.</h1>
     <div>
-      <p class="lede">TokenTV puts live AI usage &mdash; and a share watchlist &mdash; on a tiny Wi-Fi desk clock, without replacing a single byte of its firmware. The trick is that the clock never knows. It thinks it is showing a holiday photo. 🕰️</p>
+      <p class="lede">TokenTV puts live AI usage &mdash; and a share watchlist &mdash; on a tiny Wi-Fi desk clock, without replacing a single byte of its firmware. The trick is that the clock never knows. It thinks it is showing a holiday photo. <span class="emo-i">🕰️</span></p>
       <div class="meta">
         <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
         <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
-        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span>v0.4.1</span>
+        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.2</span>
       </div>
     </div>
   </header>
@@ -425,15 +425,13 @@
   <p>The limitation worth attacking is not wear. It is the contract: the only way to change a pixel is to store a whole image. A custom firmware could change the device from <em>a picture frame you rewrite</em> into <em>a display you draw on</em> &mdash; accepting a frame over HTTP, decoding it straight to the panel in tiles, and never touching the filesystem at all. The write budget would stop existing, and every existing face would keep working, because the rendering stays on the host.</p>
 
   <p>It is a weekend's work and a £5 serial adapter, plus a full flash backup first, because the vendor image restores the firmware but not the photos. Whether that is worth opening the case is a separate question from whether it would work.</p>
-
-  <div class="foot-meta" style="margin-top:28px">
-    <span>TokenTV v0.4.1</span><span>&middot;</span>
-    <span>MIT</span><span>&middot;</span>
-    <span><a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a></span><span>&middot;</span>
-    <span>forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a></span><span>&middot;</span>
-    <span>built with Claude Code</span>
-  </div>
 </section>
+
+<footer>
+  <span>Project &middot; TokenTV &middot; Oct 2026</span>
+  <span>MIT &middot; <a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a> &middot; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> &middot; built with AI</span>
+  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.2</span><span id="visits" hidden></span></span>
+</footer>
 
 </main>
 
