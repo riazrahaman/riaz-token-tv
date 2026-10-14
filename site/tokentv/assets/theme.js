@@ -338,31 +338,51 @@ if (siteVersion) {
   if (siteV) siteV.textContent = "v" + siteVersion;
 }
 
-/* ---------------- Visit Counter (Abacus) ---------------- */
+/* ---------------- Visit Counter ---------------- */
 async function initVisitCounter() {
   const BASE = "https://abacus.jasoncameron.dev",
         NAMESPACE = "tokentv.riazrahaman.com",
         KEY = (document.documentElement.dataset.visitKey || document.body.dataset.visitKey || "pageviews"),
         FLAG = "visit-counted";
-  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
-  let already = isLocal;
-  if (!isLocal) {
-    try { already = sessionStorage.getItem(FLAG) === "1"; } catch {}
-    if (!already) { try { sessionStorage.setItem(FLAG, "1"); } catch {} }
-  }
+  let already = false;
+  try { already = sessionStorage.getItem(FLAG) === "1"; } catch {}
+  if (!already) { try { sessionStorage.setItem(FLAG, "1"); } catch {} }
+
   let value = null;
+  // 1. Try local /api/visits endpoint
   try {
-    const res = await fetch(`${BASE}/${already ? "get" : "hit"}/${NAMESPACE}/${KEY}`, { referrerPolicy: "no-referrer" });
-    if (res.ok) {
-      const d = await res.json();
-      if (typeof d.value === "number") value = d.value;
+    const localRes = await fetch(`/api/visits?hit=${already ? 0 : 1}`);
+    if (localRes.ok) {
+      const data = await localRes.json();
+      if (typeof data.value === "number") value = data.value;
     }
   } catch {}
+
+  // 2. Fallback to Abacus cloud counter
+  if (value === null) {
+    try {
+      const res = await fetch(`${BASE}/${already ? "get" : "hit"}/${NAMESPACE}/${KEY}`, { referrerPolicy: "no-referrer" });
+      if (res.ok) {
+        const d = await res.json();
+        if (typeof d.value === "number") value = d.value;
+      }
+    } catch {}
+  }
+
   if (value === null) return;
-  const el = document.getElementById("visits");
-  if (!el) return;
-  el.textContent = `${value.toLocaleString()} ${value === 1 ? "visit" : "visits"}`;
-  el.title = already ? "Visit count so far" : "This visit was counted";
-  el.hidden = false;
+  const formatted = `${value.toLocaleString()} ${value === 1 ? "visit" : "visits"}`;
+
+  const footEl = document.getElementById("visits");
+  if (footEl) {
+    footEl.textContent = formatted;
+    footEl.title = already ? "Visit count so far" : "This visit was counted";
+    footEl.hidden = false;
+  }
+
+  const heroEl = document.getElementById("heroVisits");
+  if (heroEl) {
+    heroEl.textContent = formatted;
+    heroEl.title = already ? "Visit count so far" : "This visit was counted";
+  }
 }
 if (/^https?:$/.test(location.protocol)) initVisitCounter();

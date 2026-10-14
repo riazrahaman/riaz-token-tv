@@ -7,3 +7,5 @@ __pycache__/
 build/
 /.agent-grid/
 /.archify/
+*.visits.json
+.visits.json
