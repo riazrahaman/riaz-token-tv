@@ -5,7 +5,8 @@ __pycache__/
 /.venv/
 *.egg-info/
 build/
-/.agent-grid/
+.agent-grid/
 /.archify/
 *.visits.json
 .visits.json
+/video.mp4

@@ -85,3 +85,17 @@
   .fig-hint{display:block}
 }
 .fig-hint{display:none;font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin:-14px 0 18px}
+
+/* ---------- live hardware showcase ---------- */
+.hardware-demo{display:grid;grid-template-columns:300px 1fr;gap:20px;background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px;margin:18px 0 24px;align-items:center}
+@media (max-width:768px){.hardware-demo{grid-template-columns:1fr}}
+.demo-media{position:relative;border-radius:10px;overflow:hidden;background:#000;border:1px solid var(--rule)}
+.demo-media video{width:100%;height:auto;display:block;aspect-ratio:620/540;object-fit:cover}
+.demo-caption h3{margin:8px 0 6px;font-size:18px;letter-spacing:-.01em}
+.demo-caption p{margin:0 0 12px;color:var(--ink-2);font-size:14px;line-height:1.5}
+.live-pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--c-data);background:rgba(11,132,102,.12);padding:3px 8px;border-radius:20px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--c-data);box-shadow:0 0 8px var(--c-data);display:inline-block;animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+.demo-link{display:inline-block;font-family:var(--mono);font-size:12.5px;color:var(--accent);text-decoration:none;font-weight:500}
+.demo-link:hover{text-decoration:underline}
+
