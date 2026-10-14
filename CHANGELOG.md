@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-10-14
+
+### Added
+
+- `site/tokentv/`, a public project page explaining the design, the hardware, the code flow, what
+  the fork was built from and what was contributed on top, with two inline SVG diagrams drawn in
+  the host site's own design tokens. It reuses that site's stylesheet rather than imitating it, so
+  the pages are one design language. Deployed at https://tokentv.pages.dev.
+- The page states plainly that the work was done in sessions with an AI agent, and separates what
+  came out of that from the decisions and hardware that did not.
+
+### Notes
+
+- Attribution on the page uses the non-merge commit count and the Python-only line delta rather
+  than the flattering totals, and credits upstream, the SmallTV-Ultra contributor and the research
+  prior art by name.
+- The folder is self-contained and also serves from a dependency-free `server.js`, so it can be
+  hosted anywhere that runs Node or serves static files.
+
 ## [0.4.1] — 2026-10-14
 
 Documentation catching up with 0.4.0, plus a hardware behaviour found while using it.
@@ -143,6 +162,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.2]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.2
 [0.4.1]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.1
 [0.4.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.0
 [0.3.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.3.0
