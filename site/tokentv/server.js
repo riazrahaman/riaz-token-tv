@@ -84,32 +84,44 @@ const server = http.createServer((req, res) => {
     const immutable = target.includes(`${path.sep}assets${path.sep}`);
     const range = req.headers.range;
 
-    if (range && stat.size > 0) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+    if (range && stat.size > 0 && range.startsWith("bytes=")) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (match) {
+        let start = match[1] ? parseInt(match[1], 10) : null;
+        let end = match[2] ? parseInt(match[2], 10) : null;
 
-      if (isNaN(start) || isNaN(end) || start > end || end >= stat.size) {
+        if (start === null && end !== null) {
+          // Suffix range: bytes=-N
+          start = Math.max(0, stat.size - end);
+          end = stat.size - 1;
+        } else if (start !== null) {
+          if (end === null || end >= stat.size) {
+            end = stat.size - 1;
+          }
+        }
+
+        if (start !== null && end !== null && start <= end && start < stat.size) {
+          const chunksize = end - start + 1;
+          const headers = {
+            "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+            "Accept-Ranges": "bytes",
+            "Content-Length": chunksize,
+            "Content-Type": type,
+            "Cache-Control": immutable ? "public, max-age=3600" : "public, max-age=300",
+          };
+
+          if (req.method === "HEAD") return send(res, 206, null, headers);
+          res.writeHead(206, { "X-Content-Type-Options": "nosniff", ...headers });
+          fs.createReadStream(target, { start, end }).pipe(res);
+          return;
+        }
+
         res.writeHead(416, {
           "Content-Range": `bytes */${stat.size}`,
           "Content-Type": type,
         });
         return res.end();
       }
-
-      const chunksize = end - start + 1;
-      const headers = {
-        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunksize,
-        "Content-Type": type,
-        "Cache-Control": immutable ? "public, max-age=3600" : "public, max-age=300",
-      };
-
-      if (req.method === "HEAD") return send(res, 206, null, headers);
-      res.writeHead(206, { "X-Content-Type-Options": "nosniff", ...headers });
-      fs.createReadStream(target, { start, end }).pipe(res);
-      return;
     }
 
     const headers = {
