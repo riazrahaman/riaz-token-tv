@@ -51,6 +51,7 @@ TokenTV resolves this by handling all compositing on the host computer:
 | Packaging | setuptools via `pyproject.toml`, plus a thin `npx` shim in `bin/` | `pip install -e .` for users with Python; `npx` for a zero-install demo. |
 | Tests | `unittest` from the standard library | No test runner to install; `python3 -B -m unittest discover -s tests`. |
 | Credentials | The provider's own login, read in place | TokenTV never asks for a password and never stores a token. |
+| Market Data | Finnhub (US) & Yahoo Finance (India) | Finnhub free tier via Keychain for US equities; zero-config public v8 chart API for Indian NSE/BSE equities. |
 
 There is no database, no message queue, no container, and no cloud component. The persistent state
 is a handful of JSON files and the last image that was uploaded.
@@ -70,8 +71,10 @@ frame. `device.py` is the only module that talks to the clock;
 it implements two firmware profiles and refuses to upload an oversized file.
 
 `live.py` ties it together: it runs the dashboard on `127.0.0.1:8787` and the publish loop that
-calls everything above. `stocks.py` is a second publisher for a share watchlist that mirrors the
-same pattern against its own clock.
+calls everything above. `stocks.py` is a feeder and publisher for share watchlists with follow-the-sun
+multi-market routing: it polls US equities via Finnhub and Indian equities/indices via Yahoo Finance
+v8 chart API based on active market hours, exporting normalized snapshots for combo faces and optionally
+driving a dedicated stock clock.
 
 ## Why the publish loop is careful
 

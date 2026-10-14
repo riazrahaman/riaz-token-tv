@@ -249,7 +249,7 @@
       <text class="lbl" x="82"  y="77"  text-anchor="middle">Anthropic</text>
       <text class="lbl" x="82"  y="125" text-anchor="middle">Ollama</text>
       <text class="lbl" x="82"  y="173" text-anchor="middle">Antigravity</text>
-      <text class="lbl" x="82"  y="281" text-anchor="middle">Finnhub</text>
+      <text class="lbl" x="82"  y="281" text-anchor="middle">Finnhub / Yahoo</text>
       <text class="lbl" x="251" y="125" text-anchor="middle">sources.py</text>
       <text class="lbl" x="389" y="125" text-anchor="middle">state.py</text>
       <text class="lbl" x="527" y="125" text-anchor="middle">render</text>
@@ -473,9 +473,9 @@
       <span class="where">sources.py · usage.py · themes.py</span>
     </li>
     <li style="--c:var(--c-data)">
-      <h3>A second data domain: a share watchlist</h3>
-      <p>A Finnhub-backed watchlist face, with its own poll loop, market-session awareness and palette &mdash; proving the device was never really about AI usage, but about any number worth glancing at.</p>
-      <span class="where">stocks.py · 602 lines</span>
+      <h3>A second data domain: a follow-the-sun share watchlist</h3>
+      <p>A dual-source global watchlist face with follow-the-sun market routing: Finnhub for US equities during American trading hours, and zero-config Yahoo Finance v8 chart API for Indian NSE/BSE equities during Asian hours &mdash; automatically switching tickers, scaling 5-digit INR valuations, and yielding to full AI token metrics during off-hours.</p>
+      <span class="where">stocks.py · 774 lines</span>
     </li>
     <li style="--c:var(--c-ship)">
       <h3>Flash-write discipline</h3>
