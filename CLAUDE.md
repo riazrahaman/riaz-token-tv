@@ -46,6 +46,13 @@ sources.py ──▶ usage.py ──▶ state.py ──▶ display.py / themes.p
 
 ## Things that will bite you
 
+**The watchlist follows the sun, across two data sources.** `stocks.py` now serves US equities
+from Finnhub (API key required) *and* Indian NSE/BSE equities from Yahoo Finance (no key), picking
+whichever market is currently open. So "is the market open" is no longer one boolean against one
+exchange: there is an active-exchange decision with its own timezone (`America/New_York` vs
+`Asia/Kolkata`, NSE regular hours 09:15–15:30 IST). Anything that reasons about market state must
+go through that decision rather than assuming US hours.
+
 **`stocks.py` is a parallel universe.** It is a near-duplicate of `live.py` with its own config
 loader, `write_json`, `load_original`, `mismatch_message` and `publish`. A change to the publish
 path usually has to be made twice. Both write the same filenames (`tokentv.jpg` / `tokentv.gif`),
@@ -128,12 +135,18 @@ Set `"font"` in the config or `TOKEN_TV_FONT` to a real `.ttf`.
 `quantum` and `limit` default to off, so `demo`, `scripts/` and the doc images render exactly as
 before — only the publishers pass them.
 
-`STYLES` lives in `display.py`. The `pixel` face is in `display.py`; `digital`, `neon`, `retro`,
-`hud` and `gameboy` are in `themes.py` (`RENDERERS`); `space` is in `space.py` and returns animated
-GIF bytes, so callers branch on a `GIF8` magic prefix to choose the filename. `combo` is in
-`combo.py` and is the one face that reads `snapshot['stocks']`; when the market is closed or the
-feed is stale it returns `render_pixel(snapshot)`, so it is deliberately byte-identical to `pixel`
-then — a test asserts exactly that, rather than that every style is distinct. Adding a face is
+`STYLES` lives in `display.py` and is now twelve. The `pixel` face is in `display.py`; `digital`,
+`neon`, `retro`, `hud` and `gameboy` are in `themes.py` (`RENDERERS`); `space` is in `space.py`.
+
+The `combo` family is the one that reads `snapshot['stocks']`: `combo.py` is the still version, and
+`pulse`, `patrol`, `twinkle` and `cyber` live in `combo_pulse.py`, `combo_patrol.py`,
+`combo_twinkle.py` and `combo_cyber.py`. Several of these return **animated GIF** bytes rather than
+JPEG, so callers must keep branching on the `GIF8` magic prefix to choose the filename — never on
+the style name — and the 400 000-byte GIF limit applies to them, not the 60 000-byte JPEG one.
+
+When the market is closed or the feed is stale, `combo` falls back to `render_pixel(snapshot)` and
+is therefore deliberately byte-identical to `pixel`. A test asserts exactly that, rather than
+asserting every style is distinct — do not "fix" that test by making them differ. Adding a face is
 documented in `docs/clock-faces.md`.
 
 ## Runtime state
@@ -145,8 +158,11 @@ Written to the `--state-dir` (`.runtime` by default; the installed services use
   It is only trustworthy if captured *before* TokenTV first took the clock over.
 - `display-receipt.json` — last publish: uploads with sha256, plus `throttled`, `reasserted`,
   `data_changed`, `encoded`.
-- `snapshot.json` — the current normalised reading. It is overwritten each cycle, so there is no
-  history.
+- `snapshot.json` — the current normalised reading, overwritten each cycle.
+- `history.jsonl` — an append-only ring buffer of readings (`history.py`), pruned by both entry
+  count and bytes. This is where the history lives now; `snapshot.json` is only ever "now".
+  `read_history()` and `query_symbol_changes()` answer whether a given value actually moved between
+  two times, which is what makes "that row never updates" reports settleable instead of arguable.
 - `tokentv.jpg` / `tokentv.gif` — written only on a successful upload, so they record what the
   clock is actually showing rather than the latest render.
 
@@ -154,6 +170,17 @@ The repository checkout is imported directly by long-running publisher processes
 token_tv.cli run|stocks`). Editing files in place live-patches them, and `render_page` imports
 `themes`/`space` lazily, so a partially-edited tree can raise inside the poll thread. Prefer a git
 worktree for non-trivial work and restart the services deliberately.
+
+## The site folder
+
+`site/tokentv/` is a public project page, deployed separately (Cloudflare Pages) and **not part of
+the Python package**. It is self-contained: its own `package.json` and a dependency-free
+`server.js`, so a host's "root directory" setting pointed at it ignores the repo root. It
+deliberately reuses the Stack Field Guide's `assets/guide.css` verbatim so the author's sub-pages
+share one design language rather than merely resembling each other — restyle it by adding to
+`project.css`, never by editing `guide.css`.
+
+Clock faces shown there are rendered from `token_tv/sample.py`, never from live readings.
 
 ## Hardware notes
 
