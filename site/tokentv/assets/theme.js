@@ -369,7 +369,7 @@ if (siteVersion) {
 /* ---------------- Visit Counter ---------------- */
 async function initVisitCounter() {
   const BASE = "https://abacus.jasoncameron.dev",
-        NAMESPACE = "tokentv.riazrahaman.com",
+        NAMESPACE = "token-tv.riazrahaman.com",
         KEY = (document.documentElement.dataset.visitKey || document.body.dataset.visitKey || "pageviews"),
         FLAG = "visit-counted";
   let already = false;
