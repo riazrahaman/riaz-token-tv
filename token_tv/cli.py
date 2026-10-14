@@ -269,6 +269,33 @@ def demo(args):
     return 0
 
 
+def history_cmd(args):
+    """Inspect the JSONL history buffer for readings or symbol price changes."""
+    from token_tv.history import read_history, query_symbol_changes
+    state_sub = 'state-stocks' if getattr(args, 'stocks', False) or getattr(args, 'symbol', None) else 'state'
+    state_dir = getattr(args, 'state_dir', None)
+    state = Path(state_dir or (Path(args.config).expanduser().parent / state_sub))
+    hist_file = state / 'history.jsonl'
+    if not hist_file.exists():
+        print(f"No history file found at {hist_file}", file=sys.stderr)
+        return 1
+    entries = read_history(hist_file, since=args.since, until=args.until)
+    if args.symbol:
+        res = query_symbol_changes(entries, args.symbol, since=args.since, until=args.until)
+        print(f"Symbol: {res['symbol']}")
+        print(f"Changed: {res['changed']}")
+        print(f"Distinct Prices: {res['distinct_prices']}")
+        print(f"Initial: {res['initial_price']} -> Latest: {res['latest_price']}")
+        print(f"Readings Count: {len(res['readings'])}")
+    else:
+        print(f"Total entries: {len(entries)} in {hist_file}")
+        if entries:
+            first_ts = entries[0].get('updated_at')
+            last_ts = entries[-1].get('updated_at')
+            print(f"Span: {first_ts} to {last_ts}")
+    return 0
+
+
 def start(args):
     """One command: find signed-in CLIs, confirm their emails, ask for the clock, then run."""
     from token_tv.sources import logged_in_email
@@ -381,6 +408,12 @@ def main(argv=None):
                         add_help=False)
     commands.add_parser('stocks', parents=[config], help='draw a stock watchlist and push it to the clock',
                         add_help=False)
+    h = commands.add_parser('history', parents=[config], help='inspect reading history')
+    h.add_argument('--symbol', help='stock symbol to check (e.g. NVDA, TSLA)')
+    h.add_argument('--stocks', action='store_true', help='inspect stock history instead of usage')
+    h.add_argument('--state-dir', help='override state directory')
+    h.add_argument('--since', type=int, help='start timestamp')
+    h.add_argument('--until', type=int, help='end timestamp')
 
     args, extra = parser.parse_known_args(argv)
     if args.command in ('connect', 'run', 'stocks'):
@@ -406,7 +439,7 @@ def main(argv=None):
     if args.command is None:
         parser.print_help()
         return 0
-    return {'setup': setup, 'doctor': doctor, 'demo': demo, 'start': start}[args.command](args)
+    return {'setup': setup, 'doctor': doctor, 'demo': demo, 'start': start, 'history': history_cmd}[args.command](args)
 
 
 if __name__ == '__main__':
