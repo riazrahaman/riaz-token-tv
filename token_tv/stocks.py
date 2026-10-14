@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw
 
 from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
 from token_tv.display import encode_jpeg, pixel_text
+from token_tv.history import append_history
 
 QUOTE_URL = 'https://finnhub.io/api/v1/quote'
 STATUS_URL = 'https://finnhub.io/api/v1/stock/market-status'
@@ -568,7 +569,9 @@ def main(argv=None):
             meta = {'is_open': is_open, 'session': status.get('session'), 'source': 'FINNHUB',
                     'now': now, 'palette': config.get('palette')}
             image = render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=LIMITS[FILES[0]][0])
-            write_json(state_dir / 'snapshot.json', snapshot_payload(rows, meta))
+            payload = snapshot_payload(rows, meta)
+            write_json(state_dir / 'snapshot.json', payload)
+            append_history(state_dir / 'history.jsonl', payload)
             if device:
                 try:
                     original, active_file, last_upload, uploaded = publish(

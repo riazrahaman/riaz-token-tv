@@ -16,6 +16,7 @@ from token_tv.display import STYLES, data_digest, render_frame, render_page, wat
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
+from token_tv.history import append_history, read_history
 
 
 def wanted_settings(config):
@@ -110,7 +111,7 @@ class DisplayPreferences:
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
 
 
-def handler(store, preferences=None, quantum=0):
+def handler(store, preferences=None, quantum=0, state_dir=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -131,6 +132,9 @@ def handler(store, preferences=None, quantum=0):
                 body = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")).encode()
             elif path.startswith("/snapshot/") and path[10:] in snapshot["accounts"]:
                 body = json.dumps(snapshot["accounts"][path[10:]], ensure_ascii=False, separators=(",", ":")).encode()
+            elif path == "/history":
+                hist_path = Path(state_dir) / "history.jsonl" if state_dir else None
+                body = json.dumps(read_history(hist_path) if hist_path else [], ensure_ascii=False, separators=(",", ":")).encode()
             elif path in ("/frame/0.jpg", "/frame/1.jpg"):
                 style = parse_qs(url.query).get('style', [display['style']])[0]
                 if style not in STYLES:
@@ -336,6 +340,7 @@ def main():
                 preferences.delivered(style, False)
         snapshot['display'] = preferences.snapshot()
         write_json(state_dir / "snapshot.json", snapshot)
+        append_history(state_dir / "history.jsonl", snapshot)
         if args.output:
             write_json(args.output, snapshot)
 
@@ -366,7 +371,7 @@ def main():
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum, state_dir=state_dir)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:
