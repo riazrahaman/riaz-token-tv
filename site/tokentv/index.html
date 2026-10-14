@@ -171,35 +171,31 @@
     <h3>The Two Factory Channels &amp; The Hidden GIF Slot</h3>
     <p>Disassembling and probing the vendor firmware revealed that the clock's factory brain is split into two mutually exclusive channels:</p>
 
+    <div class="channels-figure">
+      <img src="assets/two-channels-illustration.png" alt="The Two Factory Channels: Photo Mode (TokenTV) vs Clock Mode (Firmware)" class="channels-img" loading="lazy" />
+    </div>
+
     <div class="channels-grid">
       <div class="channel-col">
         <div class="channel-tag tag-ch1">CHANNEL 1 &middot; PHOTO MODE</div>
         <h4>Full 240&times;240 TokenTV Canvas</h4>
-        <div class="channel-ascii">
-          <pre>┌────────────────────────────┐
-│ [========================] │
-│ CLAUDE    WEEK 66%         │
-│ OLLAMA    WEEK 40%         │
-│ ANTIGRAV  WEEK 74%         │
-│ NVDA: $224   TSLA: $368    │
-└────────────────────────────┘</pre>
+        <p>What TokenTV drives: the host computer renders full-screen 240&times;240 frames or animated GIFs over HTTP. The clock displays it 24/7 with zero local computation.</p>
+        <div class="channel-traits">
+          <span class="trait-pill">&bull; 240&times;240 Full Screen</span>
+          <span class="trait-pill">&bull; Host-Side Compositing</span>
+          <span class="trait-pill">&bull; Zero Clock Lag</span>
         </div>
-        <p>What TokenTV drives: the host renders full-screen 240&times;240 frames or animated GIFs over HTTP. The clock displays it 24/7 with zero local computation.</p>
       </div>
 
       <div class="channel-col">
         <div class="channel-tag tag-ch2">CHANNEL 2 &middot; CLOCK MODE</div>
         <h4>Built-in Time, Weather &amp; 80&times;80 GIF</h4>
-        <div class="channel-ascii">
-          <pre>┌────────────────────────────┐
-│   1 0 : 4 2   A M          │
-│   72°F  Sunny              │
-│  ┌───────────┐             │
-│  │80×80 GIF  │ (Spaceman)  │
-│  └───────────┘             │
-└────────────────────────────┘</pre>
-        </div>
         <p>The vendor mode: syncs NTP clock and OpenWeatherMap weather, playing a tiny 80&times;80 animated GIF sticker (the factory floating spaceman) in the lower corner.</p>
+        <div class="channel-traits">
+          <span class="trait-pill">&bull; Stock NTP &amp; OpenWeather</span>
+          <span class="trait-pill">&bull; Undocumented 80&times;80 Slot</span>
+          <span class="trait-pill">&bull; Confined to ~11% Screen</span>
+        </div>
       </div>
     </div>
 

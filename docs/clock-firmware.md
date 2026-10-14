@@ -66,19 +66,9 @@ image. The clock never has to compose anything.
 
 The factory firmware divides its visual capability into two distinct operational "channels":
 
-```
-┌──────────────────────────────────────┐    ┌──────────────────────────────────────┐
-│       CHANNEL 1: PHOTO MODE          │    │       CHANNEL 2: CLOCK MODE          │
-│                                      │    │                                      │
-│ [==================================] │    │   1 0 : 4 2   A M                    │
-│ CLAUDE    WEEK 66%                   │    │   72°F  Sunny                        │
-│ OLLAMA    WEEK 40%                   │    │                                      │
-│ ANTIGRAV  WEEK 74%                   │    │  ┌───────────┐                       │
-│ NVDA: $224  TSLA: $368               │    │  │Little GIF │  (Tiny 80×80          │
-│                                      │    │  │box        │   animated sticker)   │
-│ (Full 240×240 TokenTV canvas)        │    │  └───────────┘                       │
-└──────────────────────────────────────┘    └──────────────────────────────────────┘
-```
+<p align="center">
+  <img src="assets/two-channels-illustration.png" width="800" alt="The Two Factory Channels: Photo Mode (TokenTV) vs Clock Mode (Firmware)" />
+</p>
 
 1. **Channel 1 (Photo Mode — what TokenTV uses)**:
    - Your host computer renders a full-screen, high-resolution 240×240 image or multi-frame animated GIF with AI quotas, watchlist telemetry, pixel mascots, and glowing gauges.

@@ -14,19 +14,9 @@ Featured on [Hackaday](https://hackaday.com/2026/10/06/smalltv-hacking-with-surp
 
 The clock's factory firmware divides its visual capability into two distinct operational "channels":
 
-```text
-┌──────────────────────────────────────┐    ┌──────────────────────────────────────┐
-│       CHANNEL 1: PHOTO MODE          │    │       CHANNEL 2: CLOCK MODE          │
-│                                      │    │                                      │
-│ [==================================] │    │   1 0 : 4 2   A M                    │
-│ CLAUDE    WEEK 66%                   │    │   72°F  Sunny                        │
-│ OLLAMA    WEEK 40%                   │    │                                      │
-│ ANTIGRAV  WEEK 74%                   │    │  ┌───────────┐                       │
-│ NVDA: $224  TSLA: $368               │    │  │Little GIF │  (Tiny 80×80          │
-│                                      │    │  │box        │   animated sticker)   │
-│ (Full 240×240 TokenTV canvas)        │    │  └───────────┘                       │
-└──────────────────────────────────────┘    └──────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/assets/two-channels-illustration.png" width="800" alt="The Two Factory Channels: Photo Mode (TokenTV) vs Clock Mode (Firmware)" />
+</p>
 
 - **Channel 1 (Photo Mode — what TokenTV uses)**: The host computer renders a full-screen, high-res 240×240 image or multi-frame animated GIF with AI quotas, follow-the-sun watchlist telemetry (US & Indian markets), pixel mascots, and glowing gauges, uploading it via HTTP.
 - **Channel 2 (Clock / Weather Mode)**: Built-in NTP digital clock and OpenWeatherMap temperature with a small 80×80 animated GIF sticker slot in the corner (the factory floating astronaut).

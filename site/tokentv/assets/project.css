@@ -129,7 +129,11 @@
 .channel-col h4{margin:0 0 10px;font-size:15px;letter-spacing:-.01em}
 .channel-col p{margin:10px 0 0;font-size:13px;color:var(--ink-2);line-height:1.5;flex:1}
 
-.channel-ascii pre{font-family:var(--mono);font-size:11.5px;line-height:1.3;background:var(--bg);color:var(--ink-1);padding:12px;border-radius:8px;border:1px solid var(--rule);margin:0;overflow-x:auto}
+.channels-figure{margin:18px 0 22px;border-radius:12px;overflow:hidden;border:1px solid var(--rule);background:#0b0f17;box-shadow:0 8px 24px rgba(0,0,0,.16)}
+.channels-img{width:100%;height:auto;display:block;object-fit:contain}
+
+.channel-traits{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.trait-pill{font-family:var(--mono);font-size:11px;color:var(--ink-2);background:var(--card);border:1px solid var(--rule);padding:3px 8px;border-radius:6px}
 
 .channel-discovery{display:flex;flex-direction:column;gap:12px;background:var(--paper-2);border-left:3px solid var(--accent);padding:14px 16px;border-radius:0 8px 8px 0}
 .disc-item{font-size:13.5px;line-height:1.55;color:var(--ink-2)}

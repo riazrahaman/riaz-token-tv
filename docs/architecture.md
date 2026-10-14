@@ -26,6 +26,10 @@ no source and no warranty.
 
 ### The Two Factory Channels and Host-Side Compositing
 
+<p align="center">
+  <img src="assets/two-channels-illustration.png" width="800" alt="The Two Factory Channels: Photo Mode (TokenTV) vs Clock Mode (Firmware)" />
+</p>
+
 The factory firmware divides its display capabilities into two mutually exclusive channels:
 - **Channel 1 (Photo Mode — what TokenTV uses)**: A full-screen 240×240 canvas fed by HTTP uploads into wear-levelled LittleFS.
 - **Channel 2 (Clock / Weather Mode)**: A fixed firmware layout with digital time, NTP clock sync, OpenWeatherMap weather, and an 80×80 animated GIF sticker slot in the corner (the factory floating astronaut).
