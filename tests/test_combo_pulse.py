@@ -68,3 +68,23 @@ class ComboPulseTests(unittest.TestCase):
         gif_bytes = render_combo_pulse(self.snapshot, scale=2)
         image = Image.open(io.BytesIO(gif_bytes))
         self.assertEqual(image.size, (480, 480))
+
+    def test_combo_patrol_renders_animated_gif(self):
+        from token_tv.combo_patrol import render_combo_patrol
+        gif_bytes = render_combo_patrol(self.snapshot)
+        self.assertTrue(gif_bytes.startswith(b"GIF89a"))
+        self.assertLess(len(gif_bytes), LIMITS["tokentv.gif"][0])
+        image = Image.open(io.BytesIO(gif_bytes))
+        self.assertEqual(image.size, (240, 240))
+        self.assertTrue(getattr(image, "is_animated", False))
+        self.assertGreaterEqual(image.n_frames, 10)
+
+    def test_combo_twinkle_renders_animated_gif(self):
+        from token_tv.combo_twinkle import render_combo_twinkle
+        gif_bytes = render_combo_twinkle(self.snapshot)
+        self.assertTrue(gif_bytes.startswith(b"GIF89a"))
+        self.assertLess(len(gif_bytes), LIMITS["tokentv.gif"][0])
+        image = Image.open(io.BytesIO(gif_bytes))
+        self.assertEqual(image.size, (240, 240))
+        self.assertTrue(getattr(image, "is_animated", False))
+        self.assertGreaterEqual(image.n_frames, 10)
