@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from token_tv.device import (FILES, LIMITS, BackupMismatch, SettingsUnsupported, may_write,
                              open_display)
 from token_tv.catalog import payload as theme_payload
-from token_tv.display import STYLES, data_digest, render_frame, render_page, watch_payload
+from token_tv.display import ANIMATED_STYLES, STYLES, data_digest, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -287,7 +287,7 @@ def main():
                 now = time.time()
                 cycles += 1
                 image, encoded = render_frame(snapshot, 0, style, quantum,
-                                              LIMITS[FILES[0]][0] if style != 'space' else LIMITS[FILES[1]][0])
+                                              LIMITS[FILES[0]][0] if style not in ANIMATED_STYLES else LIMITS[FILES[1]][0])
                 name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
                 # Re-assert the theme periodically, not only when the file name changes: a reboot
