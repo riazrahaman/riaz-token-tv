@@ -40,6 +40,7 @@
       <p class="lede">TokenTV puts live AI usage &mdash; and a share watchlist &mdash; on a tiny Wi-Fi desk clock, without replacing a single byte of its firmware. The trick is that the clock never knows. It thinks it is showing a holiday photo. <span class="emo-i">🕰️</span></p>
       <div class="meta">
         <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
+        <b>Hardware</b> &rarr; $5 Wi-Fi Desk Clock (<a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">AliExpress</a>)<br>
         <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
         <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.2</span><br>
         <b>Visits</b> &rarr; <span id="heroVisits">counting...</span>
@@ -105,9 +106,17 @@
     <p>Identified by disassembling the vendor firmware and cross-checking against open-source ports for the same board. The USB-C port is power only &mdash; there is no serial chip &mdash; which is why the device is driven entirely over Wi-Fi.</p>
   </div>
 
+  <div class="rule-card" style="margin-bottom:18px">
+    <b>The Clock.</b> Designed for the ubiquitous ~$5 retro desk monitor sold on AliExpress:
+    <a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">
+      <em>&ldquo;Smart weather clock electronic photo album weather station animation display WiFi networking automatic update&rdquo;</em> &rarr;
+    </a>
+  </div>
+
   <table class="spec">
     <thead><tr><th>Part</th><th>What it is</th></tr></thead>
     <tbody>
+      <tr><td>Device</td><td><a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">AliExpress mini weather clock / electronic photo album</a> (1.54&Prime; retro TV chassis)</td></tr>
       <tr><td>MCU</td><td>ESP8266, ESP-12F class, running the Arduino ESP8266 core on the NONOS SDK &mdash; not an ESP32</td></tr>
       <tr><td>Flash</td><td>4&nbsp;MB GD25Q32C, brought up in QIO mode</td></tr>
       <tr><td>Panel</td><td>240&times;240 IPS, ST7789 family, SPI mode 3 at 40&nbsp;MHz, BGR order, inversion on</td></tr>
