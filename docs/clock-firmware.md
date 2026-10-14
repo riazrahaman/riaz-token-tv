@@ -62,6 +62,49 @@ decoded in small blocks and pushed straight to the panel (a `TJpg_Decoder` callb
 That is exactly why TokenTV draws the frame on the computer and uploads one finished 240×240
 image. The clock never has to compose anything.
 
+## The Two Factory Channels and the GIF Slot Discovery
+
+The factory firmware divides its visual capability into two distinct operational "channels":
+
+```
+┌──────────────────────────────────────┐    ┌──────────────────────────────────────┐
+│       CHANNEL 1: PHOTO MODE          │    │       CHANNEL 2: CLOCK MODE          │
+│                                      │    │                                      │
+│ [==================================] │    │   1 0 : 4 2   A M                    │
+│ CLAUDE    WEEK 66%                   │    │   72°F  Sunny                        │
+│ OLLAMA    WEEK 40%                   │    │                                      │
+│ ANTIGRAV  WEEK 74%                   │    │  ┌───────────┐                       │
+│ NVDA: $224  TSLA: $368               │    │  │Little GIF │  (Tiny 80×80          │
+│                                      │    │  │box        │   animated sticker)   │
+│ (Full 240×240 TokenTV canvas)        │    │  └───────────┘                       │
+└──────────────────────────────────────┘    └──────────────────────────────────────┘
+```
+
+1. **Channel 1 (Photo Mode — what TokenTV uses)**:
+   - Your host computer renders a full-screen, high-resolution 240×240 image or multi-frame animated GIF with AI quotas, watchlist telemetry, pixel mascots, and glowing gauges.
+   - The clock displays this frame full-screen, 24/7, via `/photo/upload` into LittleFS.
+2. **Channel 2 (Clock / Weather Mode)**:
+   - The clock runs its built-in firmware routines: syncing time over NTP (`pool.ntp.org`) and weather metrics from OpenWeatherMap (configured via `/api/set` with an API key).
+   - In the lower corner, it renders a small 80×80 animated GIF slot (conventionally showing the factory floating astronaut / spaceman).
+
+### The Discovery: The "Hidden" Custom GIF Slot
+Firmware analysis revealed an undocumented capability in Channel 2: the factory floating astronaut is not hardcoded in ROM — it resides in an internal upload slot that can be overwritten with a custom 80×80 animated GIF (e.g., an animated mascot, custom status sticker, or mini ticker).
+
+### The Constraint: The Clock's Brain is Tiny (~40 KB RAM)
+An intuitive idea is to blend the two modes: display TokenTV telemetry on Channel 1 while overlaying an animated GIF sticker from Channel 2. However, the ESP8266 architecture makes this physically impossible:
+- **No Framebuffer**: A 240×240 16-bit RGB565 framebuffer requires 115,200 bytes. The ESP8266 has only ~40–50 KB of usable heap.
+- **Mutual Exclusion**: The firmware cannot composite multiple visual layers. It can either tile-decode an image into Channel 1 OR run the Channel 2 clock layout with its 80×80 GIF sprite. You can only be on **Channel 1** OR **Channel 2**.
+
+### The Solution: Host-Side Animation Compositing
+TokenTV transcends this hardware bottleneck by moving the compositing pipeline entirely onto the host:
+- Rather than expecting the microchip to composite graphics, the host's Python + Pillow engine builds a multi-frame animated sequence (`combo_cyber.py`):
+  - Pre-renders ambient starfield twinkles.
+  - Generates multi-frame walking cycles for the pixel mascot (with directional flips as it patrols the center divider rule).
+  - Dynamically draws quota progress gauges and stock price indicators with custom `▲`/`▼` arrow glyphs.
+  - Assembles the frames into a lean animated GIF (<200 KB).
+- Uploading this pre-composited GIF to Channel 1 delivers rich, multi-layered animations to the clock's screen with zero hardware strain and zero firmware hacking.
+
+
 ## The HTTP surface
 
 Read-only, safe to call:

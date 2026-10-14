@@ -24,6 +24,20 @@ selects the photo theme. The clock believes it is showing a holiday snap. Everyt
 on the host; the device stays stock, which is what makes the project safe to run on hardware with
 no source and no warranty.
 
+### The Two Factory Channels and Host-Side Compositing
+
+The factory firmware divides its display capabilities into two mutually exclusive channels:
+- **Channel 1 (Photo Mode — what TokenTV uses)**: A full-screen 240×240 canvas fed by HTTP uploads into wear-levelled LittleFS.
+- **Channel 2 (Clock / Weather Mode)**: A fixed firmware layout with digital time, NTP clock sync, OpenWeatherMap weather, and an 80×80 animated GIF sticker slot in the corner (the factory floating astronaut).
+
+While Channel 2 contains an undocumented slot where the factory astronaut can be replaced with a custom 80×80 GIF, the ESP8266's memory wall (~40 KB usable heap vs 115 KB needed for a 240×240 16-bit framebuffer) makes hardware layer compositing physically impossible. The clock cannot blend Channel 2's GIF slot over Channel 1's telemetry canvas.
+
+TokenTV resolves this by handling all compositing on the host computer:
+1. **Dynamic Multi-Layer Rendering**: Python + Pillow renders animated pixel mascots, starfields, glowing gauges, and stock quotes.
+2. **Pre-Composited Animated Stream**: Frames are compiled into a lightweight animated GIF (<200 KB).
+3. **Channel 1 Playback**: The clock receives the finished composite and displays rich animations without touching the firmware.
+
+
 ## Technology stack
 
 | Layer | Choice | Why |

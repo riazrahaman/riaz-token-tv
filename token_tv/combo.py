@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 
 from token_tv.display import (BACKGROUND, MUTED, TEXT, account_label, gauge_color, horizontal_gauge,
                               overview_rows, pixel_text, reading, render_pixel)
-from token_tv.stocks import PALETTE, change_ink, price_text
+from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
 
 SIZE = 240
 # A reading older than this is not worth showing as live; the market section is dropped instead.
@@ -64,7 +64,8 @@ def _ai_row(draw, y, row):
 
 
 def _market_row(draw, y, row):
-    pixel_text(draw, (6, y + 3), str(row.get('symbol', '?'))[:4].upper(), scale=2, color=PALETTE['text'])
+    sym = display_symbol(row.get('symbol', '?'))[:5].upper()
+    pixel_text(draw, (6, y + 3), sym, scale=2, color=PALETTE['text'])
     pixel_text(draw, (146, y + 3), price_text(row.get('price')), scale=2, color=TEXT, align='right')
     percent = row.get('percent')
     if percent is None:
@@ -91,9 +92,11 @@ def render_combo(snapshot):
         _ai_row(draw, AI_TOP + index * AI_PITCH, account)
 
     _rule(draw, RULE_Y)
-    session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
+    market_info = (snapshot.get('stocks') or {}).get('market', {})
+    session = str(market_info.get('session') or 'OPEN').upper()
     pixel_text(draw, (6, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
-    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), 'FINNHUB', scale=1, color=PALETTE['dim'], align='right')
+    source_label = market_info.get('exchange') or (snapshot.get('stocks') or {}).get('source') or 'FINNHUB'
+    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)
     return image

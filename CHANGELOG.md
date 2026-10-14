@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-10-14
+
+### Added
+
+- **Two Factory Channels Architectural Documentation**: Formally documented the clock's two factory operational channels (`Channel 1: Photo Mode` vs `Channel 2: Clock/Weather Mode`) across `README.md`, `docs/architecture.md`, and `docs/clock-firmware.md`.
+- **Custom GIF Slot & RAM Wall Analysis**: Documented the hidden custom 80×80 GIF slot in Channel 2 and the ESP8266 ~40 KB memory wall that enforces mutual exclusion between modes.
+- **Host-Side Multi-Frame Compositing**: Documented how TokenTV resolves the memory wall by pre-compositing animated walking pixel mascots, starfields, and live telemetry on the host into a single animated GIF stream for Channel 1.
+- **Dedicated Red/Green Arrow Glyphs**: Native 5×7 `▲` (green) and `▼` (red) triangle indicators with color-coded stock price changes, eliminating overlapping digit artifacts.
+- **Interactive Dual Showcase on Website**: Added responsive side-by-side comparison ("The Vision vs The Reality") in Chapter 01 featuring the 3D concept teaser (with audio unmute and HTTP 206 range streaming) alongside the latest live desk clock recording.
+
 ## [0.4.2] — 2026-10-14
 
 ### Added

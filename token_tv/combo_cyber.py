@@ -18,7 +18,7 @@ from token_tv.combo_pulse import _animated_horizontal_gauge, _pulse_dot
 from token_tv.combo_twinkle import NIGHT_BG
 from token_tv.display import (MUTED, TEXT, account_label, gauge_color,
                               overview_rows, pixel_text, reading, render_pixel)
-from token_tv.stocks import PALETTE, change_ink, price_text
+from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
 
 FPS = 8
 FRAMES = 36  # 4.5-second loop
@@ -42,7 +42,7 @@ def _draw_twinkling_star(draw, x, y, intensity):
 
 
 def _cyber_market_row(draw, y, row, frame):
-    symbol = str(row.get('symbol', '?'))[:4].upper()
+    symbol = display_symbol(row.get('symbol', '?'))[:5].upper()
     pixel_text(draw, (6, y + 3), symbol, scale=2, color=PALETTE['text'])
     pixel_text(draw, (142, y + 3), price_text(row.get('price')), scale=2, color=TEXT, align='right')
 
@@ -114,11 +114,13 @@ def render_cyber_frame(snapshot, frame):
     _draw_mini_bot(draw, bot_x, RULE_Y, frame, facing_right)
 
     # Market header with live pulse dot
-    session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
-    is_open = bool((snapshot.get('stocks') or {}).get('market', {}).get('is_open'))
+    market_info = (snapshot.get('stocks') or {}).get('market', {})
+    session = str(market_info.get('session') or 'OPEN').upper()
+    is_open = bool(market_info.get('is_open'))
     _pulse_dot(draw, (6, MARKET_LABEL_Y + 2), frame, is_green=is_open)
     pixel_text(draw, (16, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
-    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), 'FINNHUB', scale=1, color=PALETTE['dim'], align='right')
+    source_label = market_info.get('exchange') or (snapshot.get('stocks') or {}).get('source') or 'FINNHUB'
+    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
 
     # 6. Animated market rows with bobbing trend arrows
     for index, row in enumerate(rows):

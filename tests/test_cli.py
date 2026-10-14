@@ -191,6 +191,7 @@ class ConnectGuardTest(unittest.TestCase):
                                                      'email': 'a@example.com', 'source_home': '~/.claude'}]}))
         with mock.patch.dict(os.environ, {'HOME': str(home)}), \
                 mock.patch.object(connect.subprocess, 'run') as login, \
+                mock.patch.object(connect.sys.stdin, 'isatty', return_value=False), \
                 mock.patch.object(connect.sys, 'argv', ['connect', '--config', str(config), '--account', 'claude_a']):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
@@ -207,6 +208,7 @@ class ConnectGuardTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {'HOME': str(home)}), \
                 mock.patch.object(connect.sys, 'platform', 'darwin'), \
                 mock.patch.object(connect.subprocess, 'run') as login, \
+                mock.patch.object(connect.sys.stdin, 'isatty', return_value=False), \
                 mock.patch.object(connect.sys, 'argv', ['connect', '--config', str(config), '--account', 'claude_a']):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):

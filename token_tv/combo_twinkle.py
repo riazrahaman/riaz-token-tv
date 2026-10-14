@@ -47,11 +47,13 @@ def render_twinkle_frame(snapshot, frame):
 
     _rule(draw, RULE_Y)
 
-    session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
-    is_open = bool((snapshot.get('stocks') or {}).get('market', {}).get('is_open'))
+    market_info = (snapshot.get('stocks') or {}).get('market', {})
+    session = str(market_info.get('session') or 'OPEN').upper()
+    is_open = bool(market_info.get('is_open'))
     _pulse_dot(draw, (6, MARKET_LABEL_Y + 2), frame, is_green=is_open)
     pixel_text(draw, (16, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
-    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), 'FINNHUB', scale=1, color=PALETTE['dim'], align='right')
+    source_label = market_info.get('exchange') or (snapshot.get('stocks') or {}).get('source') or 'FINNHUB'
+    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)

@@ -42,7 +42,7 @@
         <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
         <b>Hardware</b> &rarr; $5 Wi-Fi Desk Clock (<a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">AliExpress</a>)<br>
         <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
-        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.2</span><br>
+        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.3</span><br>
         <b>Visits</b> &rarr; <span id="heroVisits">counting...</span>
       </div>
     </div>
@@ -164,6 +164,56 @@
     open-source &mdash; can buffer a whole frame, so JPEGs are decoded in small tiles and pushed
     straight at the panel. It is also why rendering on a real computer and shipping one finished
     image is the right division of labour.
+  </div>
+
+  <div class="two-channels-card">
+    <span class="ch-badge">FIRMWARE ARCHITECTURE</span>
+    <h3>The Two Factory Channels &amp; The Hidden GIF Slot</h3>
+    <p>Disassembling and probing the vendor firmware revealed that the clock's factory brain is split into two mutually exclusive channels:</p>
+
+    <div class="channels-grid">
+      <div class="channel-col">
+        <div class="channel-tag tag-ch1">CHANNEL 1 &middot; PHOTO MODE</div>
+        <h4>Full 240&times;240 TokenTV Canvas</h4>
+        <div class="channel-ascii">
+          <pre>┌────────────────────────────┐
+│ [========================] │
+│ CLAUDE    WEEK 66%         │
+│ OLLAMA    WEEK 40%         │
+│ ANTIGRAV  WEEK 74%         │
+│ NVDA: $224   TSLA: $368    │
+└────────────────────────────┘</pre>
+        </div>
+        <p>What TokenTV drives: the host renders full-screen 240&times;240 frames or animated GIFs over HTTP. The clock displays it 24/7 with zero local computation.</p>
+      </div>
+
+      <div class="channel-col">
+        <div class="channel-tag tag-ch2">CHANNEL 2 &middot; CLOCK MODE</div>
+        <h4>Built-in Time, Weather &amp; 80&times;80 GIF</h4>
+        <div class="channel-ascii">
+          <pre>┌────────────────────────────┐
+│   1 0 : 4 2   A M          │
+│   72°F  Sunny              │
+│  ┌───────────┐             │
+│  │80×80 GIF  │ (Spaceman)  │
+│  └───────────┘             │
+└────────────────────────────┘</pre>
+        </div>
+        <p>The vendor mode: syncs NTP clock and OpenWeatherMap weather, playing a tiny 80&times;80 animated GIF sticker (the factory floating spaceman) in the lower corner.</p>
+      </div>
+    </div>
+
+    <div class="channel-discovery">
+      <div class="disc-item">
+        <b>💡 The Discovery &mdash; The Hidden GIF Slot:</b> The factory astronaut in Channel 2 is not hardcoded in ROM; the firmware exposes an undocumented internal upload slot where the GIF can be replaced with custom animated 80&times;80 stickers (like an Antigravity sparkle or mascot).
+      </div>
+      <div class="disc-item">
+        <b>🧱 The Catch &mdash; The ~40&nbsp;KB RAM Wall:</b> Because the ESP8266 has only ~40&ndash;50&nbsp;KB of heap (less than a single JPEG frame), the firmware lacks the memory to composite layers. It cannot overlay the animated sticker onto Channel 1's canvas. It is strictly <em>Channel 1</em> OR <em>Channel 2</em>.
+      </div>
+      <div class="disc-item">
+        <b>🚀 The Solution &mdash; Host-Side Compositing:</b> TokenTV solves this by handling 100% of the layer compositing in Python on your computer: rendering walking pixel mascots, twinkling starfields, and live telemetry into a single pre-rendered animated GIF stream pushed straight to Channel 1.
+      </div>
+    </div>
   </div>
 </section>
 
@@ -471,7 +521,7 @@
 <footer>
   <span>Project &middot; TokenTV &middot; Oct 2026</span>
   <span>MIT &middot; <a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a> &middot; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> &middot; built in collaboration with Claude, Antigravity &amp; OpenCode</span>
-  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.2</span><span id="visits"></span></span>
+  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.3</span><span id="visits"></span></span>
 </footer>
 
 </main>

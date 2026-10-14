@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 from token_tv.combo import AI_PITCH, AI_TOP, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP, RULE_Y, SIZE, _rule, market_rows
 from token_tv.display import (BACKGROUND, MUTED, TEXT, TRACK, account_label, gauge_color,
                               overview_rows, pixel_text, reading, render_pixel)
-from token_tv.stocks import PALETTE, change_ink, price_text
+from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
 
 FPS = 10
 FRAMES = 10  # 1.0-second seamless loop
@@ -75,7 +75,7 @@ def _ai_row(draw, y, row, frame):
 
 
 def _market_row(draw, y, row, frame):
-    symbol = str(row.get('symbol', '?'))[:4].upper()
+    symbol = display_symbol(row.get('symbol', '?'))[:5].upper()
     pixel_text(draw, (6, y + 3), symbol, scale=2, color=PALETTE['text'])
     pixel_text(draw, (142, y + 3), price_text(row.get('price')), scale=2, color=TEXT, align='right')
 
@@ -120,11 +120,13 @@ def render_pulse_frame(snapshot, frame):
     _rule(draw, RULE_Y)
 
     # Market section header with pulsing dot
-    session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
-    is_open = bool((snapshot.get('stocks') or {}).get('market', {}).get('is_open'))
+    market_info = (snapshot.get('stocks') or {}).get('market', {})
+    session = str(market_info.get('session') or 'OPEN').upper()
+    is_open = bool(market_info.get('is_open'))
     _pulse_dot(draw, (6, MARKET_LABEL_Y + 2), frame, is_green=is_open)
     pixel_text(draw, (16, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
-    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), 'FINNHUB', scale=1, color=PALETTE['dim'], align='right')
+    source_label = market_info.get('exchange') or (snapshot.get('stocks') or {}).get('source') or 'FINNHUB'
+    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row, frame)

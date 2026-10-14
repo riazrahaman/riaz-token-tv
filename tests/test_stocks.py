@@ -235,6 +235,23 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             stocks.load_stock_config(self.path)
 
+    def test_config_handles_symbols_in(self):
+        self.write({'symbols_in': ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS']})
+        config = stocks.load_stock_config(self.path)
+        self.assertEqual(config['symbols_in'], ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS'])
+        # Default symbols_in
+        self.write({})
+        defaults = stocks.load_stock_config(self.path)
+        self.assertEqual(defaults['symbols_in'], list(stocks.DEFAULT_SYMBOLS_IN))
+        # Too many symbols
+        self.write({'symbols_in': ['A.NS', 'B.NS', 'C.NS', 'D.NS', 'E.NS']})
+        with self.assertRaises(ValueError):
+            stocks.load_stock_config(self.path)
+        # Duplicate symbol
+        self.write({'symbols_in': ['A.NS', 'A.NS']})
+        with self.assertRaises(ValueError):
+            stocks.load_stock_config(self.path)
+
 
 class PublishTests(unittest.TestCase):
     def setUp(self):
@@ -296,6 +313,111 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'http_429')
 
 
+
+
+class IndianMarketTests(unittest.TestCase):
+    def test_display_symbol_cleans_suffixes_and_indices(self):
+        self.assertEqual(stocks.display_symbol('RELIANCE.NS'), 'RELIANCE')
+        self.assertEqual(stocks.display_symbol('TCS.BO'), 'TCS')
+        self.assertEqual(stocks.display_symbol('^NSEI'), 'NIFTY')
+        self.assertEqual(stocks.display_symbol('^BSESN'), 'SENSEX')
+        self.assertEqual(stocks.display_symbol('AAPL'), 'AAPL')
+
+    def test_is_indian_market_open_checks_ist_trading_hours(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        # Thursday 2026-10-15: 09:14 IST (closed), 09:15 IST (open), 15:29 (open), 15:30 (closed)
+        t_pre = datetime(2026, 10, 15, 9, 14, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        t_open = datetime(2026, 10, 15, 9, 15, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        t_mid = datetime(2026, 10, 15, 12, 0, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        t_close_pre = datetime(2026, 10, 15, 15, 29, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        t_closed = datetime(2026, 10, 15, 15, 30, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        t_sat = datetime(2026, 10, 17, 12, 0, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        self.assertFalse(stocks.is_indian_market_open(t_pre))
+        self.assertTrue(stocks.is_indian_market_open(t_open))
+        self.assertTrue(stocks.is_indian_market_open(t_mid))
+        self.assertTrue(stocks.is_indian_market_open(t_close_pre))
+        self.assertFalse(stocks.is_indian_market_open(t_closed))
+        self.assertFalse(stocks.is_indian_market_open(t_sat))
+
+    def test_is_us_market_open_checks_et_trading_hours(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        # Wednesday 2026-10-14: 09:29 ET (closed), 09:30 ET (open), 15:59 (open), 16:00 (closed)
+        t_pre = datetime(2026, 10, 14, 9, 29, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        t_open = datetime(2026, 10, 14, 9, 30, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        t_close_pre = datetime(2026, 10, 14, 15, 59, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        t_closed = datetime(2026, 10, 14, 16, 0, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        self.assertFalse(stocks.is_us_market_open(t_pre))
+        self.assertTrue(stocks.is_us_market_open(t_open))
+        self.assertTrue(stocks.is_us_market_open(t_close_pre))
+        self.assertFalse(stocks.is_us_market_open(t_closed))
+
+    def test_fetch_yahoo_quote_parses_chart_response(self):
+        sample_response = {
+            'chart': {
+                'result': [{
+                    'meta': {
+                        'regularMarketPrice': 1174.6,
+                        'chartPreviousClose': 1166.7,
+                        'regularMarketTime': 1791971993,
+                        'symbol': 'RELIANCE.NS'
+                    }
+                }]
+            }
+        }
+        with patch('token_tv.stocks._request_json', return_value=sample_response):
+            row = stocks.fetch_yahoo_quote('RELIANCE.NS')
+            self.assertEqual(row['symbol'], 'RELIANCE.NS')
+            self.assertEqual(row['price'], 1174.6)
+            self.assertAlmostEqual(row['change'], 7.9)
+            self.assertAlmostEqual(row['percent'], (7.9 / 1166.7) * 100)
+            self.assertEqual(row['previous_close'], 1166.7)
+            self.assertEqual(row['at'], 1791971993)
+
+    def test_fetch_yahoo_quote_empty_or_zero_returns_dash_row(self):
+        sample_empty = {'chart': {'result': [{'meta': {'regularMarketPrice': None}}]}}
+        with patch('token_tv.stocks._request_json', return_value=sample_empty):
+            row = stocks.fetch_yahoo_quote('EMPTY.NS')
+            self.assertIsNone(row['price'])
+            self.assertIsNone(row['percent'])
+
+    def test_select_active_market_switches_between_us_and_india(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        cfg = {'symbols': ['AAPL', 'MSFT'], 'symbols_in': ['RELIANCE.NS', 'TCS.NS']}
+
+        # When US market is open
+        t_us_open = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        active_us = stocks.select_active_market(cfg, now=t_us_open, us_status={'is_open': True, 'session': 'regular'})
+        self.assertEqual(active_us['exchange'], 'US')
+        self.assertTrue(active_us['is_open'])
+        self.assertEqual(active_us['source'], 'FINNHUB')
+        self.assertEqual(active_us['symbols'], ['AAPL', 'MSFT'])
+
+        # When US is closed and India is open (e.g. Thu 11:00 IST)
+        t_in_open = datetime(2026, 10, 15, 11, 0, tzinfo=ZoneInfo('Asia/Kolkata')).timestamp()
+        active_in = stocks.select_active_market(cfg, now=t_in_open, us_status={'is_open': False})
+        self.assertEqual(active_in['exchange'], 'NSE')
+        self.assertTrue(active_in['is_open'])
+        self.assertEqual(active_in['source'], 'YAHOO')
+        self.assertEqual(active_in['symbols'], ['RELIANCE.NS', 'TCS.NS'])
+
+    def test_render_image_handles_indian_stocks_and_large_prices(self):
+        rows = [
+            {'symbol': '^NSEI', 'price': 22622.70, 'change': 259.40, 'percent': 1.16, 'previous_close': 22363.30, 'at': 1791972000},
+            {'symbol': 'RELIANCE.NS', 'price': 1174.60, 'change': 7.90, 'percent': 0.68, 'previous_close': 1166.70, 'at': 1791972000},
+            {'symbol': 'TCS.NS', 'price': 2304.90, 'change': 35.60, 'percent': 1.57, 'previous_close': 2269.30, 'at': 1791972000},
+            {'symbol': 'HDFCBANK.NS', 'price': 710.70, 'change': -3.30, 'percent': -0.46, 'previous_close': 714.00, 'at': 1791972000},
+        ]
+        meta = {'is_open': True, 'session': 'regular', 'source': 'YAHOO', 'exchange': 'NSE', 'now': 1791972000, 'tz': 'Asia/Kolkata'}
+        img = stocks.render_image(rows, meta)
+        self.assertEqual(img.size, (240, 240))
+        jpeg = stocks.render_watchlist(rows, meta)
+        self.assertEqual(jpeg[:3], b'\xff\xd8\xff')
+        self.assertLess(len(jpeg), 60000)
+
+
 class CliTests(unittest.TestCase):
     def test_stocks_subcommand_forwards_a_default_state_dir(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -315,7 +437,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'config.json'
             config.write_text(json.dumps({'accounts': [{'key': 'a', 'alias': 'A', 'provider': 'claude',
-                                                        'email': 'a@example.com'}]}))
+                                                         'email': 'a@example.com'}]}))
             err = io.StringIO()
             with patch.object(stocks, 'main') as run, contextlib.redirect_stderr(err):
                 code = cli.main(['stocks', '--config', str(config)])

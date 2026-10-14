@@ -1,10 +1,14 @@
 """A 240×240 stock watchlist face, pushed to the SD_PRO clock like any other TokenTV face.
 
-Quotes come from the Finnhub free tier. The API key is read at runtime from ``FINNHUB_API_KEY``,
+Quotes come from Finnhub (US equities, free tier) and Yahoo Finance (Indian NSE/BSE equities,
+zero-config v8 chart API). The Finnhub API key is read at runtime from ``FINNHUB_API_KEY``,
 else from the macOS login Keychain (service ``token-tv-finnhub``), and is never written to the
-config, a log, a receipt, a snapshot or the rendered image. This module is self-contained: it
-reuses ``token_tv.device`` for the clock and mirrors the capture → backup → upload → activate
-flow of ``token_tv.live``.
+config, a log, a receipt, a snapshot or the rendered image. Indian stock queries require no API key.
+This module is self-contained: it reuses ``token_tv.device`` for the clock and mirrors the capture
+→ backup → upload → activate flow of ``token_tv.live``.
+
+Follow-the-sun mode automatically switches between US tickers and Indian tickers based on which
+market is currently open.
 
     token-tv stocks --config stocks.json
 """
@@ -32,12 +36,15 @@ from token_tv.history import append_history
 
 QUOTE_URL = 'https://finnhub.io/api/v1/quote'
 STATUS_URL = 'https://finnhub.io/api/v1/stock/market-status'
+YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart'
 KEYCHAIN_SERVICE = 'token-tv-finnhub'
-DEFAULT_SYMBOLS = ('AAPL', 'MSFT', 'NVDA', 'TSLA')
+DEFAULT_SYMBOLS_US = ('AAPL', 'MSFT', 'NVDA', 'TSLA')
+DEFAULT_SYMBOLS_IN = ('RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS')
+DEFAULT_SYMBOLS = DEFAULT_SYMBOLS_US
 MAX_SYMBOLS = 4    # the face is laid out for four rows; see render_image
 MIN_INTERVAL = 15     # a hard floor: a bad config can never hammer the clock or the API
 MAX_INTERVAL = 3600
-OPEN_INTERVAL = 30    # seconds between refreshes while the US market is open
+OPEN_INTERVAL = 30    # seconds between refreshes while the market is open
 CLOSED_INTERVAL = 300  # seconds between market-status checks while it is closed
 STALE_AFTER = 900     # a live quote older than this is marked OLD
 MAGNITUDE_FULL = 5.0  # |change %| that fills the row's magnitude bar
@@ -92,14 +99,17 @@ def finnhub_token():
     raise StockError('auth_required')
 
 
-def _request_json(url):
+def _request_json(url, headers=None):
     """Fetch JSON, and on any failure raise a StockError whose text never contains the URL.
 
     The key travels in the query string, so an HTTPError's own message (which embeds the URL)
     must never escape. ``from None`` also drops the original from the traceback.
     """
     try:
-        with urlopen(Request(url, headers={'Accept': 'application/json'}), timeout=20) as response:
+        h = {'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+        if headers:
+            h.update(headers)
+        with urlopen(Request(url, headers=h), timeout=20) as response:
             return json.load(response)
     except HTTPError as error:
         raise StockError('http_' + str(error.code)) from None
@@ -132,6 +142,30 @@ def fetch_quote(symbol, token):
     return quote_row(symbol, _request_json(QUOTE_URL + '?' + query))
 
 
+def fetch_yahoo_quote(symbol):
+    """Fetch a single stock quote from Yahoo Finance v8 chart API."""
+    query = urlencode({'interval': '1d', 'range': '1d'})
+    url = f'{YAHOO_CHART_URL}/{symbol}?{query}'
+    data = _request_json(url)
+    try:
+        result = data['chart']['result'][0]
+        meta = result['meta']
+    except (KeyError, IndexError, TypeError):
+        raise StockError('invalid_response') from None
+
+    price = _number(meta.get('regularMarketPrice'))
+    if price is None or price <= 0:
+        return {'symbol': symbol, 'price': None, 'change': None, 'percent': None,
+                'previous_close': None, 'at': None}
+
+    prev_close = _number(meta.get('chartPreviousClose') or meta.get('previousClose'))
+    change = (price - prev_close) if (price is not None and prev_close is not None) else _number(meta.get('regularMarketChange'))
+    percent = ((change / prev_close) * 100) if (change is not None and prev_close) else _number(meta.get('regularMarketChangePercent'))
+    stamp = _number(meta.get('regularMarketTime'))
+    return {'symbol': symbol, 'price': price, 'change': change, 'percent': percent,
+            'previous_close': prev_close, 'at': int(stamp) if stamp and stamp > 0 else None}
+
+
 def fetch_market_status(token):
     query = urlencode({'exchange': 'US', 'token': token})
     data = _request_json(STATUS_URL + '?' + query)
@@ -141,6 +175,99 @@ def fetch_market_status(token):
     session = data.get('session')
     return {'is_open': is_open if isinstance(is_open, bool) else None,
             'session': session if isinstance(session, str) else None}
+
+
+def is_indian_market_open(epoch=None):
+    """True if epoch (or now) falls within regular NSE trading hours (09:15 - 15:30 IST, Mon-Fri)."""
+    epoch = time.time() if epoch is None else epoch
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromtimestamp(float(epoch), ZoneInfo('Asia/Kolkata'))
+    except Exception:
+        dt = datetime.fromtimestamp(float(epoch) + 19800, timezone.utc)
+    if dt.weekday() >= 5:  # Saturday or Sunday
+        return False
+    minute_of_day = dt.hour * 60 + dt.minute
+    return (9 * 60 + 15) <= minute_of_day < (15 * 60 + 30)
+
+
+def is_us_market_open(epoch=None):
+    """True if epoch (or now) falls within regular US trading hours (09:30 - 16:00 ET, Mon-Fri)."""
+    epoch = time.time() if epoch is None else epoch
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.fromtimestamp(float(epoch), ZoneInfo('America/New_York'))
+    except Exception:
+        dt = datetime.fromtimestamp(float(epoch) - 18000, timezone.utc)
+    if dt.weekday() >= 5:
+        return False
+    minute_of_day = dt.hour * 60 + dt.minute
+    return (9 * 60 + 30) <= minute_of_day < (16 * 60)
+
+
+def select_active_market(config, token=None, now=None, us_status=None):
+    """Determine whether the US or Indian market is currently active.
+
+    Returns dict with:
+      'exchange': 'US' or 'NSE',
+      'is_open': True or False,
+      'session': 'regular', 'closed', etc.
+      'source': 'FINNHUB' or 'YAHOO',
+      'symbols': active symbol list,
+      'tz': 'America/New_York' or 'Asia/Kolkata'
+    """
+    now = time.time() if now is None else now
+    us_open = _status_open(us_status) if us_status is not None else is_us_market_open(now)
+    in_open = is_indian_market_open(now)
+
+    symbols_us = config.get('symbols', list(DEFAULT_SYMBOLS_US))
+    symbols_in = config.get('symbols_in', list(DEFAULT_SYMBOLS_IN))
+
+    if us_open:
+        return {
+            'exchange': 'US',
+            'is_open': True,
+            'session': (us_status or {}).get('session') or 'regular',
+            'source': 'FINNHUB',
+            'symbols': symbols_us,
+            'tz': 'America/New_York',
+        }
+    elif in_open and symbols_in:
+        return {
+            'exchange': 'NSE',
+            'is_open': True,
+            'session': 'regular',
+            'source': 'YAHOO',
+            'symbols': symbols_in,
+            'tz': 'Asia/Kolkata',
+        }
+    else:
+        # Both closed: Determine which market closed most recently
+        try:
+            dt_utc = datetime.fromtimestamp(float(now), timezone.utc)
+            hour_minute = dt_utc.hour * 60 + dt_utc.minute
+            recent_in = (10 * 60) <= hour_minute < (13 * 60 + 30)
+        except Exception:
+            recent_in = False
+
+        if recent_in and symbols_in:
+            return {
+                'exchange': 'NSE',
+                'is_open': False,
+                'session': 'closed',
+                'source': 'YAHOO',
+                'symbols': symbols_in,
+                'tz': 'Asia/Kolkata',
+            }
+        else:
+            return {
+                'exchange': 'US',
+                'is_open': False,
+                'session': (us_status or {}).get('session') or 'closed',
+                'source': 'FINNHUB',
+                'symbols': symbols_us,
+                'tz': 'America/New_York',
+            }
 
 
 def _status_open(status):
@@ -154,16 +281,19 @@ def _status_open(status):
 
 
 def market_poll_interval(status):
-    """Seconds between polls: 30 while the US market is open, 300 while it is closed."""
+    """Seconds between polls: 30 while the market is open, 300 while it is closed."""
     return OPEN_INTERVAL if _status_open(status) else CLOSED_INTERVAL
 
 
-def collect(symbols, token):
+def collect(symbols, token, source='FINNHUB'):
     """Rows for every symbol; a symbol that fails becomes a dash row. Returns (rows, failures)."""
     rows, failures = [], 0
     for symbol in symbols:
         try:
-            rows.append(fetch_quote(symbol, token))
+            if source == 'YAHOO':
+                rows.append(fetch_yahoo_quote(symbol))
+            else:
+                rows.append(fetch_quote(symbol, token))
         except StockError:
             failures += 1
             rows.append(quote_row(symbol, {}))
@@ -206,21 +336,36 @@ def change_text(change, percent):
     return ' '.join(parts) if parts else '--'
 
 
-def market_time(epoch):
-    """HH:MM in New York (the exchange's clock), or UTC if the timezone database is absent."""
+def display_symbol(symbol):
+    """Clean symbol for 240x240 display: strip exchange suffix or translate index symbol."""
+    s = str(symbol).strip().upper()
+    if s == '^NSEI':
+        return 'NIFTY'
+    if s == '^BSESN':
+        return 'SENSEX'
+    if s.startswith('^'):
+        s = s[1:]
+    for suffix in ('.NS', '.BO'):
+        if s.endswith(suffix):
+            return s[:-len(suffix)]
+    return s
+
+
+def market_time(epoch, tz='America/New_York'):
+    """HH:MM in the exchange's clock, or UTC if the timezone database is absent."""
     moment = None
     try:
         from zoneinfo import ZoneInfo
-        moment = datetime.fromtimestamp(float(epoch), ZoneInfo('America/New_York'))
+        moment = datetime.fromtimestamp(float(epoch), ZoneInfo(tz))
     except Exception:
         moment = datetime.fromtimestamp(float(epoch), timezone.utc)
     return moment.strftime('%H:%M')
 
 
-def freshness_text(now, rows):
+def freshness_text(now, rows, tz='America/New_York'):
     """The newest last-trade time, so a stale frame is obvious. Empty rows are a dash."""
     stamps = [row.get('at') for row in rows if isinstance(row.get('at'), (int, float)) and row.get('at')]
-    return market_time(max(stamps)) if stamps else '--'
+    return market_time(max(stamps), tz=tz) if stamps else '--'
 
 
 def _is_stale(now, rows):
@@ -278,8 +423,11 @@ def render_image(rows, meta, style=DEFAULT_STYLE):
         y = top + index * pitch
         if index:
             _rule(draw, y - 7, palette)
-        pixel_text(draw, (8, y), str(row.get('symbol', '?')), scale=2, color=palette['text'])
-        pixel_text(draw, (SIZE - 8, y - 1), price_text(row.get('price')), scale=3,
+        sym = display_symbol(row.get('symbol', '?'))
+        pixel_text(draw, (8, y), sym, scale=2, color=palette['text'])
+        p_str = price_text(row.get('price'))
+        p_scale = 2 if len(p_str) >= 7 else 3
+        pixel_text(draw, (SIZE - 8, y - (1 if p_scale == 3 else -2)), p_str, scale=p_scale,
                    color=palette['text'], align='right')
         percent = row.get('percent')
         ink = change_ink(percent, palette)
@@ -287,8 +435,9 @@ def render_image(rows, meta, style=DEFAULT_STYLE):
         _bar(draw, 156, y + 25, SIZE - 8, y + 32, magnitude(percent), ink, palette['dim'])
 
     _rule(draw, 221, palette)
-    pixel_text(draw, (8, 227), 'FINNHUB', scale=1, color=palette['dim'])
-    freshness = freshness_text(meta.get('now'), rows)
+    source_label = meta.get('exchange') or meta.get('source') or 'FINNHUB'
+    pixel_text(draw, (8, 227), str(source_label).upper(), scale=1, color=palette['dim'])
+    freshness = freshness_text(meta.get('now'), rows, tz=meta.get('tz', 'America/New_York'))
     if is_open and _is_stale(meta.get('now'), rows):
         freshness = 'OLD ' + freshness
     pixel_text(draw, (SIZE - 8, 227), freshness, scale=1,
@@ -307,18 +456,19 @@ def render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=0):
 def snapshot_payload(rows, meta):
     """The credential-free snapshot written beside the frame. It holds numbers only."""
     return {'updated_at': int(meta.get('now') or 0), 'source': meta.get('source', 'FINNHUB'),
-            'market': {'is_open': meta.get('is_open'), 'session': meta.get('session')},
+            'market': {'is_open': meta.get('is_open'), 'session': meta.get('session'),
+                       'exchange': meta.get('exchange', 'US')},
             'symbols': [dict(row) for row in rows]}
 
 
 # ---------------------------------------------------------------------------
 # Config (its own strict loader; never ``sources.load_config``)
 # ---------------------------------------------------------------------------
-STOCK_KEYS = ('device_url', 'symbols', 'interval', 'palette', 'state_dir', 'reassert_cycles',
+STOCK_KEYS = ('device_url', 'symbols', 'symbols_in', 'interval', 'palette', 'state_dir', 'reassert_cycles',
               'max_writes_per_hour')
 PALETTE_ROLES = ('background', 'text', 'rise', 'fall', 'dim')
 CREDENTIAL_WORDS = ('token', 'api_key', 'apikey', 'secret', 'password', 'credential', 'auth', 'key')
-SYMBOL_PATTERN = re.compile(r'[A-Z][A-Z0-9.\-]{0,9}')
+SYMBOL_PATTERN = re.compile(r'\^?[A-Z][A-Z0-9.\-]{0,15}')
 COLOUR_PATTERN = re.compile(r'#[0-9a-fA-F]{6}')
 
 
@@ -367,7 +517,7 @@ def load_stock_config(path):
     config = {}
     if 'device_url' in data:
         config['device_url'] = _stock_device_url(data['device_url'])
-    symbols = data.get('symbols', list(DEFAULT_SYMBOLS))
+    symbols = data.get('symbols', list(DEFAULT_SYMBOLS_US))
     if not isinstance(symbols, list) or not symbols:
         raise ValueError('symbols must be a non-empty list of tickers')
     if len(symbols) > MAX_SYMBOLS:
@@ -380,6 +530,22 @@ def load_stock_config(path):
             raise ValueError(f'{symbol} is listed twice')
         seen.append(symbol)
     config['symbols'] = seen
+
+    symbols_in = data.get('symbols_in', list(DEFAULT_SYMBOLS_IN))
+    if symbols_in is not None:
+        if not isinstance(symbols_in, list):
+            raise ValueError('symbols_in must be a list of tickers')
+        if len(symbols_in) > MAX_SYMBOLS:
+            raise ValueError(f'At most {MAX_SYMBOLS} symbols_in are supported')
+        seen_in = []
+        for symbol in symbols_in:
+            if not isinstance(symbol, str) or not SYMBOL_PATTERN.fullmatch(symbol):
+                raise ValueError(f'{symbol!r} is not an uppercase ticker')
+            if symbol in seen_in:
+                raise ValueError(f'{symbol} is listed twice')
+            seen_in.append(symbol)
+        config['symbols_in'] = seen_in
+
     interval = data.get('interval', OPEN_INTERVAL)
     if (isinstance(interval, bool) or not isinstance(interval, int)
             or not MIN_INTERVAL <= interval <= MAX_INTERVAL):
@@ -564,9 +730,11 @@ def main(argv=None):
             except StockError:
                 # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
                 pass
-            rows, quote_failures = collect(config['symbols'], token)
-            is_open = _status_open(status)
-            meta = {'is_open': is_open, 'session': status.get('session'), 'source': 'FINNHUB',
+            active = select_active_market(config, token, now=now, us_status=status)
+            rows, quote_failures = collect(active['symbols'], token, source=active['source'])
+            is_open = active['is_open']
+            meta = {'is_open': is_open, 'session': active['session'], 'source': active['source'],
+                    'exchange': active['exchange'], 'tz': active['tz'],
                     'now': now, 'palette': config.get('palette')}
             image = render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=LIMITS[FILES[0]][0])
             payload = snapshot_payload(rows, meta)
@@ -591,7 +759,7 @@ def main(argv=None):
                 print(f'No clock configured; wrote {state_dir / FILES[0]}', flush=True)
             if args.once:
                 break
-            wait = interval if is_open else market_poll_interval(status)
+            wait = interval if is_open else market_poll_interval({'is_open': is_open})
             failures = failures + 1 if (quote_failures or not status) else 0
             if failures:
                 wait = min(max(wait, interval * (2 ** min(failures, 3))), 600)

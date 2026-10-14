@@ -63,9 +63,11 @@ def render_patrol_frame(snapshot, frame):
     bot_x = int(80 + (step / half) * 80)
     _draw_mini_bot(draw, bot_x, RULE_Y, frame, facing_right)
 
-    session = str((snapshot.get('stocks') or {}).get('market', {}).get('session') or 'OPEN').upper()
+    market_info = (snapshot.get('stocks') or {}).get('market', {})
+    session = str(market_info.get('session') or 'OPEN').upper()
     pixel_text(draw, (6, MARKET_LABEL_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['dim'])
-    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), 'FINNHUB', scale=1, color=PALETTE['dim'], align='right')
+    source_label = market_info.get('exchange') or (snapshot.get('stocks') or {}).get('source') or 'FINNHUB'
+    pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)
