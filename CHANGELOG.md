@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 - **Zero-Config Yahoo Finance Integration**: Indian equities and indices (`RELIANCE.NS`, `TCS.NS`, `INFY.NS`, `HDFCBANK.NS`, `^NSEI`, `^BSESN`) fetch quotes via Yahoo Finance's v8 chart endpoint with zero credentials or API keys, while US equities continue using Finnhub.
 - **Display & Typography Optimizations for INR**: Clean symbol translation (stripping `.NS`/`.BO`, aliasing `^NSEI` $\rightarrow$ `NIFTY`, `^BSESN` $\rightarrow$ `SENSEX`), dynamic exchange badges (`NSE` vs `US`), and adaptive price font scaling (dropping to scale 2 for $\ge 7$-char prices) to eliminate visual overlap on 240×240 panels.
 - **Dedicated Red/Green Arrow Glyphs**: Native 5×7 `▲` (green) and `▼` (red) triangle indicators with color-coded stock price changes, eliminating overlapping digit artifacts.
+- **Two Factory Channels High-Res Diagram**: Generated 1600×1000 technical schematic (`site/tokentv/assets/two-channels-illustration.png` and `docs/assets/two-channels-illustration.png`) depicting the ESP8266 RAM wall, Channel 1 host-composed stream, and Channel 2 firmware clock & 80×80 slot.
+- **Direct Hardware Sourcing**: Added verified AliExpress hardware listing links (~$5–$8 USD) across documentation and website.
+- **Viewport Anchor Scroll Fix**: Corrected initial scroll behavior in `site/tokentv/assets/theme.js` so visiting `#idea` directly defaults to the top hero header rather than snapping abruptly into lower sections.
 - **Interactive Dual Showcase on Website**: Added responsive side-by-side comparison ("The Vision vs The Reality") in Chapter 01 featuring the 3D concept teaser (with audio unmute and HTTP 206 range streaming) alongside the latest live desk clock recording.
 
 ## [0.4.2] — 2026-10-14
@@ -175,6 +178,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.3]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.3
 [0.4.2]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.2
 [0.4.1]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.1
 [0.4.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.0

@@ -7,7 +7,7 @@ not "probably fine".
 
 | Clock | Firmware web UI | What TokenTV uses | Checked |
 | --- | --- | --- | --- |
-| The author's 240×240 GeekMagic SmallTV-style Wi-Fi clock (receipt: ₩5,650 on a Korean AliExpress discount; prices vary by region) | Stock firmware with the **SD_PRO** web UI and a photo album | `/theme/list`, `/photo/list`, `/photo/upload`, photo theme id `2` | One unit, Linux host |
+| The author's 240×240 GeekMagic SmallTV-style Wi-Fi clock (receipt: ₩5,650 on a [Korean AliExpress discount](https://www.aliexpress.com/item/1005007425624137.html); typically ~$5–$8 USD) | Stock firmware with the **SD_PRO** web UI and a photo album | `/theme/list`, `/photo/list`, `/photo/upload`, photo theme id `2` | One unit, Linux host |
 | GeekMagic **SmallTV-Ultra** | Stock firmware `Ultra-V9.0.54` (`/v.json` reports `SmallTV-Ultra`) | `/app.json`, `/album.json`, `/doUpload?dir=/image/`, `/set?img=`, Photo Album theme `3` | The contributor's unit, running this release's code: photos and a display receipt in [#7](https://github.com/click6067-ship-it/token-tv/pull/7). The author has no Ultra |
 
 TokenTV never flashes firmware and never deletes your photos. It uploads one picture, switches the
