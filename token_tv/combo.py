@@ -67,8 +67,14 @@ def _market_row(draw, y, row):
     pixel_text(draw, (6, y + 3), str(row.get('symbol', '?'))[:4].upper(), scale=2, color=PALETTE['text'])
     pixel_text(draw, (146, y + 3), price_text(row.get('price')), scale=2, color=TEXT, align='right')
     percent = row.get('percent')
-    text = '--' if percent is None else f'{percent:+.2f}%'
-    pixel_text(draw, (SIZE - 6, y + 3), text, scale=2, color=change_ink(percent), align='right')
+    if percent is None:
+        pixel_text(draw, (SIZE - 6, y + 3), '--', scale=2, color=MUTED, align='right')
+    elif percent > 0:
+        pixel_text(draw, (SIZE - 6, y + 3), f'▲{abs(percent):.2f}%', scale=2, color=(8, 247, 66), align='right')
+    elif percent < 0:
+        pixel_text(draw, (SIZE - 6, y + 3), f'▼{abs(percent):.2f}%', scale=2, color=(255, 68, 68), align='right')
+    else:
+        pixel_text(draw, (SIZE - 6, y + 3), f' {abs(percent):.2f}%', scale=2, color=PALETTE['dim'], align='right')
 
 
 def render_combo(snapshot):

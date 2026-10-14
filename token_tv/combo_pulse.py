@@ -84,19 +84,17 @@ def _market_row(draw, y, row, frame):
         pixel_text(draw, (SIZE - 6, y + 3), '--', scale=2, color=MUTED, align='right')
         return
 
-    # Animated arrow indicator
-    bob = 1 if (frame % 10) >= 5 else 0
     if percent > 0:
-        arrow_y = (y + 4) - bob
-        arrow_color = (68, 224, 120) if bob else (38, 178, 86)
-        draw.polygon([(SIZE - 62, arrow_y + 4), (SIZE - 59, arrow_y), (SIZE - 56, arrow_y + 4)], fill=arrow_color)
+        text = f'▲{abs(percent):.2f}%'
+        color = (8, 247, 66)
     elif percent < 0:
-        arrow_y = (y + 4) + bob
-        arrow_color = (255, 90, 95) if bob else (214, 43, 60)
-        draw.polygon([(SIZE - 62, arrow_y), (SIZE - 59, arrow_y + 4), (SIZE - 56, arrow_y)], fill=arrow_color)
+        text = f'▼{abs(percent):.2f}%'
+        color = (255, 68, 68)
+    else:
+        text = f' {abs(percent):.2f}%'
+        color = PALETTE['dim']
 
-    text = f'{percent:+.2f}%'
-    pixel_text(draw, (SIZE - 6, y + 3), text, scale=2, color=change_ink(percent), align='right')
+    pixel_text(draw, (SIZE - 6, y + 3), text, scale=2, color=color, align='right')
 
 
 def render_pulse_frame(snapshot, frame):
