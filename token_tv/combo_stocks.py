@@ -54,7 +54,7 @@ def _board_row(draw, y, row):
     else:
         text, ink = f' {abs(percent):.2f}%', PALETTE['dim']
     pixel_text(draw, (SIZE - 6, y + 26), text, scale=2, color=ink, align='right')
-    _bar(draw, y + 40, percent, ink)
+    _bar(draw, y + 42, percent, ink)  # two pixels clear of the percent line above
 
 
 def render_combo_stocks(snapshot):
@@ -73,8 +73,10 @@ def render_combo_stocks(snapshot):
         pixel_text(draw, (6, HEADER_Y), ('MARKET ' + session)[:20], scale=1, color=PALETTE['text'])
     else:
         pixel_text(draw, (6, HEADER_Y), 'MARKET CLOSED', scale=1, color=PALETTE['dim'])
-    source_label = market.get('exchange') or (stocks or {}).get('source') or 'FINNHUB'
-    pixel_text(draw, (SIZE - 6, HEADER_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
+    source_label = market.get('exchange') or (stocks or {}).get('source')
+    if source_label:  # no exchange or source is known without a feed: say nothing rather than FINNHUB
+        pixel_text(draw, (SIZE - 6, HEADER_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'],
+                   align='right')
 
     for x in range(6, SIZE - 6, 4):
         draw.point((x, RULE_Y), fill=PALETTE['dim'])

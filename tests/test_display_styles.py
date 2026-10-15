@@ -296,11 +296,20 @@ class StocksOnlyFaceTests(unittest.TestCase):
         self.assertIn((255, 68, 68), {colour for _, colour in image.getcolors(240 * 240)})
 
     def test_a_closed_or_missing_feed_draws_dashes_and_never_zeros(self):
+        from token_tv import combo_stocks
         from token_tv.combo_stocks import FALL, RISE
         from token_tv.display import render_page
         image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')))
         self.assertNotIn(RISE, {colour for _, colour in image.getcolors(240 * 240)})
         self.assertNotIn(FALL, {colour for _, colour in image.getcolors(240 * 240)})
+        # The dash glyphs are really drawn: every big row carries a dim-grey '--' in its symbol slot.
+        for index in range(combo_stocks.MAX_ROWS):
+            y = combo_stocks.TOP + index * combo_stocks.PITCH
+            slot = image.crop((6, y + 5, 6 + 33, y + 5 + 21))  # a scale-3 '--' glyph box
+            pixels = list(slot.getdata())
+            grey = [px for px in pixels if all(abs(ink - 74) <= 12 for ink in px)]
+            self.assertTrue(grey, f'row {index} has no dash glyph')
+            self.assertLess(len(grey), len(pixels), f'row {index} is solid ink, not a glyph')
         no_feed = Image.open(io.BytesIO(render_page({'accounts': {}}, style='stocks')))
         self.assertNotIn(RISE, {colour for _, colour in no_feed.getcolors(240 * 240)})
         # Closed or missing, the face is still its own board — never the usage face underneath.
@@ -308,6 +317,14 @@ class StocksOnlyFaceTests(unittest.TestCase):
         stale = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(now=0)}, style='stocks')))
         self.assertNotIn(RISE, {colour for _, colour in stale.getcolors(240 * 240)})  # stale reads like none
         self.assertNotIn((255, 68, 68), {colour for _, colour in stale.getcolors(240 * 240)})
+
+    def test_a_closed_board_with_no_feed_claims_no_exchange(self):
+        from token_tv.display import render_page
+        # Without any feed there is no exchange or source: the header says nothing rather than
+        # stamping the FINNHUB fallback over a market it knows nothing about.
+        self.assertEqual(render_page({'accounts': {}, 'stocks': {'market': {'is_open': False}, 'symbols': []}},
+                                     style='stocks'),
+                         render_page({'accounts': {}}, style='stocks'))
 
     def test_rows_fills_the_four_slots_and_a_dead_quote_is_a_dash_slot(self):
         from token_tv.display import render_page
