@@ -9,10 +9,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, USAGE_FILE, BackupMismatch,
-                             SettingsUnsupported, lost_rotation, may_write, open_display)
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, STOCKS_FILES, USAGE_FILE,
+                             BackupMismatch, SettingsUnsupported, lost_rotation, may_write,
+                             open_display)
 from token_tv.catalog import payload as theme_payload
-from token_tv.display import ANIMATED_STYLES, STYLES, data_digest, render_frame, render_page, watch_payload
+from token_tv.display import (ANIMATED_STYLES, STOCK_STYLES, STYLES, data_digest, render_frame,
+                              render_page, watch_payload)
 from token_tv.combo import market_rows
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
@@ -409,12 +411,14 @@ def main():
                 forced = user or lost or style != last_style or data_changed
                 if name == FILES[1]:  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
-                else:
-                    # The alternation the user asked for: the stocks face in the two stock slots and
-                    # the usage face in the third, so the slideshow's 10-second interval shows
+                    wanted = (name,)
+                elif style in STOCK_STYLES:
+                    # The alternation the user asked for: the stocks face in the two stock slots
+                    # and the usage face in the third, so the slideshow's 10-second interval shows
                     # stocks for 20 seconds, then usage for 10, then repeats with fresh frames.
                     # A closed, missing or stale market (combo conventions) rests the clock on a
-                    # continuous usage screen by filling all three slots with the usage frame.
+                    # continuous usage screen by filling all three slots with the usage frame —
+                    # the usage-only choice for the stocks face is the user's stated intent.
                     alternation = feed is not None and market_rows(snapshot) is not None
                     usage_image, usage_encoded = render_frame(
                         {key: value for key, value in snapshot.items() if key != 'stocks'},
@@ -425,6 +429,14 @@ def main():
                     events = [(ROTATION_FILES[0], slot_image, slot_digest, slot_encoded),
                               (ROTATION_FILES[1], slot_image, slot_digest, slot_encoded),
                               (USAGE_FILE, usage_image, usage_digest, usage_encoded)]
+                    wanted = ROTATION_FILES
+                else:
+                    # A style that draws no stock board keeps 0.4.7's behavior: the chosen face in
+                    # the two stock slots, and the usage slot is left alone (not uploaded, not
+                    # wanted — it is disabled on the next reassert rather than shown stale).
+                    events = [(ROTATION_FILES[0], image, digest, encoded),
+                              (ROTATION_FILES[1], image, digest, encoded)]
+                    wanted = STOCKS_FILES
                 pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
                 if pending:  # only the slots whose bytes changed are rewritten
                     if forced or may_write(last_write, now, budget):
@@ -437,13 +449,13 @@ def main():
                         for event, uploaded in zip(pending, uploads):
                             receipts.append(dict(uploaded, sha256=event[2], **event[3]))
                         last_write, last_style, last_data = now, style, changed
-                        last_upload = dict((last_upload or {}), **{slot: dig
-                                                                   for slot, _, dig, _ in pending})
+                        last_upload = (last_upload or {}).copy()
+                        last_upload.update({slot: dig for slot, _, dig, _ in pending})
                     else:
                         throttled = True  # last_upload is left alone, so the newest frame retries
                 if due:
                     phase = "activate"
-                    device.activate(original, name)
+                    device.activate(original, name, wanted)
                     active_file = name
                 write_json(state_dir / "display-receipt.json",
                            {"at": int(time.time()), "style": style, "uploads": receipts,

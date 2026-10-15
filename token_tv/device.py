@@ -49,18 +49,28 @@ def may_write(last_write, now, budget):
     return last_write is None or (now - last_write) >= 3600 / budget
 
 
-def lost_rotation(present, name=FILES[0]):
-    """True when the clock is missing any wanted rotation slot for this frame kind.
+def wanted_slots(name=FILES[0], wanted=None):
+    """The album slots that must be on for this frame kind.
 
-    The wanted slots are the three alternating frames (both stock slots plus the usage screen)
-    for a JPEG frame, just the GIF for the animated one; reasserts detect against the album's
-    file list so the byte dedupe cannot keep hiding a lost slot. `present` reads as unknown when
-    the album is unreadable (an Ultra reports none), and unknown is never treated as lost."""
+    A JPEG frame alternating style: all three slots (two stocks + the usage screen). A JPEG
+    non-alternating style: the two stock slots only, leaving the usage slot asleep. A GIF: its
+    single file. The publisher may pass its own wanted list (the feeder owns no usage slot)."""
+    if wanted is not None:
+        return tuple(wanted)
+    return ROTATION_FILES if name == FILES[0] else (name,)
+
+
+def lost_rotation(present, name=FILES[0], wanted=None):
+    """True when the clock is missing any wanted rotation slot.
+
+    Reassert-time detection against the album's file list, so the byte dedupe cannot keep hiding
+    a lost slot; the caller picks the wanted set (all three for the alternation, the two stock
+    slots for a non-alternating style or the feeder). `present` reads as unknown when the album
+    is unreadable (an Ultra reports none), and unknown is never treated as lost."""
     if not isinstance(present, list):
         return False
     names = {f["name"] for f in present if isinstance(f, dict) and isinstance(f.get("name"), str)}
-    wanted = ROTATION_FILES if name == FILES[0] else (name,)
-    return any(wanted_file not in names for wanted_file in wanted)
+    return any(wanted_file not in names for wanted_file in wanted_slots(name, wanted))
 
 
 class SettingsUnsupported(Exception):
@@ -157,21 +167,23 @@ class PhotoDisplay:
         While a market is open the frames are (tokentv.jpg, stocks), (tokentv-b.jpg, stocks),
         (tokentv-usage.jpg, usage): the slideshow's 10-second interval makes the 20-seconds-stocks
         /10-seconds-usage loop the user asked for. A closed market sends the usage frame for every
-        slot, so the clock rests on a continuous usage screen. The firmware auto-enables a newly
-        uploaded file: nothing here toggles after an upload (that request is the known unreliable
-        one), and no photo is ever deleted."""
+        slot, so the clock rests on a continuous usage screen; a non-alternating style sends only
+        its chosen face into the two stock slots. `frames[0]` is the frame the device shows when
+        the album only supports one (an Ultra). The firmware auto-enables a newly uploaded file:
+        nothing here toggles after an upload (that request is the known unreliable one), and no
+        photo is ever deleted."""
         return [dict(self.upload(name, image)) for name, image in frames]
 
     def toggle(self, category, key, value, enabled):
         self.request("/" + category + "/toggle?" + urlencode({key: value, "state": int(enabled)}, quote_via=quote))
 
-    def activate(self, original, name=FILES[0]):
-        # Show only our frames — the three alternating slots for a JPEG frame, one for the GIF —
-        # then select the photo theme; the user's own photos are only disabled, never deleted, and
-        # a frame already sitting enabled and alone costs nothing.
+    def activate(self, original, name=FILES[0], wanted=None):
+        # Show only our frames — the wanted rotation slots (three while the alternation is on, the
+        # two stock slots otherwise, one for a GIF) — then select the photo theme; the user's own
+        # photos are only disabled, never deleted, and a frame already sitting right costs nothing.
         current = self.capture()
         enabled = {f['name']: f['enabled'] for f in current['files']}
-        wanted = ROTATION_FILES if name == FILES[0] else (name,)
+        wanted = wanted_slots(name, wanted)
         for wanted_name in wanted:
             if wanted_name in enabled and not enabled[wanted_name]:  # truthy check: a raw `0` sleeps too
                 self.toggle("photo", "name", wanted_name, True)
@@ -236,7 +248,8 @@ class UltraDisplay(PhotoDisplay):
         return {"file": name, "status": status, "bytes": len(image)}
 
     def upload_rotation(self, frames):
-        # The Ultra shows one hard-set image; no album rotation, so no alternation either.
+        # The Ultra shows one hard-set image — `frames[0]` is the frame to show; no album
+        # rotation, so no alternation either.
         name, image = frames[0]
         return [self.upload(name, image)]
 

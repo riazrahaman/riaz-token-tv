@@ -381,6 +381,12 @@ class RotationTests(unittest.TestCase):
             start = len(calls)
             display.activate(original)
             self.assertEqual([c[1] for c in calls[start:]], ["/theme/list", "/photo/list"])  # reads only
+            # A narrower wanted set (the two stock slots) puts the usage slot back to sleep.
+            from token_tv.device import STOCKS_FILES
+            start = len(calls)
+            display.activate(original, "tokentv.jpg", wanted=STOCKS_FILES)
+            self.assertIn("/photo/toggle?name=tokentv-usage.jpg&state=0", [c[1] for c in calls[start:]])
+            self.assertNotIn("tokentv-usage.jpg", self.enabled(photos))
             # A GIF cycle shows only the GIF; switching back JPEG restores the alternating slots.
             display.upload("tokentv.gif", b"GIF89a-EXACT")
             display.activate(original, "tokentv.gif")
@@ -416,12 +422,16 @@ class RotationTests(unittest.TestCase):
         self.assertIn("/photo/interval?val=10", [c[1] for c in calls])
 
     def test_lost_rotation_detects_any_missing_wanted_slot_only_from_a_real_album(self):
-        from token_tv.device import lost_rotation
+        from token_tv.device import STOCKS_FILES, lost_rotation
         full = [{"name": "tokentv.jpg", "enabled": True}, {"name": "tokentv-b.jpg", "enabled": True},
                 {"name": "tokentv-usage.jpg", "enabled": False}]
         self.assertFalse(lost_rotation(full, "tokentv.jpg"))  # all wanted present (disabled is fine)
         for missing in ("tokentv.jpg", "tokentv-b.jpg", "tokentv-usage.jpg"):
             self.assertTrue(lost_rotation([f for f in full if f["name"] != missing], "tokentv.jpg"), missing)
+        # A caller can narrow the wanted set: the feeder owns only the two stock slots.
+        self.assertFalse(lost_rotation(full, "tokentv.jpg", wanted=STOCKS_FILES))
+        self.assertTrue(lost_rotation([f for f in full if f["name"] != "tokentv-b.jpg"],
+                                      "tokentv.jpg", wanted=STOCKS_FILES))
         self.assertTrue(lost_rotation([], "tokentv.gif"))  # the gif slot is gone
         self.assertFalse(lost_rotation(None, "tokentv.jpg"))  # an unreadable album (an Ultra) is never "lost"
 
@@ -544,7 +554,7 @@ class LiveCycleTests(unittest.TestCase):
         def upload_rotation(self, frames):
             return [self.upload(name, image) for name, image in frames]
 
-        def activate(self, original, name='tokentv.jpg'):
+        def activate(self, original, name='tokentv.jpg', wanted=None):
             self.activations += 1
             if self.activations == 1:
                 self.album = [f for f in self.album if f['name'] != 'tokentv-b.jpg']  # a slot is lost
@@ -597,15 +607,28 @@ class LiveCycleTests(unittest.TestCase):
                                       'reassert_cycles': 3, **extra}))
         return config
 
-    def test_a_missing_twin_is_lost_and_both_slots_are_resent(self):
-        from token_tv.device import ROTATION_FILES
+    def test_a_non_stock_style_keeps_the_chosen_face_and_never_uploads_the_usage_slot(self):
+        from token_tv.display import render_frame
         clock = self.FakeClock()
+        frames = {}
         with tempfile.TemporaryDirectory() as folder:
-            self._run(clock, self._config(folder), folder)
-        # Cycle 1 sends all three alternating slots (no feed: the usage screen fills them); cycle 2
-        # is deduped; cycle 3's reassert notices the lost slot and re-sends all three — the dedupe
-        # never hides a lost slot.
-        self.assertEqual([name for name, _ in clock.uploads], [slot for _ in range(2) for slot in ROTATION_FILES])
+            config = self._config(folder, display_style='neon')
+
+            def after():
+                saved = json.loads((Path(folder) / 'snapshot.json').read_text())
+                saved.pop('display', None)
+                frames['neon'], _ = render_frame(saved, 0, 'neon', 900, 60000)
+                frames['mirrors'] = sorted(p.name for p in Path(folder).iterdir())
+
+            self._run(clock, config, folder, after=after)
+        # The alternation never engaged: the chosen style's face fills the two stock slots (two
+        # uploads per event, re-sent after the fake clock loses the second), and the usage slot is
+        # neither uploaded nor mirrored.
+        self.assertEqual([name for name, _ in clock.uploads],
+                         ["tokentv.jpg", "tokentv-b.jpg", "tokentv.jpg", "tokentv-b.jpg"])
+        self.assertEqual([image for _, image in clock.uploads], [frames['neon']] * 4)  # neon, not pixel
+        self.assertNotEqual(frames['neon'], frames.get('usage'))
+        self.assertNotIn('tokentv-usage.jpg', frames['mirrors'])
 
     def test_open_market_alternates_the_stocks_face_with_the_usage_face(self):
         from token_tv.display import render_frame

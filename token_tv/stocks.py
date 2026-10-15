@@ -30,8 +30,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, lost_rotation,
-                             may_write, open_display)
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, STOCKS_FILES, BackupMismatch,
+                             lost_rotation, may_write, open_display)
 from token_tv.display import encode_jpeg, pixel_text
 from token_tv.history import append_history
 
@@ -793,7 +793,8 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            if lost_rotation(files, name):  # any wanted rotation slot is gone
+            wanted = STOCKS_FILES if name == FILES[0] else (name,)  # the feeder owns no usage slot
+            if lost_rotation(files, name, wanted):  # one of the stock slots is gone
                 lost = True
                 last_upload = {}  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
@@ -821,7 +822,7 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
                 throttled = True  # last_upload is left alone, so the newest frame retries
         if reasserted:
             phase = 'activate'
-            device.activate(original, name)
+            device.activate(original, name, wanted)
             active_file = name
         write_json(state_dir / 'display-receipt.json',
                    {'at': at, 'style': style, 'uploads': receipts, 'reasserted': reasserted,

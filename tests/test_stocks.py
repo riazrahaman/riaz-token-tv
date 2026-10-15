@@ -58,7 +58,7 @@ class FakeDevice:
     def upload_rotation(self, frames):
         return [self.upload(name, image) for name, image in frames]
 
-    def activate(self, original, name='tokentv.jpg'):
+    def activate(self, original, name='tokentv.jpg', wanted=None):
         self.activations += 1
 
     def restore(self, original):
@@ -341,6 +341,29 @@ class PublishTests(unittest.TestCase):
                                            dict(last), now=20, reassert=True)
         self.assertTrue(uploaded)  # the dedupe must not hide a lost twin
         self.assertEqual([name for name, _ in device.uploads], ['tokentv.jpg', 'tokentv-b.jpg'])
+
+    def test_a_feeder_owned_clock_reasserts_again_without_a_false_lost_frame(self):
+        device = FakeDevice()
+        device.album = [{'name': 'original.jpg', 'enabled': True},
+                        {'name': 'tokentv.jpg', 'enabled': True},
+                        {'name': 'tokentv-b.jpg', 'enabled': True},
+                        {'name': 'tokentv-usage.jpg', 'enabled': True}]  # a stale slot from an earlier live run
+        digest = __import__('hashlib').sha256(b'frame-a').hexdigest()
+        last = {'tokentv.jpg': digest, 'tokentv-b.jpg': digest}
+        # Reassert #1: the feeder wants only its two stock slots — not lost, nothing uploaded, and
+        # the stray usage slot is handed to activate to be put to sleep.
+        stocks.publish(device, b'frame-a', self.state, self.state / 'display-original.json',
+                       {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg', dict(last),
+                       now=10, reassert=True)
+        self.assertEqual(len(device.uploads), 0)  # no false lost frame; the dedupe held
+        # Reassert #2: still not lost, so the write budget still gates the event (1/h; 10 s waits).
+        _, _, returned_last, uploaded = stocks.publish(device, b'frame-a', self.state,
+                                                       self.state / 'display-original.json',
+                                                       {'themes': [{'id': 2, 'enabled': True}]},
+                                                       'tokentv.jpg', dict(last),
+                                                       now=20, reassert=True, budget=1, last_write=0)
+        self.assertFalse(uploaded)  # the budget was not bypassed by a phantom lost frame
+        self.assertEqual(returned_last, last)  # last-good digests intact
 
     def test_the_api_key_never_reaches_a_receipt_snapshot_or_the_image(self):
         rows, meta = sample_rows(), sample_meta()
