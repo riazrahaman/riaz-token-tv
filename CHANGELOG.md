@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-10-15
+### Added
+- New `stocks` display face: full-screen 4-row gainers/losers board (no AI usage rows); works in watchlist and movers modes.
+
 ## [0.4.4] — 2026-10-15
 
 ### Added
@@ -185,6 +189,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.5]: https://github.com/click6067-ship-it/token-tv/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.4
 [0.4.3]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.3
 [0.4.2]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.2
