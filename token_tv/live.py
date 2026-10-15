@@ -9,13 +9,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, STOCKS_FILES, USAGE_FILE,
-                             BackupMismatch, SettingsUnsupported, lost_rotation, may_write,
-                             open_display)
+from token_tv.device import (FILES, JPEG_SLOTS, JPEG_USAGE_FILE, LIMITS, ROTATION_FILES,
+                             STOCKS_FILES, USAGE_FILE, BackupMismatch, SettingsUnsupported,
+                             lost_rotation, may_write, open_display)
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import (ANIMATED_STYLES, STOCK_STYLES, STYLES, data_digest, render_frame,
                               render_page, watch_payload)
 from token_tv.combo import market_rows
+from token_tv.combo_stocks import render_combo_stocks_gif
+from token_tv.usage_gif import render_usage_gif
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -387,18 +389,24 @@ def main():
                 cycles += 1
                 image, encoded = render_frame(snapshot, 0, style, quantum,
                                               LIMITS[FILES[0]][0] if style not in ANIMATED_STYLES else LIMITS[FILES[1]][0])
-                name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
+                if style == 'stocks':
+                    name = STOCKS_FILES[0]  # the animated stock slot that carries the primary frame
+                else:
+                    name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
-                # The wanted rotation slots, known before any reassert check: all three while a
-                # stock style alternates (closed or open — closed fills the third with usage), the
-                # two stock slots for a non-stock JPEG style (0.4.7 behaviour; the usage slot is
-                # not ours to want), just the GIF for the animated one.
-                if name == FILES[1]:
+                # The wanted rotation slots, known before any reassert check: the two GIF stock
+                # slots plus the usage screen for the animated alternation, the two stock JPG
+                # slots plus their usage frame for the combo family's static alternation, the two
+                # stock JPG slots for a static non-stock style (0.4.7 behaviour; the usage slot is
+                # not ours to want), just the GIF for the animated single-file ones.
+                if style == 'stocks':
+                    wanted = ROTATION_FILES
+                elif name == FILES[1]:
                     wanted = (name,)
                 elif style in STOCK_STYLES:
-                    wanted = ROTATION_FILES
+                    wanted = JPEG_SLOTS + (JPEG_USAGE_FILE,)
                 else:
-                    wanted = STOCKS_FILES
+                    wanted = JPEG_SLOTS
                 # Re-assert the theme periodically, not only when the file name changes: a reboot
                 # or a visit to the clock's own web UI drops it back to its own theme.
                 due = active_file != name or cycles % reassert_after == 0
@@ -419,15 +427,31 @@ def main():
                 changed = data_digest(snapshot)
                 data_changed = changed != last_data
                 forced = user or lost or style != last_style or data_changed
-                if name == FILES[1]:  # the animated GIF keeps its single hard-set identity
+                if style == 'stocks':
+                    # The alternation the user asked for, now animated: the Night Cards face's GIF
+                    # (its arrows and glows breathe) into the two GIF stock slots and the shimmering
+                    # usage face into the third, so the slideshow's 10-second interval shows stocks
+                    # for 20 seconds, then usage for 10, then repeats with fresh frames. A closed,
+                    # missing or stale market (combo conventions) rests the clock on a continuous
+                    # shimmering usage screen by filling all three slots with the usage GIF — the
+                    # usage-only choice for the stocks face is the user's stated intent.
+                    alternation = feed is not None and market_rows(snapshot) is not None
+                    usage_gif = render_usage_gif(
+                        {key: value for key, value in snapshot.items() if key != 'stocks'})
+                    usage_digest = hashlib.sha256(usage_gif).hexdigest()
+                    if alternation:
+                        events = [(STOCKS_FILES[0], image, digest, encoded),
+                                  (STOCKS_FILES[1], image, digest, encoded),
+                                  (USAGE_FILE, usage_gif, usage_digest, {})]
+                    else:
+                        events = [(STOCKS_FILES[0], usage_gif, usage_digest, {}),
+                                  (STOCKS_FILES[1], usage_gif, usage_digest, {}),
+                                  (USAGE_FILE, usage_gif, usage_digest, {})]
+                elif image[:4] == b"GIF8":  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
                 elif style in STOCK_STYLES:
-                    # The alternation the user asked for: the stocks face in the two stock slots
-                    # and the usage face in the third, so the slideshow's 10-second interval shows
-                    # stocks for 20 seconds, then usage for 10, then repeats with fresh frames.
-                    # A closed, missing or stale market (combo conventions) rests the clock on a
-                    # continuous usage screen by filling all three slots with the usage frame —
-                    # the usage-only choice for the stocks face is the user's stated intent.
+                    # The combo family's static alternation (unchanged bytes): its face into the two
+                    # JPG stock slots and the usage face into the third, under the same schedule.
                     alternation = feed is not None and market_rows(snapshot) is not None
                     usage_image, usage_encoded = render_frame(
                         {key: value for key, value in snapshot.items() if key != 'stocks'},
@@ -435,15 +459,15 @@ def main():
                     usage_digest = hashlib.sha256(usage_image).hexdigest()
                     slot_image, slot_encoded, slot_digest = ((image, encoded, digest) if alternation
                                                              else (usage_image, usage_encoded, usage_digest))
-                    events = [(ROTATION_FILES[0], slot_image, slot_digest, slot_encoded),
-                              (ROTATION_FILES[1], slot_image, slot_digest, slot_encoded),
-                              (USAGE_FILE, usage_image, usage_digest, usage_encoded)]
+                    events = [(JPEG_SLOTS[0], slot_image, slot_digest, slot_encoded),
+                              (JPEG_SLOTS[1], slot_image, slot_digest, slot_encoded),
+                              (JPEG_USAGE_FILE, usage_image, usage_digest, usage_encoded)]
                 else:
                     # A style that draws no stock board keeps 0.4.7's behavior: the chosen face in
                     # the two stock slots, and the usage slot is left alone (not uploaded, not
                     # wanted — it is disabled on the next reassert rather than shown stale).
-                    events = [(ROTATION_FILES[0], image, digest, encoded),
-                              (ROTATION_FILES[1], image, digest, encoded)]
+                    events = [(JPEG_SLOTS[0], image, digest, encoded),
+                              (JPEG_SLOTS[1], image, digest, encoded)]
                 pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
                 if pending:  # only the slots whose bytes changed are rewritten
                     if forced or may_write(last_write, now, budget):

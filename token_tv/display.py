@@ -356,6 +356,16 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     if style not in STYLES:
         raise ValueError('Unknown display style')
     snapshot = quantise(snapshot, quantum)
+    if style == 'stocks':  # the Night Cards board: animated arrows while a market is open
+        from token_tv.combo import market_rows
+        from token_tv.combo_stocks import render_combo_stocks, render_combo_stocks_gif
+        if market_rows(snapshot) is not None:
+            image = render_combo_stocks_gif(snapshot)  # the arrows and glows breathe over the frames
+            return image, {'fits': not limit or len(image) <= limit}
+        # closed, missing or stale: the static dim dash board under a CLOSED header
+        data, quality, subsampling = encode_jpeg(render_combo_stocks(snapshot), limit)
+        return data, {'quality': quality, 'subsampling': subsampling,
+                      'fits': not limit or len(data) <= limit}
     if style == 'space':  # animated: returns GIF bytes
         from token_tv.space import render_space
         image = render_space(snapshot)
