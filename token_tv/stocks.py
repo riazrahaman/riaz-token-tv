@@ -475,6 +475,21 @@ def dedupe_movers(rows):
 
 CRUMB_RETRIES_FOR = ('http_401', 'http_403', 'invalid_response')
 TOTAL_CAP = 1000  # the flake answers with the whole universe (totals in the thousands), never ours
+INVERSION_FRACTION = 0.4  # a live-updating page carries honest mid-move inversions (captured: 3-4 of 11 pairs); the flake's random sample sits near one half — and fails the thresholds anyway
+
+
+def _approximately_ranked(percents, descending):
+    """True when the page is ranked within the tolerance live updates leave behind.
+
+    A page is read while Yahoo keeps ticking quotes, so adjacent magnitude ties and mid-move
+    quotes leave several inversions; a flaked random sample of the whole universe answers grossly
+    unsorted — and, in captured cases, fails the thresholds and total too."""
+    pairs = max(1, len(percents) - 1)
+    if descending:
+        inversions = sum(1 for a, b in zip(percents, percents[1:]) if a < b)
+    else:
+        inversions = sum(1 for a, b in zip(percents, percents[1:]) if a > b)
+    return inversions <= pairs * INVERSION_FRACTION
 
 
 def _passes_thresholds(quote, region, gainers):
@@ -500,8 +515,8 @@ def valid_board(quotes, region, gainers, total=None):
     """False when a screener response is flaked junk that must never reach the board.
 
     Suspicious shapes: more rows than requested, an unfiltered whole-universe total, top quotes
-    missing their fields, kept rows missing the region's thresholds, or the page not actually
-    sorted the way it was asked (the flake's signature)."""
+    missing their fields, kept rows missing the region's thresholds, or a grossly unsorted page —
+    live-updated pages keep a few honest inversions, which a small minority stays within."""
     if not isinstance(quotes, list) or not quotes or len(quotes) > SCREENER_PAGE:
         return False
     if isinstance(total, (int, float)) and not isinstance(total, bool):
@@ -512,11 +527,7 @@ def valid_board(quotes, region, gainers, total=None):
     if not raws or not all(_passes_thresholds(quote, region, gainers) for quote in raws):
         return False
     percents = [row['percent'] for row in screener_rows(raws)]
-    if gainers and any(a < b for a, b in zip(percents, percents[1:])):
-        return False  # a gainers page is DESC
-    if not gainers and any(a > b for a, b in zip(percents, percents[1:])):
-        return False  # a losers page is ASC
-    return True
+    return _approximately_ranked(percents, descending=gainers)
 
 
 def _mover_side(region, sort_type, gainers, count):
