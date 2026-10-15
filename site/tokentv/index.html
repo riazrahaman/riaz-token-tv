@@ -67,6 +67,7 @@
     <a href="#base">🧬 Base code</a>
     <a href="#built">🔨 Contributions</a>
     <a href="#next">🔭 What's next</a>
+    <a href="#log">📓 Build log</a>
   </div>
 </nav>
 
@@ -538,6 +539,84 @@
   <p>The limitation worth attacking is not wear. It is the contract: the only way to change a pixel is to store a whole image. A custom firmware could change the device from <em>a picture frame you rewrite</em> into <em>a display you draw on</em> &mdash; accepting a frame over HTTP, decoding it straight to the panel in tiles, and never touching the filesystem at all. The write budget would stop existing, and every existing face would keep working, because the rendering stays on the host.</p>
 
   <p>It is a weekend's work and a £5 serial adapter, plus a full flash backup first, because the vendor image restores the firmware but not the photos. Whether that is worth opening the case is a separate question from whether it would work.</p>
+
+  <h3>The clock has an update button. Can we use it?</h3>
+
+  <p>Its own settings page offers <b>Firmware Update (OTA)</b> &mdash; choose a file, start update. If that route accepts a custom build, the case only has to come open <em>once</em>, for the backup, and every attempt after that happens over Wi-Fi. So it is worth knowing exactly what guards that door. Three things stand in the way, and all three turn out to be weaker than they look.</p>
+
+  <p><b>The filename rule is enforced in your browser.</b> The page refuses a file whose name does not begin with <span class="mono">SDP</span> &mdash; but that check is a line of JavaScript, so anything not using the page never sees it. It is a wrong-model guard, not a lock.</p>
+
+  <p><b>The signature check is switched off.</b> This is the one that would really stop you, and it is the one worth proving rather than assuming. A signed ESP8266 image carries its signature appended after the code, making the file longer than its contents. Parsing the vendor image: the application ends at byte <span class="mono">488,304</span> &mdash; which is exactly the file size. <b>Nothing is appended.</b> The firmware does contain the string <span class="mono">Signature verification failed</span>, but it sits in the middle of the stock updater's error table, compiled in and never armed. A lock fitted to the door and never given a key.</p>
+
+  <p><b>The checksum check has nothing to compare against.</b> It only runs when something tells it which checksum to expect, and the page never sends one.</p>
+
+  <p>What remains is a <b>size ceiling</b>, and that one is real. The device reports its filesystem as 3,121,152 bytes, which identifies the flash layout exactly &mdash; a 1&nbsp;MB program area with the files above it. After the current firmware, about <b>548&nbsp;KB</b> is left for a staged update. Anything larger is refused, harmlessly. A firmware of the kind described above usually lands near 400&nbsp;KB, so it fits &mdash; but not by much.</p>
+
+  <p>The update also never rewrites the bootloader, and the chip's own recovery loader is etched into silicon and cannot be erased. That is why the honest risk is smaller than it feels.</p>
+
+  <h3>So what is the actual risk?</h3>
+
+  <p>Out of a hundred attempts, with the backup already taken and the build configured for the right layout. These are reasoned estimates, not measurements &mdash; the firmware's update handler is Xtensa code with no decompiler available, so the first row is where the uncertainty really lives.</p>
+
+  <table class="spec risk">
+    <thead><tr><th>Outcome</th><th>Roughly</th><th>What it costs you</th></tr></thead>
+    <tbody>
+      <tr><td>Works first time</td><td>45%</td><td>Nothing</td></tr>
+      <tr><td>Boots and stays reachable, but the screen is wrong</td><td>27%</td><td>Fix and send again over Wi-Fi. No cable.</td></tr>
+      <tr><td>Refused at the gate, clock untouched</td><td>15%</td><td>Nothing. Try a smaller build.</td></tr>
+      <tr><td>Does not boot</td><td>12%</td><td>Plug the cable in. About fifteen minutes.</td></tr>
+      <tr><td>Photo album wiped by a layout slip</td><td>2%</td><td>Restore from the backup.</td></tr>
+      <tr class="key"><td>Clock permanently lost</td><td>~1%</td><td>And almost all of that lives in the cable step, not the upload</td></tr>
+    </tbody>
+  </table>
+
+  <div class="gotcha">
+    <b>The backup is what makes those numbers acceptable.</b> Take it and nearly every bad outcome stops being a loss and becomes an hour. Skip it and two rows change character completely: a wiped album is gone for good, and a clock that will not boot has no known-good image to go back to. The single genuinely irreversible risk in the whole exercise is not the upload at all &mdash; it is putting a 5&nbsp;volt adapter on a 3.3&nbsp;volt chip while taking that backup, which is avoided by checking a jumper.
+  </div>
+</section>
+
+<!-- ======================= BUILD LOG ======================= -->
+<section class="chapter" id="log">
+  <div class="ch-head">
+    <span class="ch-num">Chapter 08</span>
+    <h2>What happened, <em>day by day</em> <span class="emo-i">📓</span></h2>
+    <p>Newest first. Four days, and the thing worth noticing is how often a day was spent correcting the previous day's assumption rather than adding to it.</p>
+  </div>
+
+  <ul class="daylog">
+    <li>
+      <time>15 Oct<span class="n">18 commits</span></time>
+      <div>
+        <h3>Read the lock on the update door</h3>
+        <p>Pulled apart the firmware's own update route to see whether custom firmware could go on over Wi-Fi. The filename rule turned out to be browser-side, the checksum has nothing to compare against, and the signature check is compiled in but never armed &mdash; proved by measuring the vendor image, which ends at exactly its last byte with no signature appended.</p>
+        <p class="shift">Changed the plan: open the case once for a backup, then iterate wirelessly, rather than opening it for every attempt.</p>
+      </div>
+    </li>
+    <li>
+      <time>14 Oct<span class="n">31 commits</span></time>
+      <div>
+        <h3>Corrected the assumption the design rested on</h3>
+        <p>The album is LittleFS, not SPIFFS &mdash; copy-on-write, so a rewritten file lands on fresh blocks. The flash-wear estimate moved from <em>months</em> to roughly a decade, and the write budget was demoted from a safety mechanism to good hygiene. The settings turned out to be the fragile part instead: one unlevelled sector holding the Wi-Fi credentials, which killed a tempting idea about using the accent colours as a status channel.</p>
+        <p>Also that day: brightness and the night window moved into version control, the clock got pinned by hardware address so a changed IP cannot publish to the wrong device, readings began accumulating into a history buffer, and the ticker learned to follow the sun across two markets.</p>
+      </div>
+    </li>
+    <li>
+      <time>13 Oct<span class="n">9 commits</span></time>
+      <div>
+        <h3>Measured the problem instead of trusting the documentation</h3>
+        <p>The docs claimed that skipping identical frames handled flash wear. Measuring it showed the opposite: with a short window leading, the countdown changes on every poll, so no two frames are ever identical and the guard never fires &mdash; twelve writes an hour, every hour you are working.</p>
+        <p>Four mechanisms went in, and the fourth matters most: a reading that genuinely moved bypasses the budget entirely, because a cap that delays real news is worse than no cap. Then both datasets moved onto one clock.</p>
+      </div>
+    </li>
+    <li>
+      <time>12 Oct<span class="n">23 commits</span></time>
+      <div>
+        <h3>Forked it, then opened the hardware</h3>
+        <p>Swapped two providers out for Ollama Cloud and Antigravity, then found Ollama needed real work &mdash; its limit is a monthly credit budget rather than a quota, so the allowance comes from the account plan and the face counts down to the refill. Added a share watchlist, which quietly proved the device was never about AI usage but about any number worth glancing at.</p>
+        <p class="shift">Disassembled the vendor firmware to establish what the hardware actually is, rather than guessing from the product listing. Every later decision rested on that.</p>
+      </div>
+    </li>
+  </ul>
 </section>
 
 <footer>

@@ -140,3 +140,24 @@
 .disc-item b{color:var(--ink-1)}
 
 
+
+/* ---------- dated build log ---------- */
+.daylog{list-style:none;margin:0 0 20px;padding:0;display:grid;gap:12px}
+.daylog li{display:grid;grid-template-columns:104px 1fr;gap:18px;background:var(--card);
+  border:1px solid var(--rule);border-radius:12px;padding:15px 18px}
+.daylog time{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.06em;
+  text-transform:uppercase;padding-top:2px;display:block}
+.daylog .n{display:block;color:var(--ink-3);font-size:11px;letter-spacing:.04em;margin-top:3px}
+.daylog h3{margin:0 0 5px;font-size:16px;letter-spacing:-.01em}
+.daylog p{margin:0 0 7px;color:var(--ink-2);font-size:14.5px;line-height:1.55}
+.daylog p:last-child{margin-bottom:0}
+.daylog .shift{font-size:13.5px;color:var(--ink-3);border-left:2px solid var(--rule);padding-left:10px}
+@media (max-width:620px){
+  .daylog li{grid-template-columns:1fr;gap:6px}
+  .daylog time{padding-top:0}
+  .daylog .n{display:inline;margin-left:8px}
+}
+
+/* ---------- risk table ---------- */
+.risk td:nth-child(2){font-family:var(--mono);white-space:nowrap;text-align:right;width:1%}
+.risk tr.key td{font-weight:600;color:var(--ink)}
