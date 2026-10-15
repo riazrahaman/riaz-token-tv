@@ -126,7 +126,10 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   TokenTV reads before writing and only sends what differs. Do not drive these from changing data.
 
   `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
-  defaults to `0`: a cap also throttles how fast the ticker refreshes.
+  defaults to `0`: a cap also throttles how fast the ticker refreshes. Each refresh uploads
+  `tokentv.jpg` plus its identical `tokentv-b.jpg` twin (which is what keeps the panel re-reading
+  itself under the clock's slideshow), so an uncapped 30-second open-market poll spends about
+  240 album uploads an hour; a budget of `6` spaces refreshes to twelve uploads an hour.
 
 ### Stock watchlist & Follow-the-Sun markets
 

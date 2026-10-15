@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Two-frame rotation for the SD_PRO panel**: the firm's slideshow only re-reads the album when files change state, so a single enabled photo froze the panel between content writes. JPEG frames are now uploaded to `tokentv.jpg` and an identical `tokentv-b.jpg` (the auto-enable does the enabling; no toggles after upload), `activate()` keeps exactly those two enabled and the rest of the album asleep (a no-op when already correct), and reasserts additionally redownload when the clock has lost either slot. Write budgets gate whole two-file events (`max_writes_per_hour` semantics unchanged; the live default 6 still means ≤12 uploads/hour; an uncapped stocks feeder at its 30-second open-market poll spends ~120 events × 2 = **~240 uploads/hour** — set `max_writes_per_hour` in `stocks.json` to cap that).
+
 ## [0.4.6] — 2026-10-15
 
 ### Changed

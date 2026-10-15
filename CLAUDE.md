@@ -55,7 +55,8 @@ go through that decision rather than assuming US hours.
 
 **`stocks.py` is a parallel universe.** It is a near-duplicate of `live.py` with its own config
 loader, `write_json`, `load_original`, `mismatch_message` and `publish`. A change to the publish
-path usually has to be made twice. Both write the same filenames (`tokentv.jpg` / `tokentv.gif`),
+path usually has to be made twice. Both write the same filenames (`tokentv.jpg` / `tokentv.gif`,
+plus the `tokentv-b.jpg` rotation twin),
 so two instances pointed at the *same* clock will fight over the file and over which saved
 `display-original.json` is authoritative.
 
@@ -93,7 +94,8 @@ Detection happens once at startup, so a clock that was offline then stays miscla
 A throttled cycle must not call `preferences.delivered(style, False)` — the dashboard renders that
 as "Clock upload failed. Please retry."
 
-**Size limits are hard.** `device.LIMITS` caps `tokentv.jpg` at 60 000 bytes and `tokentv.gif` at
+**Size limits are hard.** `device.LIMITS` caps `tokentv.jpg` and its `tokentv-b.jpg` rotation twin
+at 60 000 bytes and `tokentv.gif` at
 400 000; `upload()` raises above them. `display.encode_jpeg` steps quality 92→85→78 then chroma to
 fit. Busy faces (`retro`, the stock watchlist) run close to the limit.
 
@@ -101,7 +103,10 @@ fit. Busy faces (`retro`, the stock watchlist) run close to the limit.
 provider, three rows per face) and `stocks.MAX_SYMBOLS` is 4, matching the four rows
 `stocks.render_image` draws. Raising either without redrawing the face silently hides data.
 
-**`activate()` must be re-asserted.** It selects the photo theme and enables only our file. The loop
+**`activate()` must be re-asserted.** It selects the photo theme and enables exactly our frames —
+both rotation slots (`tokentv.jpg` + `tokentv-b.jpg`) for a JPEG frame, just the GIF for an
+animated one — while leaving every other enabled album file disabled, and it is a no-op when the
+clock already looks right. The loop
 calls it periodically (`reassert_cycles`), not just once, because a reboot or a visit to the clock's
 own web UI drops the clock back to its own theme while uploads keep succeeding into a photo nobody
 is showing.
@@ -165,8 +170,9 @@ Written to the `--state-dir` (`.runtime` by default; the installed services use
   count and bytes. This is where the history lives now; `snapshot.json` is only ever "now".
   `read_history()` and `query_symbol_changes()` answer whether a given value actually moved between
   two times, which is what makes "that row never updates" reports settleable instead of arguable.
-- `tokentv.jpg` / `tokentv.gif` — written only on a successful upload, so they record what the
-  clock is actually showing rather than the latest render.
+- `tokentv.jpg` / `tokentv.gif` (plus the identical `tokentv-b.jpg` rotation twin) — written as each
+  publish event runs, just before its upload requests, so they usually record what the clock is
+  showing; a failed upload leaves a mirror ahead of the clock (the receipt's error shows that).
 
 The repository checkout is imported directly by long-running publisher processes (`python3 -m
 token_tv.cli run|stocks`). Editing files in place live-patches them, and `render_page` imports

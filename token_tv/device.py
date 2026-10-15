@@ -7,8 +7,14 @@ from urllib.request import Request, urlopen
 
 
 FILES = ("tokentv.jpg", "tokentv.gif")
+# The SD_PRO slideshow re-reads the album on rotation, never while a single photo is enabled, so
+# a one-file album froze the panel between content writes even as fresh frames uploaded. JPEG
+# frames now live in two identical slots; the rotation between them re-reads both every cycle.
+# `tokentv-b.jpg` is our own second frame, not a user photo, and is never deleted either.
+ROTATION_FILES = ("tokentv.jpg", "tokentv-b.jpg")
 # The album page accepts GIFs up to 240×240; keep both well under the free space.
-LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv.gif": (400000, "image/gif")}
+LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv-b.jpg": (60000, "image/jpeg"),
+          "tokentv.gif": (400000, "image/gif")}
 LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
 MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
 # The clock writes settings with one name and reports them under another, so a read-and-compare has
@@ -37,6 +43,18 @@ def may_write(last_write, now, budget):
     if not budget:
         return True
     return last_write is None or (now - last_write) >= 3600 / budget
+
+
+def lost_rotation(present, name=FILES[0]):
+    """True when the clock is missing our frame or, for a JPEG, its rotation twin.
+
+    Reassert-time detection against the album's file list, so the byte dedupe cannot keep hiding
+    a lost slot. `present` reads as unknown when the album is unreadable (an Ultra reports none),
+    and unknown is never treated as lost."""
+    if not isinstance(present, list):
+        return False
+    names = {f["name"] for f in present if isinstance(f, dict) and isinstance(f.get("name"), str)}
+    return name not in names or (name == FILES[0] and ROTATION_FILES[1] not in names)
 
 
 class SettingsUnsupported(Exception):
@@ -127,17 +145,34 @@ class PhotoDisplay:
                                  {"Content-Type": "multipart/form-data; boundary=" + boundary})
         return {"file": name, "status": status, "bytes": len(image)}
 
+    def upload_rotation(self, image, name=FILES[0]):
+        """A fresh frame uploaded to the main file and, for JPEG frames, the second slot too.
+
+        The SD_PRO slideshow only re-reads the album when files change state, so one enabled photo
+        freezes the panel between content writes; two enabled files make it re-read on every
+        rotation. Both uploads share one write-budget decision upstream. The firmware auto-enables
+        a newly uploaded file: nothing here toggles after an upload (that request is the known
+        unreliable one), and no photo is ever deleted."""
+        receipts = [self.upload(name, image)]
+        if name == FILES[0]:
+            receipts.append(self.upload(ROTATION_FILES[1], image))
+        return receipts
+
     def toggle(self, category, key, value, enabled):
         self.request("/" + category + "/toggle?" + urlencode({key: value, "state": int(enabled)}, quote_via=quote))
 
     def activate(self, original, name=FILES[0]):
-        # Show only our current file, then select the photo theme; retain old files.
+        # Show only our frames — both rotation slots for a JPEG frame, one for the GIF — then
+        # select the photo theme; the user's own photos are only disabled, never deleted, and a
+        # frame already sitting enabled and alone costs nothing.
         current = self.capture()
         enabled = {f['name']: f['enabled'] for f in current['files']}
-        if not enabled.get(name):
-            self.toggle("photo", "name", name, True)
+        wanted = ROTATION_FILES if name == FILES[0] else (name,)
+        for wanted_name in wanted:
+            if wanted_name in enabled and not enabled[wanted_name]:  # truthy check: a raw `0` sleeps too
+                self.toggle("photo", "name", wanted_name, True)
         for f in current['files']:
-            if f["name"] != name and f['enabled']:
+            if f["name"] not in wanted and f['enabled']:
                 self.toggle("photo", "name", f["name"], False)
         if current['photo_interval'] != 10:
             self.request("/photo/interval?val=10")
@@ -152,7 +187,7 @@ class PhotoDisplay:
             self.toggle("photo", "name", f["name"], f["enabled"])
         _, raw = self.request("/photo/list")
         present = {f["name"] for f in json.loads(raw)["files"]}
-        for name in FILES + LEGACY_FILES:
+        for name in set(FILES) | set(ROTATION_FILES) | set(LEGACY_FILES):
             if name in present and not any(f["name"] == name for f in original["files"]):
                 self.toggle("photo", "name", name, False)
         self.request("/photo/interval?val=" + str(original["photo_interval"]))
@@ -195,6 +230,10 @@ class UltraDisplay(PhotoDisplay):
         status, _ = self.request("/doUpload?dir=/image/", body,
                                  {"Content-Type": "multipart/form-data; boundary=" + boundary})
         return {"file": name, "status": status, "bytes": len(image)}
+
+    def upload_rotation(self, image, name=FILES[0]):
+        # The Ultra shows one hard-set image; there is no album rotation to refresh the panel.
+        return [self.upload(name, image)]
 
     def activate(self, original, name=FILES[0]):
         # Stop the slideshow so the user's own photos never rotate in, select the album theme, show ours.
