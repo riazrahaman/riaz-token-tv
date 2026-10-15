@@ -23,7 +23,7 @@ RULE = '#202730'
 PROVIDER_INK = {'claude': '#d68e68', 'ollama': '#b48cf2', 'antigravity': '#cbd1d7'}
 FONT_MAIN = '/usr/share/fonts/truetype/dejavu/DejaVuSans'
 FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
-STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber')
+STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber', 'stocks')
 ANIMATED_STYLES = ('space', 'pulse', 'patrol', 'twinkle', 'cyber')
 # Gauge-only levels; labels/percentages always use TEXT, logos retain provider ink.
 GAUGE_LEVELS = ((50, '#76a99a'), (80, '#93c9b9'), (90, '#d1b275'), (101, '#d8877e'))
@@ -373,6 +373,11 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     if style == 'combo':  # AI usage plus the watchlist, on one clock
         from token_tv.combo import render_combo
         data, quality, subsampling = encode_jpeg(render_combo(snapshot), limit)
+        return data, {'quality': quality, 'subsampling': subsampling,
+                      'fits': not limit or len(data) <= limit}
+    if style == 'stocks':  # the stock board alone: four big market rows, no usage rows
+        from token_tv.combo_stocks import render_combo_stocks
+        data, quality, subsampling = encode_jpeg(render_combo_stocks(snapshot), limit)
         return data, {'quality': quality, 'subsampling': subsampling,
                       'fits': not limit or len(data) <= limit}
     from token_tv.themes import RENDERERS

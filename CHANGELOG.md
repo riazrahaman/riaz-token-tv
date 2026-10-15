@@ -4,11 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-10-15
+### Added
+- New `stocks` display face: full-screen 4-row gainers/losers board (no AI usage rows); works in watchlist and movers modes.
+
 ## [0.4.4] — 2026-10-15
 
 ### Added
 
 - **Market Movers Mode**: `"mode": "movers"` in the stocks config turns the watchlist face into a whole-market movers board — the top `movers_count` gainers and losers of the active market (US and India, keyless Yahoo screener, deduped across `.NS`/`.BO` listings) re-ranked every cycle. The stock config hot-reloads on mtime change, and the dashboard's clock panel gains a stocks mode toggle plus a four-slot ticker editor (`POST /stocks/mode`, `POST /stocks/symbols`) that writes through to the feeder's config.
+- **Stocks-Only Face**: a new `stocks` clock style that shows only the four market rows, big, with no AI-usage rows — selectable from the dashboard's style list like any other face, and drawing a CLOSED dash board when the feed is closed, missing or stale.
 
 ## [0.4.3] — 2026-10-14
 
@@ -184,6 +189,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.5]: https://github.com/click6067-ship-it/token-tv/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.4
 [0.4.3]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.3
 [0.4.2]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.2

@@ -263,6 +263,120 @@ class StocksControlsTests(unittest.TestCase):
             self._stop(server, thread)
 
 
+class StocksOnlyFaceTests(unittest.TestCase):
+    """The stocks face: only the four market rows, no usage rows, dash slots when dead."""
+
+    @staticmethod
+    def _feed(now=None, is_open=True):
+        now = time.time() if now is None else now  # a feed only reads as live while it is fresh
+        return {'updated_at': now, 'source': 'YAHOO',
+                'market': {'is_open': is_open, 'session': 'regular', 'exchange': 'NSE'},
+                'symbols': [{'symbol': 'RELIANCE.NS', 'price': 1174.6, 'change': 27.9, 'percent': 4.03,
+                             'previous_close': None, 'at': now},
+                            {'symbol': 'TCS.NS', 'price': 2304.9, 'change': 65.6, 'percent': 3.05,
+                             'previous_close': None, 'at': now},
+                            {'symbol': 'HDFCBANK.NS', 'price': 710.7, 'change': -21.3, 'percent': -3.2,
+                             'previous_close': None, 'at': now},
+                            {'symbol': 'INFY.NS', 'price': 812.1, 'change': -30.1, 'percent': -3.71,
+                             'previous_close': None, 'at': now}]}
+
+    def test_stocks_is_a_static_jpeg_style(self):
+        from token_tv.display import ANIMATED_STYLES, STYLES, render_page
+        self.assertIn('stocks', STYLES)
+        self.assertNotIn('stocks', ANIMATED_STYLES)
+        snapshot = {'accounts': {}, 'stocks': self._feed()}
+        body = render_page(snapshot, style='stocks')
+        self.assertEqual(body[:3], b'\xff\xd8\xff')  # JPEG, not one of the animated GIF styles
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual(image.size, (240, 240))
+        self.assertLess(len(body), 60000)
+        self.assertGreater(len(image.getcolors(240 * 240)), 20)
+        # Board inks arrive on the pixels: both a rise and a fall share the face.
+        self.assertIn((8, 247, 66), {colour for _, colour in image.getcolors(240 * 240)})
+        self.assertIn((255, 68, 68), {colour for _, colour in image.getcolors(240 * 240)})
+
+    def test_a_closed_or_missing_feed_draws_dashes_and_never_zeros(self):
+        from token_tv import combo_stocks
+        from token_tv.combo_stocks import FALL, RISE
+        from token_tv.display import render_page
+        image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')))
+        self.assertNotIn(RISE, {colour for _, colour in image.getcolors(240 * 240)})
+        self.assertNotIn(FALL, {colour for _, colour in image.getcolors(240 * 240)})
+        # The dash glyphs are really drawn: every big row carries a dim-grey '--' in its symbol slot.
+        for index in range(combo_stocks.MAX_ROWS):
+            y = combo_stocks.TOP + index * combo_stocks.PITCH
+            slot = image.crop((6, y + 5, 6 + 33, y + 5 + 21))  # a scale-3 '--' glyph box
+            pixels = list(slot.getdata())
+            grey = [px for px in pixels if all(abs(ink - 74) <= 12 for ink in px)]
+            self.assertTrue(grey, f'row {index} has no dash glyph')
+            self.assertLess(len(grey), len(pixels), f'row {index} is solid ink, not a glyph')
+        no_feed = Image.open(io.BytesIO(render_page({'accounts': {}}, style='stocks')))
+        self.assertNotIn(RISE, {colour for _, colour in no_feed.getcolors(240 * 240)})
+        # Closed or missing, the face is still its own board — never the usage face underneath.
+        self.assertNotEqual(render_page({'accounts': {}}, style='stocks'), render_page({'accounts': {}}, style='pixel'))
+        stale = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(now=0)}, style='stocks')))
+        self.assertNotIn(RISE, {colour for _, colour in stale.getcolors(240 * 240)})  # stale reads like none
+        self.assertNotIn((255, 68, 68), {colour for _, colour in stale.getcolors(240 * 240)})
+
+    def test_a_closed_board_with_no_feed_claims_no_exchange(self):
+        from token_tv.display import render_page
+        # Without any feed there is no exchange or source: the header says nothing rather than
+        # stamping the FINNHUB fallback over a market it knows nothing about.
+        self.assertEqual(render_page({'accounts': {}, 'stocks': {'market': {'is_open': False}, 'symbols': []}},
+                                     style='stocks'),
+                         render_page({'accounts': {}}, style='stocks'))
+
+    def test_rows_fills_the_four_slots_and_a_dead_quote_is_a_dash_slot(self):
+        from token_tv.display import render_page
+        live = render_page({'accounts': {}, 'stocks': self._feed()}, style='stocks')
+        dead = dict(self._feed(), symbols=self._feed()['symbols'][:3] + [{'symbol': 'DEAD.NS', 'price': None, 'change': None, 'percent': None, 'previous_close': None, 'at': 0}])
+        with_dead = render_page({'accounts': {}, 'stocks': dead}, style='stocks')
+        self.assertNotEqual(with_dead, live)  # the dead row is drawn as dashes, not silently cropped
+        fewer = render_page({'accounts': {}, 'stocks': dict(self._feed(), symbols=self._feed()['symbols'][:3])}, style='stocks')
+        self.assertNotEqual(fewer, with_dead)  # ...and not exactly like an empty fourth slot
+        self.assertNotEqual(fewer, live)
+
+    def test_the_stocks_face_fits_the_firmware_limit(self):
+        from token_tv.device import FILES, LIMITS
+        from token_tv.display import render_page
+        body = render_page({'accounts': {}, 'stocks': self._feed()}, style='stocks',
+                           limit=LIMITS[FILES[0]][0])
+        self.assertLessEqual(len(body), LIMITS[FILES[0]][0])
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual(image.size, (240, 240))
+        self.assertEqual(image.format, 'JPEG')
+
+    def test_post_display_style_accepts_the_stocks_face(self):
+        from token_tv.live import DisplayPreferences, handler
+        from token_tv.sources import load_config
+        from token_tv.state import UsageStore
+        account = {'key': 'a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'owner@example.com'}
+        row = dict(account, status='ok', windows=[{'label': 'WEEK', 'used_percent': 94, 'resets_at': None}], fetched_at=100)
+        store = UsageStore([account], fetch=Mock(return_value=row))
+        store.refresh()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.json'
+            config = {'accounts': [account], 'display_style': 'pixel'}
+            path.write_text(json.dumps(config))
+            preferences = DisplayPreferences(path, config)
+            server = ThreadingHTTPServer(('127.0.0.1', 0), handler(store, preferences))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            root = f'http://127.0.0.1:{server.server_port}'
+            try:
+                with urlopen(root + '/frame/0.jpg?style=stocks') as response:
+                    self.assertEqual(Image.open(io.BytesIO(response.read())).size, (240, 240))
+                with urlopen(Request(root + '/display/style', data=b'{"style":"stocks"}',
+                                     headers={'Content-Type': 'application/json'})) as response:
+                    self.assertEqual(json.load(response)['style'], 'stocks')
+                self.assertEqual(load_config(path)['display_style'], 'stocks')
+                self.assertEqual(DisplayPreferences(path, load_config(path)).snapshot()['style'], 'stocks')
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -298,6 +412,8 @@ class FlashWearTests(unittest.TestCase):
         base = 1791900000
         for style in STYLES:
             if style == 'space':  # its own 30-minute seed bucket already dedupes it
+                continue
+            if style == 'stocks':  # the stock board has no countdown to bucket: it cannot tick
                 continue
             frames = {0: set(), 900: set()}
             for quantum in frames:

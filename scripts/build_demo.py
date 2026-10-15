@@ -48,9 +48,22 @@ def build(out, site):
     frames = out / 'frames'
     frames.mkdir()
     rendered = snapshot(time.time())
+    # The stocks gallery entry shows a live movers-style board; the sample usage snapshot alone
+    # would render it closed, and the demo host has no feeder.
+    stocks_feed = {'updated_at': time.time(), 'source': 'YAHOO',
+                   'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+                   'symbols': [{'symbol': 'NVDA', 'price': 188.42, 'change': 9.55, 'percent': 5.33,
+                                'previous_close': None, 'at': int(time.time())},
+                               {'symbol': 'TSLA', 'price': 421.10, 'change': 4.10, 'percent': 0.98,
+                                'previous_close': None, 'at': int(time.time())},
+                               {'symbol': 'MSFT', 'price': 512.34, 'change': -3.21, 'percent': -0.62,
+                                'previous_close': None, 'at': int(time.time())},
+                               {'symbol': 'AAPL', 'price': 339.58, 'change': -2.94, 'percent': -0.86,
+                                'previous_close': None, 'at': int(time.time())}]}
     paths = {}
     for style in STYLES:
-        image = render_page(rendered, style=style)
+        frame = dict(rendered, stocks=stocks_feed) if style == 'stocks' else rendered
+        image = render_page(frame, style=style)
         name = f"{style}.{'gif' if image[:4] == b'GIF8' else 'jpg'}"  # Space is animated
         (frames / name).write_bytes(image)
         paths[style] = f'/frames/{name}'
