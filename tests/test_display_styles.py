@@ -443,6 +443,14 @@ class AnimatedScreenTests(unittest.TestCase):
                                  'windows': [{'label': 'WEEK', 'used_percent': 61.0, 'resets_at': None}]}}
         return {'schema': 1, 'updated_at': int(now), 'accounts': accounts, 'stocks': feed}
 
+    @staticmethod
+    def _durations(image):
+        read = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            read.append(image.info.get('duration'))
+        return read
+
     def test_the_stocks_screen_animates_its_arrows(self):
         from token_tv.display import render_frame
         body, meta = render_frame(self._snapshot(time.time()), 0, 'stocks', 900, 400000)
@@ -450,23 +458,43 @@ class AnimatedScreenTests(unittest.TestCase):
         self.assertTrue(meta['fits'])
         image = Image.open(io.BytesIO(body))
         self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
-        self.assertGreaterEqual(image.n_frames, 4)
+        self.assertEqual(image.n_frames, 4)  # four big breathing phases, none coalesced away
         self.assertLessEqual(len(body), 250000)
-        image.seek(0); first = list(image.convert('RGB').getdata())
-        image.seek(2); third = list(image.convert('RGB').getdata())
-        self.assertNotEqual(first, third)  # the arrow-and-glow layer breathes across the frames
+        durations = self._durations(image)
+        self.assertEqual(all(d >= 2000 for d in durations), True, durations)  # ~ the panel repaint cadence
+        frames = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            frames.append(image.convert('RGB').tobytes())
+        self.assertTrue(all(a != b for a, b in zip(frames, frames[1:])), durations)  # no coalesce possible
+        # The bright apex frame carries the rise ink (and the trough frame all but extinguishes it).
+        image.seek(0)
+        self.assertIn((8, 247, 66), {c for _, c in image.convert('RGB').getcolors(240 * 240)})
+
+    def test_the_encoder_merges_identical_adjacent_frames_into_one_long_phase(self):
+        from token_tv.combo_stocks import PHASE_MS, _gif_bytes
+        still = Image.new('RGB', (4, 4), (10, 14, 28))  # a degenerate board: nothing animates
+        body = _gif_bytes([still] * 3)
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual((image.n_frames, self._durations(image)), (1, [3 * PHASE_MS]))  # merged, not dropped
 
     def test_the_usage_screen_animates_its_gauges(self):
-        from token_tv.usage_gif import USAGE_FRAMES, render_usage_gif
+        from token_tv.usage_gif import USAGE_FRAMES, PHASE_MS, render_usage_gif
         body = render_usage_gif(self._snapshot(time.time()))
         self.assertEqual(body[:4], b'GIF8')
+        self.assertLessEqual(len(body), 150000)
         image = Image.open(io.BytesIO(body))
         self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
-        self.assertGreaterEqual(image.n_frames, 6)
-        self.assertLessEqual(len(body), 150000)
-        image.seek(0); first = list(image.convert('RGB').getdata())
-        image.seek(3); fourth = list(image.convert('RGB').getdata())
-        self.assertNotEqual(first, fourth)  # the shimmer moves across the provider gauges
+        durations = self._durations(image)
+        # The sweep phases are one panel repaint each, and none can be coalesced away.
+        self.assertEqual(image.n_frames, USAGE_FRAMES)
+        self.assertEqual(durations, [PHASE_MS] * USAGE_FRAMES)
+        self.assertTrue(all(d >= 2000 for d in durations), durations)
+        frames = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            frames.append(image.convert('RGB').tobytes())
+        self.assertTrue(all(a != b for a, b in zip(frames, frames[1:])), durations)
 
     def test_a_static_style_stays_a_static_jpeg(self):
         from token_tv.display import render_frame
