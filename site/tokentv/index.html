@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="0.4.3">
+<meta name="version" content="0.4.11">
 <title>TokenTV — AI usage on a $5 desk clock</title>
 <meta name="description" content="How a $5 Wi-Fi desk clock shows live AI usage and a stock watchlist without ever being reflashed — the design, the code flow, the hardware, and what was contributed on top of the original.">
 <link rel="canonical" href="https://token-tv.riazrahaman.com/">
@@ -50,7 +50,7 @@
         <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
         <b>Hardware</b> &rarr; $5 Wi-Fi Desk Clock (<a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">AliExpress</a>)<br>
         <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
-        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.3</span><br>
+        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.11</span><br>
         <b>Visits</b> &rarr; <span id="heroVisits">counting...</span>
       </div>
     </div>
@@ -143,7 +143,7 @@
       <div class="demo-caption">
         <div class="live-pill"><span class="live-dot"></span> THE REALITY &middot; LIVE ON DESK</div>
         <h3>Real 240&times;240 IPS Hardware</h3>
-        <p>The animated hybrid face running on the physical $5 white clock: pixel mascot strolling the divider rule, starfield twinkle, and live AI quotas + market changes with stock firmware.</p>
+        <p>What actually runs in the corner of the room right now: a whole-market movers board (top gainers over top losers, ranked fresh every poll) alternating with the full AI-usage screen &mdash; 20 seconds of stocks, 10 seconds of usage while the markets are open, on the stock firmware's photo slideshow. The arrows breathe on the stock board and the progress bars shimmer on the usage screen.</p>
         <a class="demo-link" href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">
           Get the $5 Clock on AliExpress &rarr;
         </a>
@@ -324,7 +324,7 @@
 <section class="chapter" id="faces">
   <div class="ch-head">
     <span class="ch-num">Chapter 03</span>
-    <h2>Eight faces, <em>one snapshot</em> <span class="emo-i">🎨</span></h2>
+    <h2>Thirteen faces, <em>one snapshot</em> <span class="emo-i">🎨</span></h2>
     <p>Every face is a Python function that receives the same normalised reading and draws a 240&times;240 image. Swapping face is a dropdown, not a redeploy. All renders below are from the project's sample data.</p>
   </div>
 
@@ -342,7 +342,7 @@
     <div class="face"><img src="assets/face-gameboy.png" alt="The gameboy face" width="200" height="200"><div class="fname">gameboy</div><p class="fnote">Four shades of green</p></div>
   </div>
 
-  <p>There is a ninth, <span class="mono">space</span>, which returns an animated GIF rather than a JPEG &mdash; so the publisher picks the filename from the image's magic bytes rather than from the style name.</p>
+  <p>Five of the thirteen (<span class="mono">space</span>, and the animated combo family <span class="mono">pulse</span>, <span class="mono">patrol</span>, <span class="mono">twinkle</span>, <span class="mono">cyber</span>) return an animated GIF rather than a JPEG &mdash; so the publisher picks the filename from the image's magic bytes rather than from the style name. The thirteenth, <span class="mono">stocks</span>, is the standalone Night-Cards movers board (two whole-market gainers and two whole-market losers by default); when the market is alive its frame is itself a small animated GIF in which the share prices' up/down arrows breathe.</p>
 </section>
 
 <!-- ======================= FLASH ======================= -->
@@ -469,13 +469,13 @@
   <div class="ch-head">
     <span class="ch-num">Chapter 06</span>
     <h2>What I <em>contributed</em> <span class="emo-i">🔨</span></h2>
-    <p>Twenty-three commits over three days, on top of the fork point. Two new providers, a second data domain, the flash-write discipline, and the hardware study that corrected the assumption underneath it all.</p>
+    <p>One hundred commits over four days, on top of the fork point. Two new providers, a second data domain, a whole-market movers board, an alternating clock, animated faces, the flash-write discipline, and the hardware study that corrected the assumption underneath it all.</p>
   </div>
 
   <div class="numbers">
-    <div><b>23</b><span>commits, excluding merges</span></div>
-    <div><b>+2,385</b><span>lines of Python, including tests</span></div>
-    <div><b>143</b><span>tests passing</span></div>
+    <div><b>100</b><span>commits, excluding merges</span></div>
+    <div><b>+7,138</b><span>lines of Python, including tests</span></div>
+    <div><b>208</b><span>tests passing, 12 subtests</span></div>
     <div><b>2</b><span>providers replaced</span></div>
   </div>
 
@@ -499,15 +499,25 @@
       <p>A dual-source global watchlist face with follow-the-sun market routing: Finnhub for US equities during American trading hours, and zero-config Yahoo Finance v8 chart API for Indian NSE/BSE equities during Asian hours &mdash; automatically switching tickers, scaling 5-digit INR valuations, and yielding to full AI token metrics during off-hours.</p>
       <span class="where">stocks.py · 774 lines</span>
     </li>
+    <li style="--c:var(--c-data)">
+      <h3>A whole-market movers board, driven from the dashboard</h3>
+      <p>Beyond the watchlist: a second mode that ranks the entire market itself &mdash; the top two gainers and the top two losers, re-ranked every poll &mdash; switched on from the web UI, where the tickers can also be swapped live. When Yahoo's custom screener started flaking (answering with the whole unfiltered universe), the board learned to detect a degraded page, retry once, and keep the last honest board rather than show junk.</p>
+      <span class="where">stocks.py · live.py · token_tv/web/</span>
+    </li>
     <li style="--c:var(--c-ship)">
       <h3>Flash-write discipline</h3>
       <p>Countdown bucketing, a spaced write budget, a data-change override, a photo-theme watchdog and a JPEG quality ladder &mdash; each one fixing a specific way the display could silently stop being true.</p>
       <span class="where">display.py · device.py · live.py</span>
     </li>
     <li style="--c:var(--c-app)">
-      <h3>Both datasets on one clock</h3>
-      <p>The combo face, plus the ownership split that makes it safe: the watchlist runner became a pure feeder, so exactly one process owns the device. The market half only exists while the market does.</p>
-      <span class="where">combo.py · live.py</span>
+      <h3>Both datasets on one clock — and on two, in turns</h3>
+      <p>The combo face, plus the ownership split that makes it safe: the watchlist runner became a pure feeder, so exactly one process owns the device. And the clock now alternates channels itself: 20 seconds of the stocks face, 10 seconds of AI usage, looping while a market is open; closed hours rest on a continuous usage screen. The trick is album arithmetic — three slideshow slots at a 10-second interval, refreshed by every publisher cycle.</p>
+      <span class="where">live.py · device.py · combo.py</span>
+    </li>
+    <li style="--c:var(--c-ai)">
+      <h3>Screens that draw their own motion</h3>
+      <p>The markets' face animates between rotations: the gain/loss arrows breathe a full edge-to-edge loop every 2 seconds, and the usage gauges carry a ~1.2-second shimmer — as looping GIFs, because the vendor firmware repaints the panel continuously only for GIFs. Finding that pacing took two hardware iterations: too fast and the encoder coalesced the phases away, matching the panel's ~2.5&nbsp;s repaint made it read as a slow crawl.</p>
+      <span class="where">combo_stocks.py · usage_gif.py · display.py</span>
     </li>
     <li style="--c:var(--c-cfg)">
       <h3>The clock's own settings, and its identity</h3>
@@ -521,8 +531,8 @@
     </li>
     <li style="--c:var(--c-lang)">
       <h3>Documentation the fork did not have</h3>
-      <p>A changelog, an architecture document, a firmware and HTTP-surface reference, three generated interactive diagrams that cite the source lines they were built from, and an agent guide for whoever works on it next.</p>
-      <span class="where">+802 lines of prose</span>
+      <p>A changelog with a section for every release since the fork, an architecture document, a firmware and HTTP-surface reference, three generated interactive diagrams that cite the source lines they were built from, and an agent guide for whoever works on it next. All of it kept current in lockstep with the code — this release's notes shipped with their feature.</p>
+      <span class="where">+1,400 lines of prose</span>
     </li>
   </ul>
 </section>
@@ -577,7 +587,7 @@
 <footer>
   <span>Project &middot; TokenTV &middot; Oct 2026</span>
   <span>MIT &middot; <a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a> &middot; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> &middot; built in collaboration with Claude, Antigravity &amp; OpenCode</span>
-  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.3</span><span id="visits"></span></span>
+  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.11</span><span id="visits"></span></span>
 </footer>
 
 </main>
