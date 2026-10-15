@@ -85,13 +85,34 @@ class DisplayPreferences:
         self.style = config.get('display_style', 'pixel')
         self.applied_style = None
         self.status = 'queued' if config.get('device_url') else 'preview_only'
+        # The stocks feeder's own config file; the stocks endpoints rewrite it, and the feeder's
+        # mtime reload picks the change up next cycle.
+        self.stocks_path = config.get('stocks_config') or None
         self.lock = threading.Lock()
         self.changed = threading.Event()
 
     def snapshot(self):
         with self.lock:
-            return {'style': self.style, 'applied_style': self.applied_style,
-                    'status': self.status, 'styles': list(STYLES)}
+            state = {'style': self.style, 'applied_style': self.applied_style,
+                     'status': self.status, 'styles': list(STYLES)}
+            state['stocks'] = self.stocks_state()
+            return state
+
+    def stocks_state(self):
+        """The stocks feeder's mode and tickers, or None when no stock feed is configured."""
+        if not self.stocks_path:
+            return None
+        try:
+            data = json.loads(Path(self.stocks_path).expanduser().read_text())
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        mode = data.get('mode')
+        symbols = data.get('symbols')
+        return {'mode': mode if mode in ('watchlist', 'movers') else 'watchlist',
+                'symbols': [symbol for symbol in symbols or [] if isinstance(symbol, str)],
+                'movers_count': data.get('movers_count', 2)}
 
     def set_style(self, style):
         if style not in STYLES:
@@ -104,11 +125,48 @@ class DisplayPreferences:
             self.status = 'queued' if self.config.get('device_url') else 'preview_only'
         self.changed.set()
 
+    def set_stocks_mode(self, mode):
+        if mode not in ('watchlist', 'movers'):
+            raise ValueError('Unknown stocks mode')
+        self.set_stocks_options({'mode': mode})
+
+    def set_stocks_symbols(self, symbols):
+        from token_tv.stocks import MAX_SYMBOLS, SYMBOL_PATTERN
+        if not isinstance(symbols, list) or not 1 <= len(symbols) <= MAX_SYMBOLS:
+            raise ValueError(f'symbols must be a list of 1 to {MAX_SYMBOLS} tickers')
+        cleaned = []
+        for symbol in symbols:
+            if not isinstance(symbol, str) or not SYMBOL_PATTERN.fullmatch(symbol.strip().upper()):
+                raise ValueError(f'{symbol!r} is not an uppercase ticker')
+            cleaned.append(symbol.strip().upper())
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError('A ticker is listed twice')
+        self.set_stocks_options({'symbols': cleaned})
+
+    def set_stocks_options(self, change):
+        """Merge a stocks change into the feeder's own config, written atomically (tmp + replace)."""
+        if not self.stocks_path:
+            raise StockFeedMissing('The live config has no stocks_config path')
+        path = Path(self.stocks_path).expanduser()
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            raise StockFeedMissing('The stock config cannot be read') from None
+        if not isinstance(data, dict):
+            raise StockFeedMissing('The stock config is not an object')
+        data.update(change)
+        write_json(path, data)
+        self.changed.set()
+
     def delivered(self, style, success):
         with self.lock:
             if success:
                 self.applied_style = style
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
+
+
+class StockFeedMissing(Exception):
+    """POST to a stocks endpoint while the live config has no stock feed."""
 
 
 def handler(store, preferences=None, quantum=0, state_dir=None):
@@ -166,7 +224,8 @@ def handler(store, preferences=None, quantum=0, state_dir=None):
             self.wfile.write(body)
 
         def do_POST(self):
-            if urlparse(self.path).path != '/display/style':
+            path = urlparse(self.path).path
+            if path not in ('/display/style', '/stocks/mode', '/stocks/symbols'):
                 self.send_error(404)
                 return
             if preferences is None:
@@ -181,11 +240,44 @@ def handler(store, preferences=None, quantum=0, state_dir=None):
                 if not 0 < length <= 1024 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Invalid JSON request')
                 data = json.loads(self.rfile.read(length))
-                if not isinstance(data, dict) or set(data) != {'style'} or data['style'] not in STYLES:
-                    raise ValueError('Unknown display style')
-                preferences.set_style(data['style'])
-            except (ValueError, UnicodeError):
-                self.send_error(400, 'Choose a supported display style')
+                if not isinstance(data, dict):
+                    raise ValueError('Invalid JSON request')
+                if path == '/display/style':
+                    if set(data) != {'style'} or data['style'] not in STYLES:
+                        raise ValueError('Choose a supported display style')
+                elif path == '/stocks/mode':
+                    if set(data) != {'mode'} or data['mode'] not in ('watchlist', 'movers'):
+                        raise ValueError('stocks.mode expects {"mode":"watchlist"} or {"mode":"movers"}')
+                else:
+                    symbols = data['symbols']
+                    from token_tv.stocks import MAX_SYMBOLS, SYMBOL_PATTERN
+                    if (set(data) != {'symbols'} or not isinstance(symbols, list)
+                            or not 1 <= len(symbols) <= MAX_SYMBOLS
+                            or any(not isinstance(s, str) for s in symbols)
+                            or len(set(s.strip().upper() for s in symbols)) != len(symbols)):
+                        raise ValueError(f'stocks.symbols expects 1 to {MAX_SYMBOLS} unique tickers')
+                    for symbol in symbols:
+                        if not SYMBOL_PATTERN.fullmatch(symbol.strip().upper()):
+                            raise ValueError(f'{symbol!r} is not an uppercase ticker')
+            except (ValueError, UnicodeError, KeyError):
+                self.send_error(400,
+                                'Choose a supported display style' if path == '/display/style' else
+                                'stocks.mode expects {"mode":"watchlist"} or {"mode":"movers"}'
+                                if path == '/stocks/mode' else
+                                'stocks.symbols expects 1 to 4 unique uppercase tickers')
+                return
+            except OSError:
+                self.send_error(500, 'Could not save display choice')
+                return
+            try:
+                if path == '/display/style':
+                    preferences.set_style(data['style'])
+                elif path == '/stocks/mode':
+                    preferences.set_stocks_mode(data['mode'])
+                else:
+                    preferences.set_stocks_symbols([s.strip().upper() for s in data['symbols']])
+            except StockFeedMissing as error:
+                self.send_error(409, str(error) or 'No stock feed is configured')
                 return
             except OSError:
                 self.send_error(500, 'Could not save display choice')

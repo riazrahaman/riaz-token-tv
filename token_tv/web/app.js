@@ -247,9 +247,47 @@ function paintClock(forceImage = false) {
 }
 const styleName = s => s === 'retro' ? 'Pixel Retro' : s === 'hud' ? 'Sci-Fi HUD' : s ? s[0].toUpperCase() + s.slice(1) : 'Unknown';
 let displayPolling = false;
-async function refreshDisplay(forceImage = false) {if (displayPolling) return; displayPolling = true; try {const r = await fetch(DEMO ? '/demo-display.json' : '/display', {cache:'no-store'}); if (!r.ok) throw Error(); const data = await r.json(); const dirty = displayInfo && clockChoice !== displayInfo.style; displayInfo = data; if (!clockChoice || !dirty) clockChoice = data.style; const select = $('#clock-style'); if (!select.options.length) for (const s of data.styles) {const o = el('option', styleName(s)); o.value = s; select.append(o)} select.value = clockChoice; paintClock(forceImage); if (DEMO && themeData && !lastThumbFrames) {lastThumbFrames = true; paintThemes()}} catch {$('#display-state').textContent = 'Clock status unavailable'} finally {displayPolling = false}}
+async function refreshDisplay(forceImage = false) {if (displayPolling) return; displayPolling = true; try {const r = await fetch(DEMO ? '/demo-display.json' : '/display', {cache:'no-store'}); if (!r.ok) throw Error(); const data = await r.json(); const dirty = displayInfo && clockChoice !== displayInfo.style; displayInfo = data; if (!clockChoice || !dirty) clockChoice = data.style; const select = $('#clock-style'); if (!select.options.length) for (const s of data.styles) {const o = el('option', styleName(s)); o.value = s; select.append(o)} select.value = clockChoice; paintClock(forceImage); paintStocks(); if (DEMO && themeData && !lastThumbFrames) {lastThumbFrames = true; paintThemes()}} catch {$('#display-state').textContent = 'Clock status unavailable'} finally {displayPolling = false}}
 $('#clock-style').onchange = e => {clockChoice = e.target.value; clockError = false; paintClock(true); paintThemes()};
 $('#apply').onclick = async () => {if (applying || !clockChoice) return; applying = true; clockError = false; paintClock(); try {const r = await fetch('/display/style', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({style:clockChoice})}); if (!r.ok) throw Error(); displayInfo = await r.json()} catch {clockError = true} finally {applying = false; paintClock(true)}};
+/* Stocks face controls: a mode toggle and, in watchlist mode, a 4-slot ticker editor. */
+const stockSlots = () => [...document.querySelectorAll('#stocks-symbols .stocks-ticker')];
+let stocksBusy = false, stocksDirty = false, stocksError = false;
+function paintStocks() {
+  const stocks = displayInfo?.stocks, panel = $('#stocks-controls');
+  panel.hidden = !stocks; if (panel.hidden) return;
+  const mode = stocks.mode === 'movers' ? 'movers' : 'watchlist';
+  $('#stocks-watchlist').disabled = $('#stocks-movers').disabled = DEMO || stocksBusy;
+  $('#stocks-watchlist').setAttribute('aria-pressed', String(mode === 'watchlist'));
+  $('#stocks-movers').setAttribute('aria-pressed', String(mode === 'movers'));
+  $('#stocks-editor').hidden = mode === 'movers';
+  const note = $('#stocks-movers-note');
+  note.hidden = mode !== 'movers';
+  if (mode === 'movers') note.textContent = `Top ${stocks.movers_count || 2} gainers + top ${stocks.movers_count || 2} losers, re-ranked every cycle`;
+  const slots = stockSlots();
+  if (mode === 'watchlist' && !stocksDirty && !slots.some(s => s === document.activeElement))
+    slots.forEach((input, i) => input.value = (stocks.symbols || [])[i] || '');
+  const edited = slots.map(s => s.value.trim().toUpperCase()).filter(Boolean).join(',') !== (stocks.symbols || []).join(',');
+  $('#stocks-apply').disabled = DEMO || stocksBusy || mode === 'movers' || (!edited && !stocksDirty);
+  $('#stocks-apply').textContent = stocksBusy ? 'Sending…' : 'Apply tickers';
+  $('#stocks-state').textContent = DEMO ? 'Demo · install TokenTV to drive the stocks face' : stocksError ? 'Could not save. Please retry.' : '';
+}
+async function postStocks(path, body) {
+  if (stocksBusy || DEMO) return; stocksBusy = true; stocksError = false; paintStocks();
+  try {
+    const r = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    if (!r.ok) throw Error();
+    displayInfo = await r.json();
+  } catch {stocksError = true} finally {stocksBusy = false; stocksDirty = false; paintStocks()}
+}
+$('#stocks-watchlist').onclick = () => postStocks('/stocks/mode', {mode:'watchlist'});
+$('#stocks-movers').onclick = () => postStocks('/stocks/mode', {mode:'movers'});
+for (const input of stockSlots()) input.addEventListener('input', () => {input.value = input.value.toUpperCase(); stocksDirty = true; paintStocks()});
+$('#stocks-apply').onclick = () => {
+  const symbols = stockSlots().map(s => s.value.trim().toUpperCase()).filter(Boolean).slice(0, 4);
+  if (!symbols.length) {$('#stocks-state').textContent = 'Add at least one ticker'; return}
+  postStocks('/stocks/symbols', {symbols});
+};
 let themeData = null, themeSort = 'popular', lastThumbFrames = false;
 const REPO_URL = 'https://github.com/click6067-ship-it/token-tv';
 const day = s => new Date(s).toLocaleDateString();
