@@ -1,6 +1,6 @@
 {
   "name": "token-tv",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "Your Claude, Ollama and Antigravity usage limits on a tiny Wi-Fi desk clock (launcher for the Python package)",
   "license": "MIT",
   "repository": "github:click6067-ship-it/token-tv",
