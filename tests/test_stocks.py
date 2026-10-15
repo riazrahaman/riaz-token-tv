@@ -574,7 +574,7 @@ class MoversTests(unittest.TestCase):
         self.assertIn({'operator': 'gt', 'operands': ['percentchange', 3.0]}, gainers['query']['operands'])
         self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 15000]}, gainers['query']['operands'])
         losers = stocks.screener_query('us', 'ASC')
-        self.assertIn({'operator': 'gt', 'operands': ['percentchange', -2.5]}, losers['query']['operands'])
+        self.assertIn({'operator': 'lt', 'operands': ['percentchange', -2.5]}, losers['query']['operands'])
         self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 20000]}, losers['query']['operands'])
         india = stocks.screener_query('in', 'DESC')
         self.assertEqual(india['query']['operands'][0], {'operator': 'eq', 'operands': ['region', 'in']})
@@ -614,15 +614,26 @@ class MoversTests(unittest.TestCase):
         self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
 
     def test_a_flaked_predefined_screen_falls_back_to_one_custom_post(self):
+        posts = []
+
         def flaked(side):
             return ([self.quote('BROKEN', 12.0, -2.4)] * 2, 1916)  # the unsorted universe sample
 
+        def custom(url, payload, headers=None):
+            posts.append(payload)
+            return {'finance': {'result': [{'quotes': self.gainers() if payload['sortType'] == 'DESC'
+                                             else self.losers()}]}}
+
         with patch('token_tv.stocks.predefined_quotes', side_effect=flaked), \
-                patch('token_tv.stocks.screener_quotes',
-                      side_effect=lambda region, sort_type:
-                      (self.gainers(), 189) if sort_type == 'DESC' else (self.losers(), 189)):
+                patch('token_tv.stocks._request_post_json', side_effect=custom):
             rows = stocks.fetch_movers('US', 2)
         self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
+        # The fallback body mirrors the screens: gainers 'gt 3.0', losers 'lt -2.5' — anything the
+        # guard could reject on the loser side would make the fallback permanently dead.
+        self.assertIn({'operator': 'gt', 'operands': ['percentchange', 3.0]},
+                      posts[0]['query']['operands'])
+        self.assertIn({'operator': 'lt', 'operands': ['percentchange', -2.5]},
+                      posts[1]['query']['operands'])
 
     def test_fetch_movers_returns_the_top_gainers_then_losers_in_board_order(self):
         with patch('token_tv.stocks.screener_quotes',

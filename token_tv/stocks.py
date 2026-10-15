@@ -355,9 +355,17 @@ def screener_query(region, sort_type):
             {'operator': 'gt', 'operands': ['dayvolume', 100_000]},
         ]
     else:
-        # A mirror of Yahoo's public day_gainers / day_losers screens.
-        operands = [
-            {'operator': 'gt', 'operands': ['percentchange', 3.0 if sort_type == 'DESC' else -2.5]},
+        # A mirror of Yahoo's public day_gainers / day_losers screens. The losers bar is an 'lt':
+        # a 'gt' -2.5 operand would answer nothing that the guarded losers threshold can pass.
+        if sort_type == 'DESC':
+            operands = [
+                {'operator': 'gt', 'operands': ['percentchange', 3.0]},
+            ]
+        else:
+            operands = [
+                {'operator': 'lt', 'operands': ['percentchange', -2.5]},
+            ]
+        operands += [
             {'operator': 'gte', 'operands': ['intradaymarketcap', 2_000_000_000]},
             {'operator': 'gte', 'operands': ['intradayprice', 5]},
             {'operator': 'gt', 'operands': ['dayvolume', 15_000 if sort_type == 'DESC' else 20_000]},
@@ -538,16 +546,18 @@ def fetch_movers(exchange, count=MOVERS_COUNT):
 
     A degraded answer (a flaked screener or a failed request) gets exactly one fresh crumb —
     getcrumb is rate-limited — and then raises, so the caller keeps last-good and backs off."""
-    def board(region, gainers):
+    region = 'in' if exchange == 'NSE' else 'us'
+
+    def board(gainers):
         return _mover_side(region, 'DESC' if gainers else 'ASC', gainers, count)
 
     try:
-        return board('us' if exchange != 'NSE' else 'in', True) + board('in' if exchange == 'NSE' else 'us', False)
+        return board(True) + board(False)
     except StockError as error:
         if error.code not in CRUMB_RETRIES_FOR:  # a 429 or an outage: never re-hit getcrumb
             raise
         yahoo_session(refresh=True)  # one fresh crumb, at most
-        return board('us' if exchange != 'NSE' else 'in', True) + board('in' if exchange == 'NSE' else 'us', False)
+        return board(True) + board(False)
 
 
 # ---------------------------------------------------------------------------
