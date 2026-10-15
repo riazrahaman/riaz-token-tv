@@ -87,11 +87,22 @@ class GalleryTests(unittest.TestCase):
         gallery = self.html.index('id="gallery"')
         self.assertFalse(panel_start < gallery < panel_end)  # visible, not hidden inside the clock panel
         self.assertIn('href="#gallery"', self.html)  # direct entry from the top bar
-        self.assertIn('https://github.com/click6067-ship-it/token-tv/blob/main/docs/clock-faces.md', self.html)
-        self.assertIn('https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md', self.html)
-        for label in ('Gallery', 'Make a face', 'Share a face'):
-            self.assertIn(label, self.html)
+        self.assertIn('Gallery', self.html)
         self.assertIn("'theme-thumb'", self.js)  # each card carries a real rendered thumbnail
+
+    def test_no_link_leaves_this_project(self):
+        """Every GitHub link belongs to this repository. Font licences name their own upstream."""
+        import re
+        for name, text in (('index.html', self.html), ('app.js', self.js)):
+            for url in re.findall(r'https://github\.com/[^\s"\')]+', text):
+                self.assertTrue(url.startswith('https://github.com/riazrahaman/riaz-token-tv'),
+                                f'{name} links outside the project: {url}')
+
+    def test_likes_are_not_shown(self):
+        """Counts came from another project's issue reactions and said nothing about a face."""
+        for text in (self.html, self.js):
+            self.assertNotIn('like_url', text)
+            self.assertNotIn('Like on GitHub', text)
 
     def test_no_star_or_fork_request_in_dashboard(self):
         for text in (self.html, self.js):

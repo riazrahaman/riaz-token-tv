@@ -7,14 +7,14 @@ Everything that used to be in the README. Written for people and for AI coding a
 Needs Python 3.10+ and the official CLI (`claude` or `agy`) for the CLI providers you use. Ollama Cloud needs only an API key.
 
 ```bash
-pipx install git+https://github.com/click6067-ship-it/token-tv   # or: pip install --user git+...
+pipx install git+https://github.com/riazrahaman/riaz-token-tv   # or: pip install --user git+...
 token-tv demo                                     # every clock face with sample data, no login
 token-tv setup                                    # asks for emails (up to 3 per provider) and the clock IP
 token-tv doctor --live                            # asks each provider now; says what is missing and the fix
 token-tv run                                      # dashboard at http://127.0.0.1:8787, drives the clock
 ```
 
-`uvx --from git+https://github.com/click6067-ship-it/token-tv token-tv demo` runs it without installing.
+`uvx --from git+https://github.com/riazrahaman/riaz-token-tv token-tv demo` runs it without installing.
 TokenTV is not on PyPI yet, so plain `uvx token-tv` does not work. From a clone, `pip install .`
 gives the same `token-tv` command.
 

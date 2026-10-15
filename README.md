@@ -4,9 +4,9 @@
 <p align="center"><img src="docs/images/clock-faces.png" alt="Six clock faces (sample data)"></p>
 
 Your Claude, Ollama and Antigravity usage limits plus follow-the-sun global stock watchlists (US & India) on a [~$5 Wi-Fi desk clock](https://www.aliexpress.com/item/1005007425624137.html). No firmware flashing. While the markets are open the album alternates the stocks face with a usage screen (20 s / 10 s) via three album frames (`tokentv.jpg` + `tokentv-b.jpg` + `tokentv-usage.jpg`), so the clock's slideshow keeps the panel live under the SD_PRO firmware. The stocks face can run as a whole-market movers board (top gainers + losers) or a stocks-only Night-Cards face; the mode and tickers switch from the dashboard.  
-**Try it:** [live demo](https://token-tv.vercel.app) or `npx github:click6067-ship-it/token-tv demo`, no clock or login needed.  
+**Try it:** [live demo](https://token-tv.vercel.app) or `npx github:riazrahaman/riaz-token-tv demo`, no clock or login needed.  
 **Set it up:** give this repo to your AI and say *"Set up TokenTV for me."* It follows [AGENTS.md](AGENTS.md).  
-**Make your own face:** no clock needed, start from the [Game Boy example](examples/gameboy) and ask your AI to change it. [Guide](docs/clock-faces.md) · [Share it](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md)  
+**Make your own face:** no clock needed, start from the [Game Boy example](examples/gameboy) and ask your AI to change it. [Guide](docs/clock-faces.md) · [Share it](https://github.com/riazrahaman/riaz-token-tv/issues/new?template=share_a_face.md)  
 Details: [how it works](docs/stock-photo-display.md) · [setup](docs/setup.md) · [compatible clocks](docs/hardware-compatibility.md) · [Apple Watch](docs/apple-watch.md) · [architecture](docs/architecture.md) · [project page](https://tokentv.pages.dev) · [changelog](CHANGELOG.md) · MIT · [한국어](README.ko.md)  
 Featured on [Hackaday](https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/).
 

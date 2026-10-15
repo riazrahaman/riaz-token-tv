@@ -81,7 +81,7 @@ There are two different ways, and only the second one puts a face in the Gallery
 
 | | Share an image | Add it to the Gallery |
 | --- | --- | --- |
-| How | [Share a face](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md) issue: an image, optionally the prompt and your fork link | A normal pull request with the [New clock face checklist](../.github/PULL_REQUEST_TEMPLATE/theme.md) copied in: id, name, author, license, a 240×240 preview from sample data |
+| How | [Share a face](https://github.com/riazrahaman/riaz-token-tv/issues/new?template=share_a_face.md) issue: an image, optionally the prompt and your fork link | A normal pull request with the [New clock face checklist](../.github/PULL_REQUEST_TEMPLATE/theme.md) copied in: id, name, author, license, a 240×240 preview from sample data |
 | What happens | It is just shown in the issue. Nothing is added to the Gallery automatically | After review the maintainer adds it to `token_tv/assets/theme-catalog.json` (with `added_at`, `min_version` and a likes issue) in the next release |
 | Who sees it | People reading the issue | Everyone on that release, in the **Gallery**, sorted by **Popular** or **New** |
 

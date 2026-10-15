@@ -10,7 +10,7 @@ Thanks for helping. The most useful contributions right now are:
 ## Set up
 
 ```bash
-git clone https://github.com/click6067-ship-it/token-tv && cd token-tv
+git clone https://github.com/riazrahaman/riaz-token-tv && cd token-tv
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/token-tv demo          # renders every face with sample data, no login needed
 .venv/bin/python -B -m unittest discover -s tests

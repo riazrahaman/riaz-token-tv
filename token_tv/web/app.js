@@ -290,15 +290,13 @@ $('#stocks-apply').onclick = () => {
 };
 
 /* ---- gallery: the thumbnail is the product, so it gets the space ---- */
-let themeData = null, themeSort = 'popular', revealedId = null, themePaintSig = null;
-const REPO_URL = 'https://github.com/click6067-ship-it/token-tv';
-const day = s => new Date(s).toLocaleDateString();
-/* A count only when there is one to show: '♥ 0' is noise, and a local face is already labelled. */
-const likeText = t => (t.likes_state === 'counted' || t.likes_state === 'stale') && t.likes ? `♥ ${t.likes}` : '';
-function sortThemes(list, mode) {
+let themeData = null, revealedId = null, themePaintSig = null;
+const REPO_URL = 'https://github.com/riazrahaman/riaz-token-tv';
+/* Newest first, then id. The catalog still carries like counts from the upstream project's
+ * issues; they say nothing about a face and are not shown. */
+function sortThemes(list) {
  const added = t => t.added_at ? -Date.parse(t.added_at) : Infinity;
- const fresh = [...list].sort((a, b) => added(a) - added(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
- return mode === 'new' ? fresh : [...fresh.filter(t => t.likes !== null).sort((a, b) => b.likes - a.likes), ...fresh.filter(t => t.likes === null)];
+ return [...list].sort((a, b) => added(a) - added(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 function thumbSrc(id) {
  if (DEMO) return displayInfo?.frames?.[id] || `/frames/${encodeURIComponent(id)}.jpg`;
@@ -306,20 +304,19 @@ function thumbSrc(id) {
 }
 function paintThemes(force = false) {
  const list = $('#theme-list');
- document.querySelectorAll('.theme-sort button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sort === themeSort)));
  if (!themeData) return;
  /* Every card holds a <img src="/frame/0.jpg?style=…">, which the server renders on request and
   * sends no-store. refreshDisplay runs every five seconds, so repainting unconditionally would
   * re-render all thirteen faces in the publisher's own process — and would drop the revealed
   * Apply button and the keyboard focus with it. Repaint only when something visible changed. */
- const sig = [themeSort, displayInfo?.applied_style, clockChoice, applying, revealedId, themeData.themes.length].join('\u0000');
+ const sig = [displayInfo?.applied_style, clockChoice, applying, revealedId, themeData.themes.length].join('\u0000');
  if (!force && sig === themePaintSig) return;
  themePaintSig = sig;
- const ordered = sortThemes(themeData.themes, themeSort);
+ const ordered = sortThemes(themeData.themes);
  const onClock = displayInfo?.applied_style;
  const fragment = document.createDocumentFragment();
  $('#gallery-count').textContent = `${ordered.length} face${ordered.length === 1 ? '' : 's'}`;
- $('#likes-as-of').textContent = themeData.last_attempt_at ? 'Likes last counted ' + day(themeData.last_attempt_at) : 'Likes not counted yet';
+ $('#gallery-state').textContent = '';
  for (const t of ordered) {
   const item = el('li', undefined, 'theme-card'); item.dataset.id = t.id;
   const usable = t.installed && !t.needs_update;
@@ -354,13 +351,12 @@ function paintThemes(force = false) {
   meta.append(el('strong', t.name));
   if (current) meta.append(el('span', 'On the clock', 'now'));
   else if (!usable) meta.append(el('span', `Needs v${t.min_version}`, 'theme-update'));
-  else meta.append(el('span', [t.local ? 'Local' : t.author, likeText(t)].filter(Boolean).join(' · '), 'theme-author'));
+  else meta.append(el('span', t.local ? 'Local' : t.author, 'theme-author'));
   item.append(meta);
   if (!usable) item.append(el('p', 'Update TokenTV to use this face', 'theme-update'));
   const links = el('div', undefined, 'theme-actions');
   const link = (text, href) => {const a = el('a', text); a.href = href; a.rel = 'noopener'; a.target = '_blank'; links.append(a)};
   if (DEMO) link('Get', REPO_URL + '/blob/main/docs/setup.md');
-  if (t.like_url) link('Like on GitHub', t.like_url);
   if (t.source_url) link('Source', t.source_url);
   if (links.childElementCount) item.append(links);
   fragment.append(item);
@@ -369,8 +365,7 @@ function paintThemes(force = false) {
  list.replaceChildren(fragment);
  if (hadFocus && revealedId) list.querySelector(`[data-id="${revealedId}"] .thumb-button`)?.focus({preventScroll:true});
 }
-async function loadThemes() {try {const r = await fetch(DEMO ? '/demo-themes.json' : '/themes', {cache:'no-store'}); if (!r.ok) throw Error(); themeData = await r.json(); paintThemes()} catch {$('#likes-as-of').textContent = 'Themes unavailable · your clock styles still work'}}
-document.querySelectorAll('.theme-sort button').forEach(b => {b.onclick = () => {themeSort = b.dataset.sort; paintThemes()}});
+async function loadThemes() {try {const r = await fetch(DEMO ? '/demo-themes.json' : '/themes', {cache:'no-store'}); if (!r.ok) throw Error(); themeData = await r.json(); paintThemes()} catch {$('#gallery-state').textContent = 'Themes unavailable · your clock styles still work'}}
 
 /* ---- appearance ----
  * One design. The page used to offer four costumes mirroring four clock faces, which was the

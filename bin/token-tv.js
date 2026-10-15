@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// One-line launcher: `npx github:click6067-ship-it/token-tv demo`.
+// One-line launcher: `npx github:riazrahaman/riaz-token-tv demo`.
 // Runs the Python package from this checkout with uv if present, otherwise with a private venv.
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -31,7 +31,7 @@ const source = `${root}@${version}`;
 if (!fs.existsSync(stamp) || fs.readFileSync(stamp, 'utf8') !== source) {
   console.error('First run: preparing TokenTV (about a minute)...');
   if (run(python, ['-m', 'venv', venv]) || run(path.join(bin, 'python'), ['-m', 'pip', 'install', '-q', root])) {
-    console.error('Could not install TokenTV. Try: pip install git+https://github.com/click6067-ship-it/token-tv');
+    console.error('Could not install TokenTV. Try: pip install git+https://github.com/riazrahaman/riaz-token-tv');
     process.exit(1);
   }
   fs.writeFileSync(stamp, source);

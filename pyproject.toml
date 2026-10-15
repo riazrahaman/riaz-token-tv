@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = ["Pillow>=10.2,<13"]
 
 [project.urls]
-Homepage = "https://github.com/click6067-ship-it/token-tv"
+Homepage = "https://github.com/riazrahaman/riaz-token-tv"
 Demo = "https://token-tv.vercel.app"
 
 [project.scripts]

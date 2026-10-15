@@ -17,7 +17,7 @@ from token_tv.web_assets import ASSETS, WEB  # noqa: E402
 from token_tv.sample import snapshot  # noqa: E402
 from token_tv.catalog import payload as theme_payload  # noqa: E402
 
-REPO = 'https://github.com/click6067-ship-it/token-tv'
+REPO = 'https://github.com/riazrahaman/riaz-token-tv'
 META = '''<meta name="description" content="Your AI limits, on a tiny desk clock. Claude, Ollama and Antigravity usage, several accounts, no firmware flashing.">
 <meta property="og:title" content="TokenTV · Live demo">
 <meta property="og:description" content="Your AI limits, on a tiny desk clock. Claude, Ollama and Antigravity · multiple accounts · no flashing.">

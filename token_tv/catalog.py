@@ -14,7 +14,7 @@ from token_tv.display import STYLES
 ASSETS = Path(__file__).with_name('assets')
 CATALOG_PATH = ASSETS / 'theme-catalog.json'
 VOTES_PATH = ASSETS / 'theme-votes.json'
-REPO = 'click6067-ship-it/token-tv'
+REPO = 'riazrahaman/riaz-token-tv'
 BLANK_VOTES = {'schema_version': 1, 'last_attempt_at': None, 'counts': {}}
 FIELDS = ('id', 'name', 'author', 'added_at', 'min_version', 'source_url', 'license', 'like_issue')
 

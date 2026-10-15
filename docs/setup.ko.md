@@ -18,7 +18,7 @@ Ollama Cloud는 플랜의 월 크레딧 예산(또는 설정한 `ollama_allowanc
 Python 3.10+와 사용할 공급자의 공식 CLI(`claude`, `agy`)가 필요합니다. Ollama Cloud는 API 키만 있으면 됩니다.
 
 ```bash
-pipx install git+https://github.com/click6067-ship-it/token-tv
+pipx install git+https://github.com/riazrahaman/riaz-token-tv
 token-tv demo     # 로그인 없이 샘플 데이터로 모든 시계 화면을 렌더
 token-tv setup         # 공급자당 최대 3계정 이메일과 시계 IP만 묻고, 기존 설정은 덮어쓰지 않음
 token-tv doctor --live # 지금 각 공급자에 조회해 빠진 CLI·로그인과 해결 명령을 안내
@@ -33,7 +33,7 @@ A 계정은 평소 쓰던 로그인(`~/.claude` 등)을 재사용할 수 있고,
 계정별 상태만 출력합니다. 기여 방법은 [CONTRIBUTING.md](../CONTRIBUTING.md)와
 [시계 화면 만들기](clock-faces.md)를 봅니다.
 아직 PyPI에 올리지 않았으므로 `uvx token-tv`는 동작하지 않습니다. 설치 없이 실행하려면
-`uvx --from git+https://github.com/click6067-ship-it/token-tv token-tv demo`를 씁니다.
+`uvx --from git+https://github.com/riazrahaman/riaz-token-tv token-tv demo`를 씁니다.
 클론에서는 `pip install .`로 같은 명령을 설치합니다.
 
 macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, CLI 홈에

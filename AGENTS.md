@@ -15,7 +15,7 @@ python3 -B -m unittest discover -s tests
 When the user says "Set up TokenTV for me":
 
 1. Install: `python3 -m venv .venv && .venv/bin/pip install -e .` (Windows: `.venv\Scripts\pip install -e .`),
-   or with Node only: `npx github:click6067-ship-it/token-tv demo`.
+   or with Node only: `npx github:riazrahaman/riaz-token-tv demo`.
 2. Ask the user for the clock's IP address (shown on the clock's screen).
 3. Run `.venv/bin/token-tv start --device-url <ip>`. It finds the Claude and Antigravity CLIs that are already
    signed in, reads each account's email through the official login, asks the user to confirm, saves the
