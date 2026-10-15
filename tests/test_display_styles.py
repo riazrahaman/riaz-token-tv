@@ -302,10 +302,11 @@ class StocksOnlyFaceTests(unittest.TestCase):
         image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')))
         self.assertNotIn(RISE, {colour for _, colour in image.getcolors(240 * 240)})
         self.assertNotIn(FALL, {colour for _, colour in image.getcolors(240 * 240)})
-        # The dash glyphs are really drawn: every big row carries a dim-grey '--' in its symbol slot.
+        # The dash glyphs are really drawn: every card carries a dim-grey '--' in its symbol slot
+        # (JPEG shifts the dim ink, so this keeps the ±12 tolerance the glyph test has always used).
         for index in range(combo_stocks.MAX_ROWS):
             y = combo_stocks.TOP + index * combo_stocks.PITCH
-            slot = image.crop((6, y + 5, 6 + 33, y + 5 + 21))  # a scale-3 '--' glyph box
+            slot = image.crop((14, y + 7, 14 + 22, y + 7 + 14))  # a scale-2 '--' glyph box in the card
             pixels = list(slot.getdata())
             grey = [px for px in pixels if all(abs(ink - 74) <= 12 for ink in px)]
             self.assertTrue(grey, f'row {index} has no dash glyph')
@@ -325,6 +326,50 @@ class StocksOnlyFaceTests(unittest.TestCase):
         self.assertEqual(render_page({'accounts': {}, 'stocks': {'market': {'is_open': False}, 'symbols': []}},
                                      style='stocks'),
                          render_page({'accounts': {}}, style='stocks'))
+
+    def test_night_cards_are_tinted_by_their_sign_on_the_night_sky(self):
+        from token_tv import combo_stocks
+        from token_tv.display import render_page
+        cols = {c for _, c in Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed()},
+                                                                style='stocks'))).convert('RGB').getcolors(240 * 240)}
+        def near(target, tol=12):
+            return any(all(abs(a - b) <= tol for a, b in zip(c, target)) for c in cols)
+        self.assertTrue(near((10, 14, 28), 6), 'night sky missing')
+        self.assertTrue(near(combo_stocks.mix(combo_stocks.RISE, .10), 8), 'no rise-tinted card fill')
+        self.assertTrue(near(combo_stocks.mix(combo_stocks.FALL, .10), 8), 'no fall-tinted card fill')
+        self.assertTrue(near((150, 160, 190)), 'header ink missing')
+
+    def test_the_magnitude_bar_keeps_the_five_percent_fill_convention(self):
+        from token_tv import combo_stocks
+        from token_tv.display import render_page
+        at = time.time()
+        def bar_ink(percent):
+            row = {'symbol': 'APPN', 'price': 42.52, 'change': 1.0, 'percent': percent,
+                   'previous_close': None, 'at': at}
+            feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+                    'symbols': [row] + self._feed()['symbols'][1:]}
+            image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
+            y = combo_stocks.TOP + 47
+            strip = image.crop((14, y, 227, y + 2))
+            return sum(1 for px in strip.getdata() if px[1] > px[2] + 25)  # green-ish fill pixels
+        self.assertGreater(bar_ink(5.0), bar_ink(2.5))  # twice the move, twice the fill
+
+    def test_a_flat_quote_draws_no_arrow_on_its_card(self):
+        from token_tv import combo_stocks
+        from token_tv.display import render_page
+        at = time.time()
+        def board(first_row):
+            feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+                    'symbols': [first_row] + self._feed()['symbols'][1:]}
+            return Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
+        flat = {'symbol': 'FLAT', 'price': 10.0, 'change': 0.0, 'percent': 0.0, 'previous_close': None, 'at': at}
+        down = {'symbol': 'OUST', 'price': 30.74, 'change': -1.13, 'percent': -3.55, 'previous_close': None, 'at': at}
+        y = combo_stocks.TOP
+        arrow_box = (100, y + 10, 125, y + 23)  # where the arrow polygon sits beside the percent
+        flat_pixels = list(board(flat).crop(arrow_box).getdata())
+        self.assertTrue(all(max(px) < 50 for px in flat_pixels), 'the flat card drew an arrow')
+        down_pixels = list(board(down).crop(arrow_box).getdata())
+        self.assertTrue(any(px[0] > 120 and px[1] < 100 for px in down_pixels), 'the control arrow is missing')
 
     def test_rows_fills_the_four_slots_and_a_dead_quote_is_a_dash_slot(self):
         from token_tv.display import render_page
