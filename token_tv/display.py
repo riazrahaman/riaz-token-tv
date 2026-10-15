@@ -24,6 +24,12 @@ PROVIDER_INK = {'claude': '#d68e68', 'ollama': '#b48cf2', 'antigravity': '#cbd1d
 FONT_MAIN = '/usr/share/fonts/truetype/dejavu/DejaVuSans'
 FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
 STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber', 'stocks')
+# The styles that actually draw the stock board from snapshot['stocks'] (`stocks` alone; the combo
+# family carries the market beside the usage rows — its closed-market render is already the
+# full-size usage face). Every other style draws usage only, whatever the feed says. Note:
+# pulse/patrol/twinkle/cyber are animated GIFs that always take the single-file GIF branch, so
+# the JPEG alternation effectively applies to 'stocks' and 'combo'.
+STOCK_STYLES = ('stocks', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber')
 ANIMATED_STYLES = ('space', 'pulse', 'patrol', 'twinkle', 'cyber')
 # Gauge-only levels; labels/percentages always use TEXT, logos retain provider ink.
 GAUGE_LEVELS = ((50, '#76a99a'), (80, '#93c9b9'), (90, '#d1b275'), (101, '#d8877e'))

@@ -8,13 +8,17 @@ from urllib.request import Request, urlopen
 
 FILES = ("tokentv.jpg", "tokentv.gif")
 # The SD_PRO slideshow re-reads the album on rotation, never while a single photo is enabled, so
-# a one-file album froze the panel between content writes even as fresh frames uploaded. JPEG
-# frames now live in two identical slots; the rotation between them re-reads both every cycle.
-# `tokentv-b.jpg` is our own second frame, not a user photo, and is never deleted either.
-ROTATION_FILES = ("tokentv.jpg", "tokentv-b.jpg")
-# The album page accepts GIFs up to 240×240; keep both well under the free space.
+# a one-file album froze the panel between content writes even as fresh frames uploaded. The two
+# stock slots carry the stocks frame; the third carries the usage screen — at the slideshow's
+# 10-second interval the three enabled files show stocks for 20 seconds, then usage for 10, then
+# the loop restarts with freshly uploaded frames. These are our own frames, not user photos, and
+# are never deleted either.
+STOCKS_FILES = ("tokentv.jpg", "tokentv-b.jpg")
+USAGE_FILE = "tokentv-usage.jpg"
+ROTATION_FILES = STOCKS_FILES + (USAGE_FILE,)
+# The album page accepts GIFs up to 240×240; keep them well under the free space.
 LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv-b.jpg": (60000, "image/jpeg"),
-          "tokentv.gif": (400000, "image/gif")}
+          "tokentv-usage.jpg": (60000, "image/jpeg"), "tokentv.gif": (400000, "image/gif")}
 LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
 MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
 # The clock writes settings with one name and reports them under another, so a read-and-compare has
@@ -45,16 +49,28 @@ def may_write(last_write, now, budget):
     return last_write is None or (now - last_write) >= 3600 / budget
 
 
-def lost_rotation(present, name=FILES[0]):
-    """True when the clock is missing our frame or, for a JPEG, its rotation twin.
+def wanted_slots(name=FILES[0], wanted=None):
+    """The album slots that must be on for this frame kind.
+
+    A JPEG frame alternating style: all three slots (two stocks + the usage screen). A JPEG
+    non-alternating style: the two stock slots only, leaving the usage slot asleep. A GIF: its
+    single file. The publisher may pass its own wanted list (the feeder owns no usage slot)."""
+    if wanted is not None:
+        return tuple(wanted)
+    return ROTATION_FILES if name == FILES[0] else (name,)
+
+
+def lost_rotation(present, name=FILES[0], wanted=None):
+    """True when the clock is missing any wanted rotation slot.
 
     Reassert-time detection against the album's file list, so the byte dedupe cannot keep hiding
-    a lost slot. `present` reads as unknown when the album is unreadable (an Ultra reports none),
-    and unknown is never treated as lost."""
+    a lost slot; the caller picks the wanted set (all three for the alternation, the two stock
+    slots for a non-alternating style or the feeder). `present` reads as unknown when the album
+    is unreadable (an Ultra reports none), and unknown is never treated as lost."""
     if not isinstance(present, list):
         return False
     names = {f["name"] for f in present if isinstance(f, dict) and isinstance(f.get("name"), str)}
-    return name not in names or (name == FILES[0] and ROTATION_FILES[1] not in names)
+    return any(wanted_file not in names for wanted_file in wanted_slots(name, wanted))
 
 
 class SettingsUnsupported(Exception):
@@ -145,29 +161,29 @@ class PhotoDisplay:
                                  {"Content-Type": "multipart/form-data; boundary=" + boundary})
         return {"file": name, "status": status, "bytes": len(image)}
 
-    def upload_rotation(self, image, name=FILES[0]):
-        """A fresh frame uploaded to the main file and, for JPEG frames, the second slot too.
+    def upload_rotation(self, frames):
+        """Upload the rotation frames in the slot order given, under one upstream budget decision.
 
-        The SD_PRO slideshow only re-reads the album when files change state, so one enabled photo
-        freezes the panel between content writes; two enabled files make it re-read on every
-        rotation. Both uploads share one write-budget decision upstream. The firmware auto-enables
-        a newly uploaded file: nothing here toggles after an upload (that request is the known
-        unreliable one), and no photo is ever deleted."""
-        receipts = [self.upload(name, image)]
-        if name == FILES[0]:
-            receipts.append(self.upload(ROTATION_FILES[1], image))
-        return receipts
+        While a market is open the frames are (tokentv.jpg, stocks), (tokentv-b.jpg, stocks),
+        (tokentv-usage.jpg, usage): the slideshow's 10-second interval makes the 20-seconds-stocks
+        /10-seconds-usage loop the user asked for. A closed market sends the usage frame for every
+        slot, so the clock rests on a continuous usage screen; a non-alternating style sends only
+        its chosen face into the two stock slots. `frames[0]` is the frame the device shows when
+        the album only supports one (an Ultra). The firmware auto-enables a newly uploaded file:
+        nothing here toggles after an upload (that request is the known unreliable one), and no
+        photo is ever deleted."""
+        return [dict(self.upload(name, image)) for name, image in frames]
 
     def toggle(self, category, key, value, enabled):
         self.request("/" + category + "/toggle?" + urlencode({key: value, "state": int(enabled)}, quote_via=quote))
 
-    def activate(self, original, name=FILES[0]):
-        # Show only our frames — both rotation slots for a JPEG frame, one for the GIF — then
-        # select the photo theme; the user's own photos are only disabled, never deleted, and a
-        # frame already sitting enabled and alone costs nothing.
+    def activate(self, original, name=FILES[0], wanted=None):
+        # Show only our frames — the wanted rotation slots (three while the alternation is on, the
+        # two stock slots otherwise, one for a GIF) — then select the photo theme; the user's own
+        # photos are only disabled, never deleted, and a frame already sitting right costs nothing.
         current = self.capture()
         enabled = {f['name']: f['enabled'] for f in current['files']}
-        wanted = ROTATION_FILES if name == FILES[0] else (name,)
+        wanted = wanted_slots(name, wanted)
         for wanted_name in wanted:
             if wanted_name in enabled and not enabled[wanted_name]:  # truthy check: a raw `0` sleeps too
                 self.toggle("photo", "name", wanted_name, True)
@@ -231,8 +247,10 @@ class UltraDisplay(PhotoDisplay):
                                  {"Content-Type": "multipart/form-data; boundary=" + boundary})
         return {"file": name, "status": status, "bytes": len(image)}
 
-    def upload_rotation(self, image, name=FILES[0]):
-        # The Ultra shows one hard-set image; there is no album rotation to refresh the panel.
+    def upload_rotation(self, frames):
+        # The Ultra shows one hard-set image — `frames[0]` is the frame to show; no album
+        # rotation, so no alternation either.
+        name, image = frames[0]
         return [self.upload(name, image)]
 
     def activate(self, original, name=FILES[0]):

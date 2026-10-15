@@ -77,3 +77,44 @@
   --lvl-low-2: #14a874; --lvl-medium-2: #1a7dff; --lvl-high-2: #ff7a1a; --lvl-critical-2: #e01e3c;
   --radius-card: 0; --radius-control: 0;
 }
+
+/* Plain: the calm default. Same palette, type and hairlines as token-tv.riazrahaman.com and the
+ * Stack Field Guide, so the dashboard and the site read as one thing. The four themes below are
+ * costumes that mirror a clock face; this one gets out of the way of the numbers.
+ * It is the only theme that follows the system light/dark preference. */
+:root[data-theme=plain] {
+  --font-body: 'IBM Plex Sans', 'Manrope', system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-body);
+  --font-num: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-label: var(--font-num);
+
+  --bg: #F2EEE4; --panel: #FBF9F4; --panel-2: #E9E4D7;
+  --ink: #15171C; --ink-2: #4A4E57; --ink-3: #7A7E87;
+  --line: #CFC8B8; --line-2: #BDB4A0; --track: #E4DECE; --focus: #E0482A;
+  --accent: #E0482A;
+
+  /* Provider marks stay identifiable but stop competing with the readings. */
+  --claude: #C2622F; --claude-2: #C2622F;
+  --ollama: #7B3FCF; --ollama-2: #7B3FCF;
+  --antigravity: #1E64D6; --antigravity-2: #1E64D6;
+
+  --lvl-low: #0B8466; --lvl-medium: #1E64D6; --lvl-high: #B7860B; --lvl-critical: #E0482A;
+  --lvl-low-2: #0B8466; --lvl-medium-2: #1E64D6; --lvl-high-2: #B7860B; --lvl-critical-2: #E0482A;
+
+  --radius-card: 12px; --radius-control: 8px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme=plain] {
+    --bg: #0C1726; --panel: #13243B; --panel-2: #112036;
+    --ink: #E7EDF6; --ink-2: #A9B7CB; --ink-3: #7D8DA5;
+    --line: #26405F; --line-2: #33547B; --track: #16293F; --focus: #FF7A55;
+    --accent: #FF7A55;
+    --claude: #F2A06B; --claude-2: #F2A06B;
+    --ollama: #B38CFF; --ollama-2: #B38CFF;
+    --antigravity: #5EA0FF; --antigravity-2: #5EA0FF;
+    --lvl-low: #3DD6A8; --lvl-medium: #5EA0FF; --lvl-high: #F2C14E; --lvl-critical: #FF7A55;
+    --lvl-low-2: #3DD6A8; --lvl-medium-2: #5EA0FF; --lvl-high-2: #F2C14E; --lvl-critical-2: #FF7A55;
+  }
+}
