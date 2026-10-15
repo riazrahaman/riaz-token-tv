@@ -139,6 +139,12 @@ Config keys in `stocks.json`:
 - `"symbols"`: List of US tickers (defaults to `["AAPL", "MSFT", "NVDA", "TSLA"]`).
 - `"symbols_in"`: List of Indian tickers or indices (defaults to `["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]`). Indices like `^NSEI` and `^BSESN` automatically display as `NIFTY` and `SENSEX`. Exchange suffixes (`.NS`, `.BO`) are automatically trimmed on screen.
 - `"interval"`: Refresh interval in seconds while a market is open (default 30s).
+- `"mode"`: `"watchlist"` (default, the tickers above) or `"movers"`, a whole-market board of the top gainers and losers of the active market, ranked from Yahoo's screener with no API key.
+- `"movers_count"`: Top gainers **and** losers per board in movers mode (default 2, so four rows fill the four-row face).
+
+The runner re-reads this file every cycle: editing the tickers, mode, movers count or interval takes
+effect the next refresh (the dashboard's clock panel can make those same edits for you). A broken
+edit is ignored with a warning, keeping the last-good config.
 
 ### Both faces on one clock
 
@@ -150,6 +156,8 @@ usage runner own the device:
    which saved original is authoritative, so exactly one process must own the device.
 2. In `config.json`, add `"stocks_snapshot": "~/.config/token-tv/state-stocks/snapshot.json"` and
    set `"display_style": "combo"` (or animated combo styles: `combo_pulse`, `combo_cyber`, `combo_twinkle`, `combo_patrol`).
+   Also point `"stocks_config"` at `stocks.json` (e.g. `~/.config/token-tv/state-stocks/stocks.json`) to let the
+   dashboard's clock panel switch that face between watchlist and movers and edit its tickers.
 3. Optionally set `render_seconds` (default 30). Prices move faster than `poll_seconds`, and this
    re-draws the frame without re-reading any provider.
 
