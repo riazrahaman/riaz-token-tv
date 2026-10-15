@@ -30,8 +30,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, STOCKS_FILES, BackupMismatch,
-                             lost_rotation, may_write, open_display)
+from token_tv.device import (FILES, JPEG_SLOTS, LIMITS, BackupMismatch, lost_rotation,
+                             may_write, open_display)
 from token_tv.display import encode_jpeg, pixel_text
 from token_tv.history import append_history
 
@@ -900,8 +900,10 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            wanted = STOCKS_FILES if name == FILES[0] else (name,)  # the feeder owns no usage slot
-            if lost_rotation(files, name, wanted):  # one of the stock slots is gone
+            # The feeder renders the static watchlist face: its frame belongs in the two JPEG
+            # slots; the GIF slots and the usage screens belong to the live publisher.
+            wanted = JPEG_SLOTS if name == FILES[0] else (name,)
+            if lost_rotation(files, name, wanted):  # one of the stock JPEG slots is gone
                 lost = True
                 last_upload = {}  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
@@ -909,7 +911,7 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if name == FILES[1]:  # a GIF stays a single hard-set file
             events = [(name, image, digest)]
         else:
-            events = [(ROTATION_FILES[0], image, digest), (ROTATION_FILES[1], image, digest)]
+            events = [(JPEG_SLOTS[0], image, digest), (JPEG_SLOTS[1], image, digest)]
         pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
         if pending:  # only the slots whose bytes changed are rewritten
             # A clock showing nothing bypasses the budget; the cap is there to spare flash, not
