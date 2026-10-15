@@ -9,8 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import (FILES, LIMITS, BackupMismatch, SettingsUnsupported, may_write,
-                             open_display)
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, SettingsUnsupported,
+                             may_write, open_display)
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import ANIMATED_STYLES, STYLES, data_digest, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
@@ -395,9 +395,11 @@ def main():
                     # `activate` re-reads the clock and only writes what is wrong, so in steady
                     # state this is a handful of GETs. Ultra clocks report no file list.
                     files = device.capture().get("files")
-                    lost = files is not None and not any(f["name"] == name for f in files)
+                    present = {f["name"] for f in files} if isinstance(files, list) else None
+                    lost = present is not None and (name not in present
+                                                    or (name == FILES[0] and ROTATION_FILES[1] not in present))
                     if lost:
-                        last_upload = None  # the clock lost it; the dedupe must not hide that
+                        last_upload = None  # the clock lost a frame; the dedupe must not hide that
                 phase = "upload"
                 throttled = False
                 # The budget may defer a countdown that merely ticked, but never a real change:
@@ -409,9 +411,14 @@ def main():
                 if (name, digest) != last_upload:  # identical frames are not rewritten to flash
                     if forced or may_write(last_write, now, budget):
                         # Written only on upload, so the local copy stays a record of what the
-                        # clock is actually showing.
+                        # clock is actually showing. A JPEG frame lands in both rotation slots —
+                        # one write-budget decision, two uploads — and the slideshow's rotation
+                        # keeps re-reading them, which is what un-freezes the single-SDK panel.
                         (state_dir / name).write_bytes(image)
-                        receipts.append(dict(device.upload(name, image), sha256=digest, **encoded))
+                        if name == FILES[0]:
+                            (state_dir / ROTATION_FILES[1]).write_bytes(image)
+                        for uploaded in device.upload_rotation(image, name):
+                            receipts.append(dict(uploaded, sha256=digest, **encoded))
                         last_upload, last_write, last_style = (name, digest), now, style
                         last_data = changed
                     else:

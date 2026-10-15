@@ -30,7 +30,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import FILES, LIMITS, BackupMismatch, may_write, open_display
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, may_write,
+                             open_display)
 from token_tv.display import encode_jpeg, pixel_text
 from token_tv.history import append_history
 
@@ -769,9 +770,10 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
     Returns (original, active_file, last_upload, uploaded). A ``BackupMismatch`` is re-raised so
     the caller can stop without touching the clock. `reassert` re-selects the photo theme even
     when the file name is unchanged, for a clock that rebooted back to its own theme. `budget`
-    caps flash writes per hour: prices move on every poll, so the byte dedupe never fires while
-    the market is open and a 30-second interval would otherwise rewrite flash 120 times an hour.
-    """
+    caps flash-write *events* per hour: prices move on every poll, so the byte dedupe never
+    fires while the market is open and a 30-second interval would otherwise refresh continuously.
+    Each event for a JPEG frame uploads two files (both rotation slots), so the two-frame panel
+    refresh costs twice the bytes per still-budgeted event."""
     state_dir = Path(state_dir)
     at = int(now if now is not None else time.time())
     receipts = []
@@ -789,9 +791,11 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            lost = files is not None and not any(f['name'] == name for f in files)
+            present = {f['name'] for f in files} if isinstance(files, list) else None
+            lost = present is not None and (name not in present
+                                            or (name == FILES[0] and 'tokentv-b.jpg' not in present))
             if lost:
-                last_upload = None  # the clock lost our file; the dedupe must not hide that
+                last_upload = None  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
         throttled = False
         if (name, digest) != last_upload:  # identical frames are not rewritten to flash
@@ -799,9 +803,13 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
             # to withhold the frame.
             if lost or may_write(last_write, at, budget):
                 # Written only on upload, so the local copy stays a record of what the clock is
-                # actually showing.
+                # actually showing. A JPEG frame lands in both rotation slots under one
+                # write-budget decision; the slideshow's rotation keeps the panel re-reading them.
                 (state_dir / name).write_bytes(image)
-                receipts.append(dict(device.upload(name, image), sha256=digest))
+                if name == FILES[0]:
+                    (state_dir / ROTATION_FILES[1]).write_bytes(image)
+                for upload in device.upload_rotation(image, name):
+                    receipts.append(dict(upload, sha256=digest))
                 last_upload = (name, digest)
                 uploaded = True
             else:

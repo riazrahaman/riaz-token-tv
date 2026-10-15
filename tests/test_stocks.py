@@ -40,11 +40,13 @@ class FakeDevice:
         self.activations = 0
         self.captures = 0
         self.restored = None
+        self.album = [{'name': 'original.jpg', 'enabled': True}]
 
     def capture(self):
         self.captures += 1
+        files = [dict(f) for f in self.album]
         return {'themes': [{'id': 0, 'enabled': True}, {'id': 2, 'enabled': False}], 'theme_interval': 10,
-                'files': [{'name': 'original.jpg', 'enabled': True}], 'photo_interval': 10}
+                'files': files, 'photo_interval': 10}
 
     def check_backup(self, original):
         return None
@@ -52,6 +54,13 @@ class FakeDevice:
     def upload(self, name, image):
         self.uploads.append((name, image))
         return {'file': name, 'status': 200, 'bytes': len(image)}
+
+    def upload_rotation(self, image, name='tokentv.jpg'):
+        # Mirrors device.PhotoDisplay.upload_rotation: one JPEG frame into both rotation slots.
+        receipts = [self.upload(name, image)]
+        if name == 'tokentv.jpg':
+            receipts.append(self.upload('tokentv-b.jpg', image))
+        return receipts
 
     def activate(self, original, name='tokentv.jpg'):
         self.activations += 1
@@ -271,20 +280,22 @@ class PublishTests(unittest.TestCase):
         original, active, last, uploaded = stocks.publish(device, image, self.state, backup,
                                                           original, active, last, now=100)
         self.assertTrue(uploaded)
-        self.assertEqual(len(device.uploads), 1)
+        self.assertEqual([name for name, _ in device.uploads], ['tokentv.jpg', 'tokentv-b.jpg'])  # both slots
+        self.assertEqual(device.uploads[0][1], device.uploads[1][1])  # the same fresh bytes in each
         self.assertEqual(device.activations, 1)
         # Same bytes again: nothing is rewritten to the clock.
         original, active, last, uploaded = stocks.publish(device, image, self.state, backup,
                                                           original, active, last, now=101)
         self.assertFalse(uploaded)
-        self.assertEqual(len(device.uploads), 1)
+        self.assertEqual(len(device.uploads), 2)
         self.assertEqual(device.activations, 1)
-        # A changed frame uploads, but does not re-activate the same file.
+        # A changed frame uploads, but does not re-activate the same file — again to both slots.
         other = stocks.render_watchlist(sample_rows(), sample_meta(is_open=False, session='closed'))
         original, active, last, uploaded = stocks.publish(device, other, self.state, backup,
                                                           original, active, last, now=102)
         self.assertTrue(uploaded)
-        self.assertEqual(len(device.uploads), 2)
+        self.assertEqual([name for name, _ in device.uploads],
+                         ['tokentv.jpg', 'tokentv-b.jpg', 'tokentv.jpg', 'tokentv-b.jpg'])
         self.assertEqual(device.activations, 1)
         # The backup read, plus one album read on the activating cycle to notice a lost file.
         self.assertEqual(device.captures, 2)
@@ -292,6 +303,49 @@ class PublishTests(unittest.TestCase):
         receipt = json.loads((self.state / 'display-receipt.json').read_text())
         self.assertEqual(receipt['at'], 102)
         self.assertEqual(receipt['uploads'][0]['sha256'], __import__('hashlib').sha256(other).hexdigest())
+        self.assertEqual((self.state / 'tokentv-b.jpg').read_bytes(), other)  # the local mirror too
+
+    def test_a_gif_frame_upload_keeps_the_single_file_identity(self):
+        device = FakeDevice()
+        gif = b'GIF8' + b'x' * 40
+        stocks.publish(device, gif, self.state, self.state / 'display-original.json',
+                       None, None, None, now=100, style='retro')
+        self.assertEqual([name for name, _ in device.uploads], ['tokentv.gif'])  # no rotation twin
+
+    def test_the_write_budget_gates_a_whole_two_file_cycle(self):
+        # Movers mode can mark ~120 changed cycles an hour at a 30-second poll; the budget spaces
+        # upload EVENTS, and each event is one may_write decision spent on both slots.
+        device = FakeDevice()
+        last = None
+        states = (None, None, None, None)
+        _, _, last, uploaded = stocks.publish(device, b'image-a', self.state, self.state / 'display-original.json',
+                                              None, None, None, now=0, budget=1, last_write=None)
+        self.assertTrue(uploaded)
+        self.assertEqual(len(device.uploads), 2)  # one decision, two files
+        _, _, last, uploaded = stocks.publish(device, b'image-b', self.state, self.state / 'display-original.json',
+                                              last, 'tokentv.jpg', last, now=600, budget=1, last_write=0)
+        self.assertFalse(uploaded)  # 600 >= 3600/1 waits; the budget spaced the event out
+        _, _, last, uploaded = stocks.publish(device, b'image-c', self.state, self.state / 'display-original.json',
+                                              last, 'tokentv.jpg', last, now=3610, budget=1, last_write=0)
+        self.assertTrue(uploaded)
+        self.assertEqual([name for name, _ in device.uploads],
+                         ['tokentv.jpg', 'tokentv-b.jpg', 'tokentv.jpg', 'tokentv-b.jpg'])
+
+    def test_the_clock_losing_the_second_slot_forces_a_two_file_redownload(self):
+        device = FakeDevice()
+        device.album = [{'name': 'original.jpg', 'enabled': True},
+                        {'name': 'tokentv.jpg', 'enabled': True},
+                        {'name': 'tokentv-b.jpg', 'enabled': True}]
+        digest = __import__('hashlib').sha256(b'frame-a').hexdigest()
+        stocks.publish(device, b'frame-a', self.state, self.state / 'display-original.json',
+                       {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg', ('tokentv.jpg', digest), now=10)
+        self.assertEqual(len(device.uploads), 0)  # the content and the file state are as they were
+        device.album = [f for f in device.album if f['name'] != 'tokentv-b.jpg']  # the clock lost a slot
+        _, _, _, uploaded = stocks.publish(device, b'frame-a', self.state, self.state / 'display-original.json',
+                                           {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg',
+                                           ('tokentv.jpg', digest), now=20, reassert=True)
+        self.assertTrue(uploaded)  # the dedupe must not hide a lost twin
+        self.assertEqual([name for name, _ in device.uploads], ['tokentv.jpg', 'tokentv-b.jpg'])
 
     def test_the_api_key_never_reaches_a_receipt_snapshot_or_the_image(self):
         rows, meta = sample_rows(), sample_meta()
