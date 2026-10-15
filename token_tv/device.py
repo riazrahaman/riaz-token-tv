@@ -259,9 +259,11 @@ class UltraDisplay(PhotoDisplay):
         name, image = frames[0]
         return [self.upload(name, image)]
 
-    def activate(self, original, name=FILES[0]):
+    def activate(self, original, name=FILES[0], wanted=None):
         # Stop the slideshow so the user's own photos never rotate in, select the album theme, show ours.
-        # The image is chosen after the theme, as geekmagic-hacs does on the same firmware.
+        # The image is chosen after the theme, as geekmagic-hacs does on the same firmware. `wanted`
+        # carries the album slots the rotating clocks keep switched on; an Ultra hard-sets one image
+        # and has no album to re-enable, so it is accepted and ignored.
         current = self.capture()
         if current["autoplay"]:
             self.request(f"/set?i_i={int(current['i_i'])}&autoplay=0")

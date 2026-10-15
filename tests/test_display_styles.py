@@ -475,6 +475,35 @@ class AnimatedScreenTests(unittest.TestCase):
             self.assertEqual(body[:3], b'\xff\xd8\xff')  # JPEG, unchanged by the alternation
             self.assertEqual(Image.open(io.BytesIO(body)).format, 'JPEG')
 
+    def test_the_frame_preview_serves_gif_bytes_as_image_gif(self):
+        from token_tv.live import handler
+
+        class FeedStore:  # the /frame preview renders store.snapshot(): this one carries a live stock feed
+            def snapshot(self):
+                return self._snapshot(time.time())
+
+        live_store = {'schema': 1, 'updated_at': int(time.time()), 'accounts': {}, 'stocks': {
+            'updated_at': int(time.time()), 'source': 'YAHOO',
+            'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+            'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                         'previous_close': None, 'at': int(time.time())}]}}
+        FeedStore.snapshot = lambda self: live_store
+        server = ThreadingHTTPServer(('127.0.0.1', 0), handler(FeedStore()))
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        root = f'http://127.0.0.1:{server.server_port}'
+        try:
+            with urlopen(root + '/frame/0.jpg?style=stocks') as response:  # an alive market: GIF
+                self.assertEqual(response.headers['Content-Type'], 'image/gif')
+                self.assertEqual(response.read()[:4], b'GIF8')
+            with urlopen(root + '/frame/0.jpg?style=neon') as response:  # a static style: JPEG
+                self.assertEqual(response.headers['Content-Type'], 'image/jpeg')
+                self.assertEqual(response.read()[:3], b'\xff\xd8\xff')
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
 
 if __name__ == '__main__':
     unittest.main()

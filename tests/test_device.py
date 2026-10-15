@@ -212,9 +212,11 @@ class UltraTests(unittest.TestCase):
             self.assertEqual(self.calls[start:], [("GET", "/app.json"), ("GET", "/album.json"), ("GET", "/set?i_i=5&autoplay=0"),
                                                   ("GET", "/set?theme=3"), ("GET", "/set?img=%2Fimage%2Ftokentv.jpg")])
             self.assertEqual((self.state["theme"], self.state["autoplay"], self.state["img"]), (3, 0, "/image/tokentv.jpg"))
-            # Already in the album with autoplay off: only the image changes.
+            # Already in the album with autoplay off: only the image changes — and the publisher's
+            # three-argument activate call (with the wanted slot list) is accepted and ignored.
             start = len(self.calls)
-            display.activate(original, "tokentv.gif")
+            display.activate(original, "tokentv.gif", [("tokentv.gif", ""), ("tokentv-b.gif", ""),
+                                                       ("tokentv-usage.gif", "")])
             self.assertEqual(self.calls[start:], [("GET", "/app.json"), ("GET", "/album.json"), ("GET", "/set?img=%2Fimage%2Ftokentv.gif")])
 
             start = len(self.calls)
