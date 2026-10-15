@@ -452,6 +452,7 @@ class AnimatedScreenTests(unittest.TestCase):
         return read
 
     def test_the_stocks_screen_animates_its_arrows(self):
+        from token_tv.combo_stocks import PHASE_MS
         from token_tv.display import render_frame
         body, meta = render_frame(self._snapshot(time.time()), 0, 'stocks', 900, 400000)
         self.assertEqual(body[:4], b'GIF8')
@@ -461,7 +462,8 @@ class AnimatedScreenTests(unittest.TestCase):
         self.assertEqual(image.n_frames, 4)  # four big breathing phases, none coalesced away
         self.assertLessEqual(len(body), 250000)
         durations = self._durations(image)
-        self.assertEqual(all(d >= 2000 for d in durations), True, durations)  # ~ the panel repaint cadence
+        self.assertEqual(durations, [PHASE_MS] * image.n_frames)  # 500 ms: a 2.0 s breathe loop
+        self.assertTrue(all(d >= 250 for d in durations), durations)
         frames = []
         for frame in range(image.n_frames):
             image.seek(frame)
@@ -479,17 +481,17 @@ class AnimatedScreenTests(unittest.TestCase):
         self.assertEqual((image.n_frames, self._durations(image)), (1, [3 * PHASE_MS]))  # merged, not dropped
 
     def test_the_usage_screen_animates_its_gauges(self):
-        from token_tv.usage_gif import USAGE_FRAMES, PHASE_MS, render_usage_gif
+        from token_tv.usage_gif import SHIMMER_MS, USAGE_FRAMES, render_usage_gif
         body = render_usage_gif(self._snapshot(time.time()))
         self.assertEqual(body[:4], b'GIF8')
         self.assertLessEqual(len(body), 150000)
         image = Image.open(io.BytesIO(body))
         self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
         durations = self._durations(image)
-        # The sweep phases are one panel repaint each, and none can be coalesced away.
+        # The shimmer phases pace at 300 ms (obvious, not a strobe); none can be coalesced away.
         self.assertEqual(image.n_frames, USAGE_FRAMES)
-        self.assertEqual(durations, [PHASE_MS] * USAGE_FRAMES)
-        self.assertTrue(all(d >= 2000 for d in durations), durations)
+        self.assertEqual(durations, [SHIMMER_MS] * USAGE_FRAMES)
+        self.assertTrue(all(d >= 250 for d in durations), durations)
         frames = []
         for frame in range(image.n_frames):
             image.seek(frame)

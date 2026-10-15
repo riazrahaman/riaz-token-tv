@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.4.11] — 2026-10-15
+
+### Fixed
+
+- **Animations retimed to the panel's native GIF pacing** (user feedback: the 2.8 s phases of 0.4.10 animated but read as "very very slow"; the panel plays GIF frame timings natively, as the reference GIF's rapid bounce always proved). The stocks arrows now breathe a full edge-to-edge loop in 2.0 s (four distinct 500 ms phases) and the usage gauges shimmer a full bar walk in ~1.2 s (four distinct 300 ms phases) — amplitudes, phase walks, slots, GIF sizes and the anti-coalesce merge guard are unchanged.
+
+## [0.4.10] — 2026-10-15
+
+### Fixed
+
+- **Animations now register on the e-paper**: the first shipped GIFs paced their phases at 100-400 ms (and the encoder coalesced some away), far below the SD_PRO's ~2.5 s panel repaint cadence, so the board read as static. Every phase now lasts ~2.8 s — one per panel repaint: the stocks arrows swing edge-to-edge between full ink and near-dark across four distinct phases (coalesce-guarded: adjacent frames always differ), and the usage gauges' shimmer highlight walks three segments per phase. Slots stay `tokentv.gif` + `tokentv-b.gif` + `tokentv-usage.gif` in the 20 s/10 s loop (stocks ~14 KB, usage ~5 KB, both far inside the 400 KB budget).
+
 ## [0.4.9] — 2026-10-15
 
 ### Added
@@ -18,13 +32,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-## [0.4.10] — 2026-10-15
-
-### Fixed
-
-- **Animations now register on the e-paper**: the first shipped GIFs paced their phases at 100-400 ms (and the encoder coalesced some away), far below the SD_PRO's ~2.5 s panel repaint cadence, so the board read as static. Every phase now lasts ~2.8 s — one per panel repaint: the stocks arrows swing edge-to-edge between full ink and near-dark across four distinct phases (coalesce-guarded: adjacent frames always differ), and the usage gauges' shimmer highlight walks three segments per phase. Slots stay `tokentv.gif` + `tokentv-b.gif` + `tokentv-usage.gif` in the 20 s/10 s loop (stocks ~14 KB, usage ~5 KB, both far inside the 400 KB budget).
-
 - **Stocks-usage alternation (20 s / 10 s)**: gated on the chosen style actually drawing the stock board (`stocks` and the combo family) — while a stock market is open (combo staleness conventions), the publisher fills the rotation album with that style's stocks frame in `tokentv.jpg` and `tokentv-b.jpg` and a usage-only face in a third slot `tokentv-usage.jpg` — at the slideshow's 10-second interval that is the user's 20-seconds-stocks / 10-seconds-usage loop, driven by the hardware's rotation and refreshed by every publisher cycle. A closed, missing or stale market rests the clock on a continuous usage screen by filling all three slots with the usage frame (the usage-only-when-closed choice follows the user's stated intent). A non-stock style keeps 0.4.7's behaviour: its chosen face in the two stock slots, never the usage slot (a stale one left by an earlier run is disabled on the next reassert, so a feeder-owned clock can no longer see a false lost frame either — its wanted set is the two stock slots). Dedupe is per slot (only changed slots re-upload), one write-budget decision still gates each event — an allowed live event now costs up to three uploads (default budget 6 → ≤18 uploads/hour; an uncapped feeder keeps ~240 uploads/hour for its two stock slots). GIF frames stay single-file; an Ultra keeps its single hard-set image.
+
 
 ## [0.4.7] — 2026-10-15
 
@@ -226,6 +235,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.11]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.11
 [0.4.10]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.10
 [0.4.9]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.9
 [0.4.8]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.8

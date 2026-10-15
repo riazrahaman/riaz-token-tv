@@ -131,8 +131,8 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   itself under the clock's slideshow) — the stock slots are two of the three album frames the live
   publisher alternates: stocks 20 seconds, then a usage-only screen on `tokentv-usage.jpg` for 10,
   while a market is open. The stocks style runs that loop with animated frames instead: a
-  four-phase breathing-arrows GIF in `tokentv.gif`/`tokentv-b.gif` (one ~2.8 s phase per panel
-  repaint) and a shimmering-gauges usage GIF on `tokentv-usage.gif`. An uncapped 30-second open-market poll spends about 240 album uploads an
+  four-phase breathing-arrows GIF in `tokentv.gif`/`tokentv-b.gif` (500 ms phases, a 2.0 s breathe
+  loop) and a shimmering-gauges usage GIF on `tokentv-usage.gif` (300 ms per phase). An uncapped 30-second open-market poll spends about 240 album uploads an
   hour; a budget of `6` spaces refreshes to twelve uploads an hour.
 
 ### Stock watchlist & Follow-the-Sun markets
