@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.7] — 2026-10-15
+
+### Fixed
+- Two-frame album rotation (tokentv.jpg + tokentv-b.jpg): the SD_PRO slideshow only re-reads album files on rotation or state mutation, so a single enabled photo froze the e-paper panel between uploads. The publishers now upload both rotation slots per write event; receipts, local mirrors and lost-upload recovery are twin-aware; GIF frames stay single-file (they repaint themselves). The uncapped stocks feeder budget now costs ~2 uploads per event (~240 uploads/h at the 30 s open-market poll — set max_writes_per_hour to cap).
+
 ### Added
 
 - **Two-frame rotation for the SD_PRO panel**: the firm's slideshow only re-reads the album when files change state, so a single enabled photo froze the panel between content writes. JPEG frames are now uploaded to `tokentv.jpg` and an identical `tokentv-b.jpg` (the auto-enable does the enabling; no toggles after upload), `activate()` keeps exactly those two enabled and the rest of the album asleep (a no-op when already correct), and reasserts additionally redownload when the clock has lost either slot. Write budgets gate whole two-file events (`max_writes_per_hour` semantics unchanged; the live default 6 still means ≤12 uploads/hour; an uncapped stocks feeder at its 30-second open-market poll spends ~120 events × 2 = **~240 uploads/hour** — set `max_writes_per_hour` in `stocks.json` to cap that).
@@ -201,6 +206,7 @@ that actually changed.
 
 First tagged release.
 
+[0.4.7]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.7
 [0.4.6]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.6
 [0.4.5]: https://github.com/click6067-ship-it/token-tv/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.4
