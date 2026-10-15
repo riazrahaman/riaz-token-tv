@@ -1,11 +1,14 @@
 <!doctype html>
-<html lang="en" data-theme="plain">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>TokenTV · AI usage</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/style.css">
 <script src="/assets/app.js" defer></script>
 </head>
@@ -22,11 +25,7 @@
   </header>
 
   <main>
-    <div class="title-block">
-      <p class="eyebrow" id="eyebrow" hidden></p>
-      <h1 id="page-title">AI usage</h1>
-      <p class="intro-note" id="intro-note" hidden></p>
-    </div>
+    <h1>AI usage</h1>
 
     <div id="notice" class="notice" role="status" hidden></div>
 
@@ -99,10 +98,6 @@
         <button class="mode-button" type="button" data-mode-choice="light" aria-pressed="false">Light</button>
         <button class="mode-button" type="button" data-mode-choice="dark" aria-pressed="false">Dark</button>
       </div>
-    </nav>
-    <nav class="theme-section" aria-label="Page appearance">
-      <span class="section-label">Appearance</span>
-      <div id="themes" class="themes" role="group" aria-label="Web theme"></div>
     </nav>
     <details class="help"><summary>How to read this display</summary><p>Percentages show <strong>used quota</strong>. Each card is one account, showing its highest reported window; the account's other windows are listed under Other windows. Timers belong to the window shown on the card. A previous value is marked OLD and is not a current reading.</p><p>Ollama Cloud shows the current monthly credit period's spend — from the day your account was created — against your monthly credit budget (from your plan, or the allowance you set). The budget is monthly and spend is not time-boxed, so this is a credit budget, not a weekly limit. Antigravity reports the used share of its Gemini weekly and five-hour limits, read from the Antigravity CLI. If a provider does not report quota, it stays unknown. Laptop-linked accounts need the laptop online.</p></details>
   </footer>

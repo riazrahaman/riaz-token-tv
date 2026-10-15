@@ -49,8 +49,8 @@ macOS(실기기 미검증): Claude Code가 로그인을 Keychain에 두므로, C
 ### 화면 스타일
 
 웹의 **Clock display**에서 시계 화면 6종을 미리 보고 고릅니다.
-**Digital / Neon / Pixel Retro / Sci-Fi HUD**는 같은 이름의 웹 테마와 같은 글꼴·장식·게이지를
-쓰고, 원래의 **Pixel**도 남아 있습니다. **Space**는 세 봇이 유리 헬멧을 쓰고 밤하늘을
+**Digital / Neon / Pixel Retro / Sci-Fi HUD**는 시계 화면이며, 원래의 **Pixel**도 남아
+있습니다. 웹 대시보드는 테마를 고르지 않고 하나의 디자인만 씁니다. **Space**는 세 봇이 유리 헬멧을 쓰고 밤하늘을
 떠다니는 움직이는 화면(GIF)입니다. 그린 이미지가 직전에 보낸 것과 다를 때만 새로 보내며, 사용률이 바뀌거나 30분마다 바뀌는 Space 애니메이션이 그 예입니다. **Apply to clock**을 누르면 선택을 저장하고 같은 계정
 캐시로 기기에 전송합니다. 미리보기만 선택하면 시계에는 적용되지 않습니다.
 
@@ -164,14 +164,13 @@ python3 -m token_tv.app
 
 기존 mock 서버는 예시 데이터를 `status: "mock"`으로 제공하며 실제 사용량과 구별됩니다.
 
-### Four web appearances
+### The web dashboard
 
-The live web dashboard provides **Digital Terminal, Neon Cyberpunk, Pixel Retro and
-Sci-Fi HUD**. Choose an appearance above the
-three provider cards. It is saved in this browser and does not change the physical
-clock. Account buttons A/B/C switch each provider independently; expand **more
-quota windows** to inspect the other reported limits. The large number always
-names its selected quota period.
+The live dashboard shows **one card per account**, each with a gauge for its highest reported
+window; the other windows are listed below under *Other windows*. Severity is written out
+(`LOW USAGE` … `LIMIT REACHED`) as well as coloured, so a reading survives greyscale. The
+**Auto / Light / Dark** control at the foot follows your system or pins a mode; it is saved in
+this browser and does not change the physical clock.
 
 **Clock display** opens the 240×240 preview and five LCD styles. Previewing
 is read-only; **Apply to clock** explicitly sends the chosen LCD style. Unknown

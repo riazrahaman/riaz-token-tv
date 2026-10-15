@@ -6,13 +6,6 @@
  * the band word as well as the colour, so a reading survives greyscale.
  *
  * Every appearance renders the same nodes; style.css skins them. */
-const THEMES = [
- {id:'plain', name:'Plain', eyebrow:'', title:'AI usage', note:''},
- {id:'digital', name:'Digital Terminal', eyebrow:'', title:'AI USAGE DASHBOARD', note:''},
- {id:'neon', name:'Neon Cyberpunk', eyebrow:'Today', title:'AI USAGE', note:''},
- {id:'retro', name:'Pixel Retro', eyebrow:'', title:'AI PROVIDERS', note:'USAGE DASHBOARD'},
- {id:'hud', name:'Sci-Fi HUD', eyebrow:'', title:'AI PROVIDER USAGE', note:'Real-time usage monitor'}
-];
 const STATUS = {ok:'Connected', loading:'Loading', auth_required:'Login needed', identity_mismatch:'Check identity', quota_unavailable:'No quota reported', stale:'Old reading', rate_limited:'Retry later', error:'Fetch failed'};
 const EXPLAIN = {auth_required:'sign in to the CLI', identity_mismatch:'this account does not match the config', quota_unavailable:'connected, but the service reports no limit', rate_limited:'the service asked us to wait', error:'could not read this account', loading:'first reading on its way'};
 const PROVIDERS = ['claude', 'ollama', 'antigravity'];
@@ -27,8 +20,6 @@ let snapshot = null, offline = false, polling = false, displayInfo = null, clock
 const el = (tag, text, cls) => {const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n};
 function svgNode(tag, attrs) {const n = document.createElementNS(svgNS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n}
 const clamp = v => Math.max(0, Math.min(100, v));
-/* Unlit seven-segment cells behind Digital numerals: every glyph cell becomes 8. */
-const ghost = text => text.replace(/[^\s:]/g, '8');
 const pad = n => String(n).padStart(2, '0');
 
 /* Provider marks: identity only. The reading itself is never colour-coded by provider. */
@@ -53,10 +44,7 @@ function icon(provider) {
 function clockGlyph() {
  const s = svgNode('svg', {viewBox:'0 0 24 24', 'aria-hidden':'true', fill:'none', stroke:'currentColor', 'stroke-width':1.8, 'stroke-linecap':'round', class:'clock-icon'});
  s.append(svgNode('circle', {cx:12, cy:12, r:9}), svgNode('path', {d:'M12 7.5V12l3 2'}));
- const p = svgNode('svg', {viewBox:'0 0 9 9', 'aria-hidden':'true', 'shape-rendering':'crispEdges', class:'clock-pixel'});
- for (const [x, y, w, h, c] of [[2,0,5,1,'o'],[1,1,1,1,'o'],[7,1,1,1,'o'],[0,2,1,5,'o'],[8,2,1,5,'o'],[1,7,1,1,'o'],[7,7,1,1,'o'],[2,8,5,1,'o'],[1,2,7,5,'f'],[2,1,5,1,'f'],[2,7,5,1,'f'],[4,2,1,3,'o'],[5,4,2,1,'o']])
-  p.append(svgNode('rect', c === 'o' ? {x, y, width:w, height:h, fill:'currentColor'} : {x, y, width:w, height:h, fill:'#fff3d6', class:'face'}));
- const wrap = el('span', undefined, 'clock-mark'); wrap.setAttribute('aria-hidden', 'true'); wrap.append(s, p); return wrap;
+ const wrap = el('span', undefined, 'clock-mark'); wrap.setAttribute('aria-hidden', 'true'); wrap.append(s); return wrap;
 }
 
 function resetTime(epoch) {if (!Number.isFinite(epoch) || epoch <= 0) return '—'; let m = Math.ceil((epoch - Date.now() / 1000) / 60); if (m <= 0) return 'Awaiting reset'; return m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : `${Math.floor(m / 60)}h ${pad(m % 60)}m`}
@@ -81,7 +69,7 @@ function arc(value, label) {
  if (Number.isFinite(value)) {const fill = svgNode('circle', {class:'arc-fill', cx:60, cy:60, r:52}); fill.style.setProperty('--pct', String(clamp(value))); s.append(fill)}
  const num = el('div', undefined, 'percentage');
  if (Number.isFinite(value)) {
-  const digits = el('span', String(Math.round(clamp(value))), 'pct-num'); digits.dataset.ghost = ghost(digits.textContent);
+  const digits = el('span', String(Math.round(clamp(value))), 'pct-num');
   num.dataset.digits = String(digits.textContent.length);  // '100' must stay inside the ring
   num.append(digits, el('span', '%', 'percent-sign'));
   num.setAttribute('role', 'meter'); num.setAttribute('aria-label', label);
@@ -136,7 +124,7 @@ function readingCard(account, siblings) {
   else if (t === '—') timer.append(el('span', 'no reset time reported', 'timer-value'));
   else {
    timer.append(el('span', value >= 90 ? 'clears in' : 'resets in', 'timer-label'));
-   const v = el('span', t, 'timer-value'); if (/^[\ddh m]+$/.test(t)) v.dataset.ghost = ghost(t); timer.append(v);
+   timer.append(el('span', t, 'timer-value'));
   }
  }
  foot.append(timer);
@@ -384,23 +372,11 @@ function paintThemes(force = false) {
 async function loadThemes() {try {const r = await fetch(DEMO ? '/demo-themes.json' : '/themes', {cache:'no-store'}); if (!r.ok) throw Error(); themeData = await r.json(); paintThemes()} catch {$('#likes-as-of').textContent = 'Themes unavailable · your clock styles still work'}}
 document.querySelectorAll('.theme-sort button').forEach(b => {b.onclick = () => {themeSort = b.dataset.sort; paintThemes()}});
 
-/* ---- appearance: the web page's own skin, separate from the clock face ---- */
-function setTheme(theme) {
- const config = THEMES.find(t => t.id === theme) || THEMES[0];
- document.documentElement.dataset.theme = config.id; savePreference('tokentv.theme', config.id);
- $('#eyebrow').textContent = config.eyebrow; $('#eyebrow').hidden = !config.eyebrow;
- $('#page-title').textContent = config.title;
- $('#intro-note').textContent = config.note; $('#intro-note').hidden = !config.note;
- for (const b of document.querySelectorAll('[data-theme-choice]')) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === config.id));
-}
-for (const t of THEMES) {
- const b = el('button', undefined, 'theme-button'); b.type = 'button'; b.dataset.themeChoice = t.id; b.setAttribute('aria-pressed', 'false');
- const sw = el('span', undefined, 'swatch'); sw.dataset.swatch = t.id; sw.setAttribute('aria-hidden', 'true'); sw.append(el('i'), el('i'), el('i'));
- b.append(sw, el('span', t.name, 'theme-name')); b.onclick = () => setTheme(t.id); $('#themes').append(b);
-}
-setTheme(readPreference('tokentv.theme', THEMES[0].id));
-/* Light, dark or follow the system. Every token is light-dark(), so the whole page turns on
- * one color-scheme declaration; Auto leaves it to the operating system. */
+/* ---- appearance ----
+ * One design. The page used to offer four costumes mirroring four clock faces, which was the
+ * same choice twice: the faces are on the clock, where they belong. What is left is the only
+ * preference a reader actually has — light, dark, or follow the system. Every token is
+ * light-dark(), so the whole page turns on one color-scheme declaration. */
 const MODES = ['auto', 'light', 'dark'];
 function setMode(mode) {
  const m = MODES.includes(mode) ? mode : 'auto';

@@ -1,38 +1,32 @@
 @import url('/assets/tokens.css');
 /* TokenTV web dashboard.
  *
- * One layout; the theme blocks at the bottom are skins over the same nodes, so a new appearance
- * is a palette in tokens.css plus a handful of rules here — never a second structure.
- * Severity is always carried by a word as well as a colour. */
+ * One layout, one appearance. Severity is always carried by a word as well as a colour, so a
+ * reading survives greyscale. Colours and type live in tokens.css. */
 
 @font-face{font-family:'Manrope';src:url('/assets/manrope.ttf') format('truetype');font-weight:200 800;font-display:swap}
-@font-face{font-family:'VT323';src:url('/assets/vt323.woff2') format('woff2');font-display:swap}
-@font-face{font-family:'DSEG7 Classic';src:url('/assets/dseg7-classic-bold.woff2') format('woff2');font-weight:400 700;font-display:swap}
-@font-face{font-family:'Jersey 10';src:url('/assets/jersey-10.woff2') format('woff2');font-display:swap}
-@font-face{font-family:'Orbitron';src:url('/assets/orbitron.ttf') format('truetype');font-weight:400 900;font-display:swap}
-@font-face{font-family:'Oxanium';src:url('/assets/oxanium.woff2') format('woff2');font-weight:500 800;font-display:swap}
-@font-face{font-family:'Press Start 2P';src:url('/assets/press-start-2p.ttf') format('truetype');font-display:swap}
-@font-face{font-family:'Chakra Petch';src:url('/assets/chakra-petch-500.woff2') format('woff2');font-weight:500;font-display:swap}
-@font-face{font-family:'Chakra Petch';src:url('/assets/chakra-petch-700.woff2') format('woff2');font-weight:700;font-display:swap}
 
 /* ── Base ───────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box}
 html{background:var(--bg);-webkit-text-size-adjust:100%}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);
-  font:400 15px/1.5 var(--font-body);-webkit-font-smoothing:antialiased}
+/* The project page's hairline grid, so the tool and the site read as one surface. */
+body{margin:0;min-height:100vh;background-color:var(--bg);color:var(--ink);
+  font:400 16.5px/1.6 var(--font-body);-webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:28px 28px}
 h1,h2,h3,p,dl,dd,dt,ul{margin:0}
 ul{list-style:none;padding:0}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.skip{position:absolute;left:-9999px;top:0;z-index:20;padding:10px 14px;background:var(--panel);
-  color:var(--ink);border:1px solid var(--line)}
+.skip{position:absolute;left:-9999px;top:0;z-index:20;padding:10px 16px;background:var(--panel);
+  color:var(--ink);border:1px solid var(--line);border-radius:999px}
 .skip:focus{left:8px;top:8px}
-.shell{max-width:1060px;margin:0 auto;padding:0 20px 48px}
+.shell{max-width:1180px;margin:0 auto;padding:0 16px 48px}
 .quiet{color:var(--ink-3);font-size:12.5px;font-family:var(--font-label)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-card)}
 .loading{color:var(--ink-3);padding:22px 2px}
-.section-label{font-family:var(--font-label);font-size:10.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--ink-3)}
-h2{font-family:var(--font-label);font-size:11.5px;font-weight:500;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--ink-3)}
+h2,.section-label{font-family:var(--font-label);font-size:11.5px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 
 /* The static demo (scripts/build_demo.py) injects this strip above everything else. */
 .demo-bar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;
@@ -42,33 +36,34 @@ h2{font-family:var(--font-label);font-size:11.5px;font-weight:500;letter-spacing
 
 /* ── Top bar ────────────────────────────────────────────────────────── */
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-  padding:18px 0 14px;border-bottom:1px solid var(--line)}
+  padding:14px 0 10px;border-bottom:2px solid var(--ink)}
 .brand{display:inline-flex;align-items:center;gap:9px;color:var(--ink);text-decoration:none;
-  font-family:var(--font-display);font-weight:700;letter-spacing:.01em}
+  font-family:var(--font-label);font-size:13px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase}
 .brandmark{width:16px;height:16px;border:2px solid currentColor;border-radius:3px;position:relative;flex:0 0 auto}
 .brandmark::after{content:"";position:absolute;inset:3px 3px auto 3px;height:2px;background:currentColor}
 .brand-word b{font-weight:700;color:var(--accent,var(--ink))}
 .topbar-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  font-family:var(--font-label);font-size:12px;color:var(--ink-3)}
+  font-family:var(--font-label);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3)}
 .connection{display:inline-flex;align-items:center;gap:7px;color:var(--lvl-low)}
 .status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
 body[data-offline=true] .connection{color:var(--lvl-critical)}
-.title-block{padding:22px 0 4px}
-h1{font-family:var(--font-display);font-size:clamp(20px,4.4vw,26px);font-weight:700;
-  letter-spacing:-.01em;line-height:1.15}
-.eyebrow,.intro-note{font-family:var(--font-label);font-size:11.5px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-3)}
-.notice{margin:14px 0 0;padding:11px 14px;border:1px solid var(--line-2);border-radius:var(--radius-control);
-  background:var(--panel-2);color:var(--ink-2);font-size:13.5px}
+h1{margin:26px 0 2px;font-family:var(--font-display);font-size:clamp(28px,5vw,40px);
+  font-weight:700;letter-spacing:-.035em;line-height:1.05}
+/* The site marks a caution with its accent at low opacity rather than a loud fill. */
+.notice{margin:14px 0 0;padding:12px 15px;border-radius:12px;font-size:14.5px;color:var(--ink-2);
+  border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);
+  background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
 
 /* ── The answer: one card per account, all readings comparable ──────── */
 .readings{display:grid;grid-template-columns:repeat(auto-fill,minmax(246px,1fr));gap:14px;
   margin:18px 0 26px}
 .read{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-card);
-  padding:16px 16px 12px;display:flex;flex-direction:column;min-width:0}
+  padding:18px 18px 13px;display:flex;flex-direction:column;min-width:0}
 .read>header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
 .who{display:inline-flex;align-items:center;gap:8px;min-width:0;
-  font-family:var(--font-display);font-weight:600;font-size:15px}
+  font-family:var(--font-display);font-weight:600;font-size:16px;letter-spacing:-.01em}
 .who-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mark{width:16px;height:16px;flex:0 0 auto;display:block}
 .mark .glyph{width:100%;height:100%;display:block}
@@ -117,13 +112,13 @@ h1{font-family:var(--font-display);font-size:clamp(20px,4.4vw,26px);font-weight:
 .read[data-level=critical] .timer-value{color:var(--lvl-critical);font-weight:600}
 .clock-mark{display:inline-flex;width:14px;height:14px;color:var(--ink-3);flex:0 0 auto}
 .clock-icon{width:100%;height:100%}
-.clock-pixel{display:none}
 
 /* ── Second windows: quiet rows, not more cards ─────────────────────── */
 .also{margin-bottom:26px}
 .also h2{margin-bottom:10px}
 .also ul{border:1px solid var(--line);border-radius:var(--radius-card);background:var(--panel);
   overflow:hidden}
+.also li{font-size:14.5px}
 .also li{display:grid;grid-template-columns:minmax(120px,1fr) 70px minmax(60px,2fr) 48px 112px;
   align-items:center;gap:14px;padding:11px 15px;border-bottom:1px solid var(--line);font-size:13.5px}
 .also li:last-child{border-bottom:0}
@@ -140,10 +135,10 @@ h1{font-family:var(--font-display);font-size:clamp(20px,4.4vw,26px);font-weight:
 /* ── The control: what the clock is showing ─────────────────────────── */
 .clock-panel{display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:start;
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-card);
-  padding:18px 20px;margin-bottom:30px}
+  padding:20px 22px;margin-bottom:30px}
 .device{flex:0 0 auto}
 .lcd{width:176px;height:176px;padding:9px;background:#000;border:1px solid var(--line);
-  border-radius:calc(var(--radius-card) * .8)}
+  border-radius:16px}
 .lcd img{width:100%;height:100%;display:block;image-rendering:pixelated;border-radius:3px;
   background:#000}
 .clock-controls{min-width:0}
@@ -152,7 +147,7 @@ h1{font-family:var(--font-display);font-size:clamp(20px,4.4vw,26px);font-weight:
 .clock-panel label,#stocks-controls label{display:block;font-family:var(--font-label);font-size:10.5px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
 .control-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-.control{font:500 13.5px var(--font-body);padding:9px 14px;color:var(--ink);background:var(--panel-2);
+.control{font:500 13.5px var(--font-body);padding:9px 16px;color:var(--ink);background:var(--panel-2);
   border:1px solid var(--line);border-radius:var(--radius-control);cursor:pointer;
   text-decoration:none;min-height:38px}
 select.control{min-width:150px;flex:1 1 150px}
@@ -165,7 +160,7 @@ select.control{min-width:150px;flex:1 1 150px}
 .clock-controls:has(#apply[data-state=error]) #display-state{color:var(--lvl-critical)}
 #stocks-controls{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
 #stocks-modes{display:inline-flex;margin-bottom:14px;border:1px solid var(--line);
-  border-radius:var(--radius-control);overflow:hidden}
+  border-radius:999px;overflow:hidden}
 #stocks-modes .control{border:0;border-radius:0;background:transparent;color:var(--ink-2)}
 #stocks-modes .control+.control{border-left:1px solid var(--line)}
 #stocks-modes .control[aria-pressed=true]{background:var(--panel-2);color:var(--ink)}
@@ -177,13 +172,12 @@ select.control{min-width:150px;flex:1 1 150px}
 .clock-controls .quiet{margin-top:13px}
 
 /* ── Gallery: the thumbnail is the product, so it gets the space ────── */
-.gallery{padding-top:26px;border-top:1px solid var(--line)}
+.gallery{padding-top:26px;border-top:1px dashed var(--line)}
 .gallery-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   flex-wrap:wrap;margin-bottom:14px}
 #gallery-title{font-size:13px}
 .gallery-head-right{display:flex;align-items:center;gap:12px}
-.theme-sort{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-control);
-  overflow:hidden}
+.theme-sort{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
 .theme-sort .control{border:0;border-radius:0;background:transparent;color:var(--ink-3);
   padding:7px 13px;min-height:34px;font-size:12.5px}
 .theme-sort .control+.control{border-left:1px solid var(--line)}
@@ -191,14 +185,14 @@ select.control{min-width:150px;flex:1 1 150px}
 .count{font-family:var(--font-label);font-size:11.5px;color:var(--ink-3)}
 .theme-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(164px,1fr));gap:16px}
 .theme-card{display:flex;flex-direction:column;gap:8px;min-width:0}
-.theme-card figure{position:relative;margin:0;border:1px solid var(--line);border-radius:10px;
+.theme-card figure{position:relative;margin:0;border:1px solid var(--line);border-radius:12px;
   overflow:hidden;background:#000;aspect-ratio:1}
 .thumb-button{display:block;width:100%;height:100%;padding:0;border:0;background:#000;cursor:pointer}
 .theme-thumb{width:100%;height:100%;display:block;image-rendering:pixelated}
 .no-thumb{display:grid;place-items:center;width:100%;height:100%;color:var(--ink-3);font-size:12px}
 /* Applying writes to the clock's flash, so it is revealed by hover — or, on a touch screen,
  * by the first tap landing on the thumbnail. Two taps, never an accidental write. */
-.apply{position:absolute;inset:auto 8px 8px 8px;padding:8px 0;border:0;border-radius:8px;
+.apply{position:absolute;inset:auto 8px 8px 8px;padding:8px 0;border:0;border-radius:999px;
   background:var(--ink);color:var(--panel);font:600 12.5px var(--font-body);cursor:pointer;
   opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .14s,transform .14s}
 .theme-card:hover .apply,.theme-card:focus-within .apply,
@@ -221,7 +215,7 @@ p.theme-update{white-space:normal}
 .gallery .quiet{margin-top:8px;max-width:72ch}
 
 /* ── Footer: counts, the legend, and this page's own appearance ─────── */
-.page-foot{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);
+.page-foot{margin-top:34px;padding-top:18px;border-top:1px dashed var(--line);
   display:flex;flex-direction:column;gap:16px}
 .foot-line{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--font-label);font-size:11.5px;
   color:var(--ink-3)}
@@ -234,68 +228,15 @@ p.theme-update{white-space:normal}
 .legend i[data-level=high]{background:var(--lvl-high)}
 .legend i[data-level=critical]{background:var(--lvl-critical)}
 .theme-section{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.themes,.modes{display:flex;gap:8px;flex-wrap:wrap}
-.theme-button,.mode-button{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;
-  background:var(--panel);color:var(--ink-2);border:1px solid var(--line);
-  border-radius:var(--radius-control);cursor:pointer;font:500 12.5px var(--font-body);min-height:34px}
-.theme-button[aria-pressed=true],.mode-button[aria-pressed=true]{background:var(--panel-2);
-  color:var(--ink);border-color:var(--line-2)}
-.swatch{display:inline-flex;gap:2px}
-.swatch i{width:5px;height:12px;border-radius:1px;display:block}
-.swatch[data-swatch=plain] i:nth-child(1){background:#F2EEE4}
-.swatch[data-swatch=plain] i:nth-child(2){background:#15171C}
-.swatch[data-swatch=plain] i:nth-child(3){background:#E0482A}
-.swatch[data-swatch=digital] i:nth-child(1){background:#02100a}
-.swatch[data-swatch=digital] i:nth-child(2){background:#7dffd0}
-.swatch[data-swatch=digital] i:nth-child(3){background:#ffcf5a}
-.swatch[data-swatch=neon] i:nth-child(1){background:#0b0918}
-.swatch[data-swatch=neon] i:nth-child(2){background:#d946ef}
-.swatch[data-swatch=neon] i:nth-child(3){background:#38d6ff}
-.swatch[data-swatch=retro] i:nth-child(1){background:#141d52}
-.swatch[data-swatch=retro] i:nth-child(2){background:#fff3d6}
-.swatch[data-swatch=retro] i:nth-child(3){background:#5ee06a}
-.swatch[data-swatch=hud] i:nth-child(1){background:#06101a}
-.swatch[data-swatch=hud] i:nth-child(2){background:#3cc4ff}
-.swatch[data-swatch=hud] i:nth-child(3){background:#ff8a3d}
-.help{font-size:13px;color:var(--ink-2)}
+.modes{display:flex;gap:8px;flex-wrap:wrap}
+.mode-button{display:inline-flex;align-items:center;padding:7px 13px;background:var(--panel);
+  color:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius-control);
+  cursor:pointer;font:500 12.5px var(--font-body);min-height:34px}
+.mode-button[aria-pressed=true]{background:var(--panel-2);color:var(--ink);border-color:var(--line-2)}
+.help{font-size:14.5px;color:var(--ink-2)}
 .help summary{cursor:pointer;font-family:var(--font-label);font-size:11.5px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink-3)}
 .help p{margin-top:10px;max-width:78ch}
-
-/* ── Theme skins: the same nodes, re-dressed ────────────────────────── */
-:root[data-theme=digital] body{letter-spacing:.01em;font-size:17px}
-:root[data-theme=digital] .pct-num{font-size:44px;font-weight:400}
-:root[data-theme=digital] .pct-num::before{content:attr(data-ghost);position:absolute;inset:0;
-  color:var(--track);z-index:-1}
-:root[data-theme=digital] .timer-value{color:var(--amber)}
-:root[data-theme=digital] .band{border-radius:0}
-:root[data-theme=digital] .read,:root[data-theme=digital] .also ul,
-:root[data-theme=digital] .clock-panel{box-shadow:inset 0 0 0 1px var(--panel-2)}
-
-:root[data-theme=neon] .read,:root[data-theme=neon] .clock-panel{
-  background:linear-gradient(170deg,var(--panel),var(--panel-2))}
-:root[data-theme=neon] .pct-num{text-shadow:0 0 18px color-mix(in srgb,var(--lvl,var(--ink)) 55%,transparent)}
-:root[data-theme=neon] .arc-fill{filter:drop-shadow(0 0 5px var(--lvl,var(--lvl-low)))}
-:root[data-theme=neon] h1,:root[data-theme=neon] .brand-word{letter-spacing:.04em}
-
-:root[data-theme=retro] .clock-pixel{display:block;width:100%;height:100%}
-:root[data-theme=retro] .clock-icon{display:none}
-:root[data-theme=retro] body{font-size:18px}
-:root[data-theme=retro] h1{font-size:clamp(14px,3.2vw,19px);line-height:1.5}
-:root[data-theme=retro] .read,:root[data-theme=retro] .also ul,
-:root[data-theme=retro] .clock-panel,:root[data-theme=retro] .theme-card figure{
-  border-width:3px;border-color:var(--outline);box-shadow:4px 4px 0 var(--outline)}
-:root[data-theme=retro] .arc circle{stroke-linecap:butt}
-/* Press Start 2P has a full-em advance, so its numerals need more room than the others. */
-:root[data-theme=retro] .pct-num{font-size:30px}
-:root[data-theme=retro] .percentage[data-digits="3"] .pct-num{font-size:21px}
-:root[data-theme=retro] .band,:root[data-theme=retro] .control{border-radius:0}
-:root[data-theme=retro] .track,:root[data-theme=retro] .track i{border-radius:0}
-
-:root[data-theme=hud] .read,:root[data-theme=hud] .clock-panel,:root[data-theme=hud] .also ul{
-  clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px)}
-:root[data-theme=hud] .win,:root[data-theme=hud] .band{letter-spacing:.14em}
-:root[data-theme=hud] h1,:root[data-theme=hud] .who{letter-spacing:.06em;text-transform:uppercase}
 
 /* ── Narrower screens ───────────────────────────────────────────────── */
 @media (max-width:900px){
@@ -316,8 +257,6 @@ p.theme-update{white-space:normal}
   .arc circle{stroke-width:10}
   .pct-num{font-size:25px}
   .percentage[data-digits="3"] .pct-num{font-size:19px}
-  :root[data-theme=digital] .pct-num{font-size:27px}
-  :root[data-theme=digital] .percentage[data-digits="3"] .pct-num{font-size:20px}
   .percent-sign{font-size:11px}
   .pct-num.no-reading{font-size:20px}
   .used{grid-area:used;justify-content:flex-start;text-align:left;margin-top:5px}

@@ -1,14 +1,16 @@
-/* TokenTV appearance tokens — one block per web theme.
+/* TokenTV appearance tokens.
  *
  * Roles: ink = neutral text and numerals for every provider; claude/ollama/antigravity mark
  * identity only; lvl-* are the four used-quota bands (<50, 50–79, 80–89, 90–100).
  * Each band is a gradient: lvl-*-2 starts the fill, lvl-* is its tip and legend colour.
  *
- * Every colour is light-dark(light, dark), so a theme needs one declaration per token and the
- * light/dark/auto control is nothing but a color-scheme flip. Auto follows the system; Light and
- * Dark pin it. Each costume keeps its character in both: a daylight terminal is still a terminal. */
+ * Every colour is light-dark(light, dark), so the light/dark/auto control is nothing but a
+ * color-scheme flip: Auto follows the system, Light and Dark pin it. Palette, hairlines and
+ * spacing come from token-tv.riazrahaman.com, so the dashboard and the site read as one thing. */
 :root {
-  --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
+  /* The project page's stack. Plex comes from the network like it does there; the bundled
+   * Manrope catches an offline dashboard, so the tool never falls back to a system default. */
+  --font-body: 'IBM Plex Sans', 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: var(--font-body);
   --font-num: var(--font-display);
   --font-label: var(--font-body);
@@ -17,17 +19,11 @@
 :root[data-mode=light] { color-scheme: only light }
 :root[data-mode=dark] { color-scheme: only dark }
 
-/* Plain: the calm default. Palette, hairlines and spacing from token-tv.riazrahaman.com, so the
- * dashboard and the site read as one thing. The four costumes below mirror a clock face; this one
- * gets out of the way of the numbers. */
-/* Plain's own type. Kept out of the shared :root rule below so a costume that declares only
- * --font-body/--font-display still gets its numerals from --font-display, as it did before. */
-:root:not([data-theme]), :root[data-theme=plain] {
-  --font-num: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+:root {
+  --font-num: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-label: var(--font-num);
   --accent: light-dark(#E0482A, #FF7A55);
-}
-:root, :root[data-theme=plain] {
+
   --bg:      light-dark(#F2EEE4, #0C1726);
   --panel:   light-dark(#FBF9F4, #13243B);
   --panel-2: light-dark(#E9E4D7, #112036);
@@ -49,110 +45,7 @@
   --lvl-high:     light-dark(#946A09, #F2C14E); --lvl-high-2:     light-dark(#946A09, #F2C14E);
   --lvl-critical: light-dark(#C73B1F, #FF7A55); --lvl-critical-2: light-dark(#C73B1F, #FF7A55);
 
-  --radius-card: 12px; --radius-control: 8px;
-}
-
-/* Digital Terminal: single-weight phosphor console, amber timers. */
-:root[data-theme=digital] {
-  --accent: light-dark(#0a5c3e, #3dfcb0);
-  --font-body: 'VT323', 'DejaVu Sans Mono', monospace;
-  --font-num: 'DSEG7 Classic', 'VT323', monospace;
-  --font-label: var(--font-body);
-  --bg:      light-dark(#dfe9e0, #020906);
-  --panel:   light-dark(#eef4ee, #03100b);
-  --panel-2: light-dark(#d6e4d8, #04140e);
-  --ink:     light-dark(#0b3f2c, #7dffd0);
-  --ink-2:   light-dark(#1d6a4c, #4dbb92);
-  --ink-3:   light-dark(#39856a, #3a9a77);
-  --line:    light-dark(#a9c7b5, #164a37);
-  --line-2:  light-dark(#7fae94, #22694f);
-  --track:   light-dark(#c6dbcb, #0a2a1e);
-  --focus:   light-dark(#0b3f2c, #c8ffe9);
-  --amber:   light-dark(#8a5a00, #ffcf5a);
-  --claude:      light-dark(#0b3f2c, #7dffd0);
-  --ollama:      light-dark(#0b3f2c, #7dffd0);
-  --antigravity: light-dark(#0b3f2c, #7dffd0);
-  --lvl-low:      light-dark(#0a7a52, #3dfcb0); --lvl-low-2:      light-dark(#0a7a52, #13b884);
-  --lvl-medium:   light-dark(#4d7a0a, #c3f562); --lvl-medium-2:   light-dark(#4d7a0a, #6fd13a);
-  --lvl-high:     light-dark(#9a5200, #ff9d45); --lvl-high-2:     light-dark(#9a5200, #ff6a2b);
-  --lvl-critical: light-dark(#bc1427, #ff5a6a); --lvl-critical-2: light-dark(#bc1427, #e8243f);
-  --radius-card: 0; --radius-control: 0;
-}
-
-/* Neon Cyberpunk: black glass, white-hot numerals, provider bloom. In daylight it keeps the
- * bloom and the round geometry, over paper instead of glass. */
-:root[data-theme=neon] {
-  --accent: light-dark(#a21caf, #d946ef);
-  --font-display: 'Orbitron', 'Manrope', sans-serif;
-  --font-num: 'Oxanium', 'Orbitron', sans-serif;
-  --bg:      light-dark(#f4f1fb, #05040c);
-  --panel:   light-dark(#ffffff, #0b0918);
-  --panel-2: light-dark(#ece6fa, #120f26);
-  --ink:     light-dark(#1b1535, #f7f5ff);
-  --ink-2:   light-dark(#564b7d, #aaa4cc);
-  --ink-3:   light-dark(#776ca0, #8580ad);
-  --line:    light-dark(#d9d0f0, #262143);
-  --line-2:  light-dark(#bfb0e4, #3a325f);
-  --track:   light-dark(#e6dff8, #17142c);
-  --focus:   light-dark(#7a1fb8, #f0d9ff);
-  --claude:      light-dark(#c2510a, #ff8a2b); --claude-2:      light-dark(#a86a00, #ffd23f);
-  --ollama:      light-dark(#a21caf, #d946ef); --ollama-2:      light-dark(#6d28d9, #8b5cf6);
-  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #4285f4);
-  --lvl-low:      light-dark(#00866a, #2cf5b0); --lvl-low-2:      light-dark(#00866a, #00b894);
-  --lvl-medium:   light-dark(#0071a8, #38d6ff); --lvl-medium-2:   light-dark(#0071a8, #1f7bff);
-  --lvl-high:     light-dark(#9a6200, #ffc23d); --lvl-high-2:     light-dark(#9a6200, #ff8a1f);
-  --lvl-critical: light-dark(#c2185b, #ff3d81); --lvl-critical-2: light-dark(#c2185b, #ff2a4a);
-  --radius-card: 26px; --radius-control: 999px;
-}
-
-/* Pixel Retro: 8-bit night, cream type, HP-bar bands. Daylight is the same cartridge at noon. */
-:root[data-theme=retro] {
-  --accent: light-dark(#b5560a, #ff9f43);
-  --font-body: 'Jersey 10', 'DejaVu Sans Mono', monospace;
-  --font-display: 'Press Start 2P', 'Jersey 10', monospace;
-  --font-label: var(--font-body);
-  --bg:      light-dark(#cfe4ff, #0a0f2c);
-  --panel:   light-dark(#fdf6e3, #141d52);
-  --panel-2: light-dark(#f2e6c8, #1b2766);
-  --ink:     light-dark(#17204f, #fff3d6);
-  --ink-2:   light-dark(#3a4a8c, #a9bdf0);
-  --ink-3:   light-dark(#5d6ea8, #7286c6);
-  --line:    light-dark(#17204f, #2c3c8c);
-  --line-2:  light-dark(#3a4a8c, #4a64c8);
-  --track:   light-dark(#e3d4ad, #0d1440);
-  --focus:   light-dark(#9a5f00, #ffe38a);
-  --outline: light-dark(#17204f, #0a0d26);
-  --claude:      light-dark(#b5560a, #ff9f43); --claude-2:      light-dark(#8a4e12, #ffcf6b);
-  --ollama:      light-dark(#6b32c9, #b388ff); --ollama-2:      light-dark(#4c2399, #e0d0ff);
-  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #dbe8ff);
-  --lvl-low:      light-dark(#1b8a2e, #5ee06a); --lvl-low-2:      light-dark(#1b8a2e, #2aa84a);
-  --lvl-medium:   light-dark(#6a7f14, #d3e84a); --lvl-medium-2:   light-dark(#6a7f14, #8fc93a);
-  --lvl-high:     light-dark(#9c5a00, #ffab3d); --lvl-high-2:     light-dark(#9c5a00, #ff7a1f);
-  --lvl-critical: light-dark(#c01e26, #ff5a5f); --lvl-critical-2: light-dark(#c01e26, #d62b3c);
-  --radius-card: 0; --radius-control: 0;
-}
-
-/* Sci-Fi HUD: navy telemetry, cut corners, wide technical type. */
-:root[data-theme=hud] {
-  --accent: light-dark(#006a8a, #3cc4ff);
-  --font-body: 'Chakra Petch', 'Manrope', sans-serif;
-  --font-label: var(--font-body);
-  --bg:      light-dark(#e4edf4, #03080e);
-  --panel:   light-dark(#f7fbfe, #06101a);
-  --panel-2: light-dark(#dbe7f0, #0a1824);
-  --ink:     light-dark(#0b2133, #e9f4ff);
-  --ink-2:   light-dark(#38566d, #8fadc6);
-  --ink-3:   light-dark(#5c7a91, #6c8aa5);
-  --line:    light-dark(#b6cbdb, #142c44);
-  --line-2:  light-dark(#8fafc6, #22476a);
-  --track:   light-dark(#cddeea, #0c1c2b);
-  --focus:   light-dark(#006a8a, #9fe8ff);
-  --claude:      light-dark(#b85a14, #ff8a3d); --claude-2:      light-dark(#96501a, #ffb47a);
-  --ollama:      light-dark(#6b3fc0, #b48cf2); --ollama-2:      light-dark(#5330a0, #d9b3ff);
-  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #4285f4);
-  --lvl-low:      light-dark(#00795a, #35e0a0); --lvl-low-2:      light-dark(#00795a, #14a874);
-  --lvl-medium:   light-dark(#00688f, #3cc4ff); --lvl-medium-2:   light-dark(#00688f, #1a7dff);
-  --lvl-high:     light-dark(#8f5a00, #ffb23f); --lvl-high-2:     light-dark(#8f5a00, #ff7a1a);
-  --lvl-critical: light-dark(#c0152f, #ff4d6a); --lvl-critical-2: light-dark(#c0152f, #e01e3c);
-  --radius-card: 0; --radius-control: 0;
+  /* The site's hairline grid, its 16px cards and its pill chips. */
+  --grid: light-dark(rgba(21,23,28,.055), rgba(120,170,255,.07));
+  --radius-card: 16px; --radius-control: 999px;
 }

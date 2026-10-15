@@ -29,12 +29,11 @@ Verified on Linux with one SD_PRO clock. Mac and Windows hosts are untested; rep
 ## Change how things look
 
 - Clock faces: `docs/clock-faces.md` (one Python function per face, sample data, `token-tv demo`).
-- Web dashboard: themes are listed in `THEMES` in `token_tv/web/app.js`. A theme is a palette —
-  a `[data-theme=<id>]` block of `light-dark(light, dark)` tokens in `token_tv/web/tokens.css` —
-  plus, if it needs one, a short skin block at the bottom of `token_tv/web/style.css`. There is
-  one layout; never add a second structure. Light/dark/auto is the page's `data-mode`, which only
-  switches `color-scheme`, so a new theme gets both modes for free by filling in both halves of
-  each `light-dark()` pair.
+- Web dashboard: one design, taken from token-tv.riazrahaman.com so the tool and the project
+  page read as one thing — IBM Plex, the paper/navy palette, the hairline grid, pill controls.
+  Colours and type are `token_tv/web/tokens.css`; layout is `token_tv/web/style.css`. Every
+  colour token is `light-dark(light, dark)`, so the Auto/Light/Dark control switches nothing but
+  `color-scheme`. There is no web theme picker: the costumes belong on the clock, not on the page.
 - More services: `docs/adding-a-provider.md`.
 
 ## Rules
