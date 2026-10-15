@@ -1,6 +1,7 @@
 'use strict';
 /* TokenTV web dashboard. Every theme renders the same nodes; style.css composes them. */
 const THEMES = [
+ {id:'plain', name:'Plain', eyebrow:'', title:'AI usage', note:''},
  {id:'digital', name:'Digital Terminal', eyebrow:'', title:'AI USAGE DASHBOARD', note:''},
  {id:'neon', name:'Neon Cyberpunk', eyebrow:'Today', title:'AI USAGE', note:''},
  {id:'retro', name:'Pixel Retro', eyebrow:'', title:'AI PROVIDERS', note:'USAGE DASHBOARD'},
@@ -144,7 +145,7 @@ for (const t of THEMES) {
  const sw = el('span', undefined, 'swatch'); sw.dataset.swatch = t.id; sw.setAttribute('aria-hidden', 'true'); sw.append(el('i'), el('i'), el('i'));
  b.append(sw, el('span', t.name, 'theme-name')); b.onclick = () => setTheme(t.id); $('#themes').append(b);
 }
-setTheme(readPreference('tokentv.theme', 'digital'));
+setTheme(readPreference('tokentv.theme', THEMES[0].id));
 
 function providerCard(provider, accounts) {
  let a = accounts.find(x => x.key === accountChoices[provider]) || accounts[0];

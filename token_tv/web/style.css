@@ -718,3 +718,71 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .theme-actions .control{min-height:28px;padding:4px 12px;font-size:12px}
 .theme-actions a{color:var(--ink-2)}.theme-update{color:var(--ink-3)}
 [data-demo] #apply{display:none}
+
+/* ===================================================================
+   Gallery grid — applies to every theme.
+   Cards were ragged because each sized to its own content, and the name
+   and byline shared one line, so titles broke mid-phrase ("Sci-Fi / HUD",
+   "by / TokenTV"). .theme-card is the <li> itself.
+   =================================================================== */
+.theme-list{align-items:stretch}
+.theme-card{display:flex;flex-direction:column}
+/* Name on its own line, byline beneath. Side by side the column is too narrow for both:
+   it either breaks mid-phrase ("Sci-Fi / HUD") or truncates to "Sci...". */
+.theme-card .theme-title{display:block;min-width:0}
+.theme-card .theme-title strong{display:block;overflow-wrap:anywhere}
+.theme-card .theme-author{display:block;margin-top:2px;font-size:.82em;opacity:.7}
+.theme-card .theme-likes,.theme-card .theme-update{min-height:1.35em}
+/* every card's buttons land on the same baseline, so rows read as rows */
+.theme-card .theme-actions{margin-top:auto}
+
+/* ===================================================================
+   Plain theme. Scoped, so the costume themes are untouched.
+   =================================================================== */
+:root[data-theme=plain] .backdrop{display:none}        /* no glow, starfield or sweep */
+
+:root[data-theme=plain] .shell{max-width:1120px}
+:root[data-theme=plain] h1,:root[data-theme=plain] h2,
+:root[data-theme=plain] h3,:root[data-theme=plain] #page-title{letter-spacing:-.02em;text-transform:none}
+:root[data-theme=plain] #page-title{font-size:clamp(22px,2.4vw,30px);font-weight:700}
+:root[data-theme=plain] .section-label,:root[data-theme=plain] .eyebrow{font-family:var(--font-num);
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+
+/* One border level instead of three. */
+:root[data-theme=plain] .screen{background:transparent;border:0;box-shadow:none}
+:root[data-theme=plain] .provider-card{background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius-card);box-shadow:none}
+
+/* The number is the reading; the meter is a glance, not the main event. */
+:root[data-theme=plain] .meter{max-width:300px}
+:root[data-theme=plain] .percentage{font-family:var(--font-num);font-weight:600;letter-spacing:-.02em}
+:root[data-theme=plain] .timer{font-family:var(--font-num);font-weight:500;color:var(--ink-2)}
+
+/* Metadata recedes: one hairline, mono, muted, with the values a shade stronger. */
+:root[data-theme=plain] .reading-meta{font-family:var(--font-num);font-size:11.5px;
+  color:var(--ink-3);letter-spacing:.02em;border-top:1px solid var(--line);padding-top:10px}
+:root[data-theme=plain] .reading-meta .stat-v{color:var(--ink-2)}
+
+/* Appearance is a preference, not the headline. */
+:root[data-theme=plain] .theme-section{opacity:.7;transition:opacity .15s}
+:root[data-theme=plain] .theme-section:hover,
+:root[data-theme=plain] .theme-section:focus-within{opacity:1}
+:root[data-theme=plain] .theme-button{border-radius:999px;padding:5px 12px;font-size:12.5px}
+
+:root[data-theme=plain] .control{border-radius:var(--radius-control);border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);font-family:var(--font-body);text-transform:none}
+:root[data-theme=plain] .control:hover{border-color:var(--line-2)}
+:root[data-theme=plain] .control.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme=plain] .theme-card{background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius-card)}
+
+/* Appearance moved below the readings; keep it compact so it reads as a preference row. */
+:root[data-theme=plain] .theme-section{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin:4px 0 18px}
+:root[data-theme=plain] .themes{display:flex;gap:8px;flex-wrap:wrap}
+:root[data-theme=plain] .theme-button{display:inline-flex;align-items:center;gap:8px;
+  padding:6px 12px;border:1px solid var(--line);background:var(--panel)}
+:root[data-theme=plain] .theme-button .swatch{width:26px;height:14px;flex:0 0 auto;border-radius:3px;
+  overflow:hidden;display:flex;flex-direction:column;gap:2px;padding:2px}
+:root[data-theme=plain] .theme-button .swatch i{flex:1;border-radius:1px}
+:root[data-theme=plain] .theme-button[aria-pressed=true]{border-color:var(--accent);color:var(--ink)}
