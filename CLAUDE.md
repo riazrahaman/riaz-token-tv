@@ -135,12 +135,14 @@ Set `"font"` in the config or `TOKEN_TV_FONT` to a real `.ttf`.
 `quantum` and `limit` default to off, so `demo`, `scripts/` and the doc images render exactly as
 before — only the publishers pass them.
 
-`STYLES` lives in `display.py` and is now twelve. The `pixel` face is in `display.py`; `digital`,
+`STYLES` lives in `display.py` and is now thirteen. The `pixel` face is in `display.py`; `digital`,
 `neon`, `retro`, `hud` and `gameboy` are in `themes.py` (`RENDERERS`); `space` is in `space.py`.
 
 The `combo` family is the one that reads `snapshot['stocks']`: `combo.py` is the still version, and
 `pulse`, `patrol`, `twinkle` and `cyber` live in `combo_pulse.py`, `combo_patrol.py`,
-`combo_twinkle.py` and `combo_cyber.py`. Several of these return **animated GIF** bytes rather than
+`combo_twinkle.py` and `combo_cyber.py`. `combo_stocks.py` reads only the stock rows — a
+stocks-only board with no usage rows, which renders its own closed board rather than falling back
+to `pixel`. Several of these return **animated GIF** bytes rather than
 JPEG, so callers must keep branching on the `GIF8` magic prefix to choose the filename — never on
 the style name — and the 400 000-byte GIF limit applies to them, not the 60 000-byte JPEG one.
 
