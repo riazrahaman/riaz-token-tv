@@ -12,15 +12,21 @@ import math
 from PIL import Image, ImageDraw
 
 from token_tv.combo_pulse import _animated_horizontal_gauge
-from token_tv.combo_stocks import _gif_bytes
+from token_tv.combo_stocks import PHASE_MS, _gif_bytes
 from token_tv.display import (BACKGROUND, MUTED, RULE, STATUS, TEXT, mascot, overview_rows,
                               pixel_text, primary_window, quota_period, row_shift, time_left)
 
-USAGE_FRAMES, USAGE_FPS = 10, 10
+SHIMMER_STEP = 3  # gauge segments the highlight walks per phase — a clearly visible distance
+USAGE_PHASES = tuple(offset for offset in range(0, 10, SHIMMER_STEP))  # 0, 3, 6, 9: four stages
+USAGE_FRAMES = len(USAGE_PHASES)
 
 
 def render_usage_frame(snapshot, frame):
-    """One shimmer frame of the usage face."""
+    """One shimmer frame of the usage face.
+
+    The sweep phases are ~2.8 s apart (about the panel's repaint cadence), and each one moves the
+    highlight three filled segments along, so the panel physically repaints a visibly moved bar."""
+    shimmer = USAGE_PHASES[frame % USAGE_FRAMES]
     image = Image.new('RGB', (240, 240), BACKGROUND)
     draw = ImageDraw.Draw(image)
     rows = overview_rows(snapshot)
@@ -46,11 +52,11 @@ def render_usage_frame(snapshot, frame):
                        color=MUTED, align='right')
         else:
             pixel_text(draw, (226, y + 25), STATUS.get(row['status'], 'NO DATA'), color=MUTED, align='right')
-        _animated_horizontal_gauge(draw, (68, y + 52), used, frame)  # the shimmer: the animated part
+        _animated_horizontal_gauge(draw, (68, y + 52), used, shimmer)  # the shimmer: the animated part
     return image
 
 
 def render_usage_gif(snapshot):
     """The usage face as a GIF: the provider gauges shimmer, everything else is still."""
     frames = [render_usage_frame(snapshot, f) for f in range(USAGE_FRAMES)]
-    return _gif_bytes(frames, USAGE_FPS)
+    return _gif_bytes(frames)
