@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **Movers board no longer shows mildest losers**: Yahoo's custom screener POST intermittently flakes (ignoring its query operands and sort, answering with the whole unfiltered universe — verified live, and no crumb fixes it). The US movers now read Yahoo's crumb-free predefined screens (`day_gainers`/`day_losers` GETs, verified sorted and filtered), with one guarded custom-POST fallback; India keeps the custom POST. Every board page passes a client-side guard before ranking (row count, whole-universe total, missing fields, each region's thresholds, and the page's sort order) — a degraded answer gets exactly one fresh-crumb retry and then the publisher keeps the last-good board and backs off, never fabricating anything.
+- **Movers board no longer shows mildest losers**: Yahoo's custom screener POST intermittently flakes (ignoring its query operands and sort, answering with the whole unfiltered universe — verified live, and no crumb fixes it). The US movers now read Yahoo's crumb-free predefined screens (`day_gainers`/`day_losers` GETs, verified sorted and filtered), with one guarded custom-POST fallback; India keeps the custom POST. Every board page passes a client-side guard before ranking (row count, whole-universe total, missing fields, each region's thresholds, and a tolerant sort check — a genuinely live page keeps ticking while it is read, so a small minority of adjacent inversions stays honest, a grossly shuffled sample never passes) — a degraded answer gets exactly one fresh-crumb retry and then the publisher keeps the last-good board and backs off, never fabricating anything.
 
 ### Added
 

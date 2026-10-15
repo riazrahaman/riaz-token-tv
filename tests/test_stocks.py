@@ -582,6 +582,24 @@ class MoversTests(unittest.TestCase):
         self.assertIn({'operator': 'gte', 'operands': ['intradayprice', 20]}, india['query']['operands'])
         self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 100_000]}, india['query']['operands'])
 
+    def test_a_lively_but_correct_page_passes_the_tolerance_and_the_flake_is_still_junk(self):
+        # A real predefined day_losers read (captured live): magnitude ties and mid-move quotes
+        # leave three adjacent inversions out of eleven pairs — honest, so the page keeps ranking.
+        live_page = [self.quote(f'VIAV{i}', 9.0 + i, percent, cap=0, volume=0) for i, percent in
+                     enumerate((-16.94, -13.64, -12.44, -12.26, -10.13, -9.36, -9.28, -9.32,
+                                -9.83, -8.63, -8.59, -8.66))]
+        self.assertTrue(stocks.valid_board(live_page, 'us', False, 176))
+        # A gainers page read live is just as lively: four inversions of eleven pairs (captured).
+        live_gainers = [self.quote(f'Z{i}', 9.0 + i, percent, cap=0, volume=0) for i, percent in
+                        enumerate((27.56, 10.49, 10.45, 10.25, 10.29, 10.13, 8.73, 8.75, 8.65, 8.72, 8.76, 8.57))]
+        self.assertTrue(stocks.valid_board(live_gainers, 'us', True, 190))
+        # A quiet day with tiny, tied moves stays valid too — zero inversions.
+        ties = [self.quote(f'Q{i}', 9.0 + i, 3.4, cap=0, volume=0) for i in range(12)]
+        self.assertTrue(stocks.valid_board(ties, 'us', True, 190))
+        # But a grossly shuffled page (every adjacent pair inverted) is the flake's answer.
+        shuffled = [self.quote(f'G{i}', 9.0 + i, 3.3 + i * 0.4, cap=0, volume=0) for i in range(6)]
+        self.assertFalse(stocks.valid_board(shuffled, 'us', True, 190))  # strictly ascending: junk
+
     def test_a_flaked_whole_universe_response_is_rejected_before_it_can_rank(self):
         # The captured flake shape: boundary-cluster rows at -2.52/-2.49, unsorted, total in thousands.
         flake = [self.quote('MAN', 4.9, -2.52), self.quote('PENG', 3.4, -2.49), self.quote('RKLB', 5.0, -9.95)]
