@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Stocks-usage alternation (20 s / 10 s)**: while a stock market is open (combo staleness conventions), the publisher fills the rotation album with the stocks face in `tokentv.jpg` and `tokentv-b.jpg` and a usage-only face in a third slot `tokentv-usage.jpg` — at the slideshow's 10-second interval that is the user's 20-seconds-stocks / 10-seconds-usage loop, driven by the hardware's rotation and refreshed by every publisher cycle. A closed, missing or stale market rests the clock on a continuous usage screen by filling all three slots with the usage frame. Dedupe is per slot (only changed slots re-upload), one write-budget decision still gates each event — an allowed live event now costs up to three uploads (default budget 6 → ≤18 uploads/hour; an uncapped feeder keeps ~240 uploads/hour for its two stock slots). GIF frames stay single-file; an Ultra keeps its single hard-set image.
+
 ## [0.4.7] — 2026-10-15
 
 ### Fixed

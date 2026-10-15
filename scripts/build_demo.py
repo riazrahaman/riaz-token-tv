@@ -33,7 +33,9 @@ def build(out, site):
         if child.name != '.vercel':
             shutil.rmtree(child) if child.is_dir() else child.unlink()
     html = (WEB / 'index.html').read_text()
-    html = html.replace('<html lang="en" data-theme="digital">', '<html lang="en" data-theme="digital" data-demo>', 1)
+    marker = '<html lang="en"'  # whatever theme index.html defaults to, the demo adds only its flag
+    assert marker in html, 'index.html opening tag changed'
+    html = html.replace(marker, marker + " data-demo", 1)
     html = html.replace('<title>TokenTV · AI usage</title>', '<title>TokenTV · Live demo</title>\n' + META.format(site=site.rstrip('/')), 1)
     html = html.replace('<a class="skip" href="#providers">Skip to usage</a>', '<a class="skip" href="#providers">Skip to usage</a>\n' + BAR, 1)
     assert 'data-demo' in html and 'demo-bar' in html and 'og:image' in html, 'index.html markers changed'

@@ -772,8 +772,10 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
     when the file name is unchanged, for a clock that rebooted back to its own theme. `budget`
     caps flash-write *events* per hour: prices move on every poll, so the byte dedupe never
     fires while the market is open and a 30-second interval would otherwise refresh continuously.
-    Each event for a JPEG frame uploads two files (both rotation slots), so the two-frame panel
-    refresh costs twice the bytes per still-budgeted event."""
+    The feeder carries no usage screen: its frame goes into the two stock slots only, and the
+    usage slot belongs to whichever process owns the device. Each event still shares one
+    write-budget decision.
+    """
     state_dir = Path(state_dir)
     at = int(now if now is not None else time.time())
     receipts = []
@@ -791,25 +793,29 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            if lost_rotation(files, name):  # the primary or, for a JPEG, its rotation twin is gone
+            if lost_rotation(files, name):  # any wanted rotation slot is gone
                 lost = True
-                last_upload = None  # the clock lost a frame; the dedupe must not hide that
+                last_upload = {}  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
         throttled = False
-        if (name, digest) != last_upload:  # identical frames are not rewritten to flash
+        if name == FILES[1]:  # a GIF stays a single hard-set file
+            events = [(name, image, digest)]
+        else:
+            events = [(ROTATION_FILES[0], image, digest), (ROTATION_FILES[1], image, digest)]
+        pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
+        if pending:  # only the slots whose bytes changed are rewritten
             # A clock showing nothing bypasses the budget; the cap is there to spare flash, not
             # to withhold the frame.
             if lost or may_write(last_write, at, budget):
-                # The local mirrors are written as the publish event starts, just before the upload
-                # requests — a failed upload leaves a mirror ahead of the clock, which the
-                # receipt's error record shows. A JPEG frame lands in both rotation slots under
-                # one write-budget decision; the slideshow's rotation keeps the panel reading them.
-                (state_dir / name).write_bytes(image)
-                if name == FILES[0]:
-                    (state_dir / ROTATION_FILES[1]).write_bytes(image)
-                for upload in device.upload_rotation(image, name):
+                # The local mirrors are written as the publish event starts, just before the
+                # upload requests — a failed upload leaves a mirror ahead of the clock, which
+                # the receipt's error record shows.
+                for slot, frame, _ in pending:
+                    (state_dir / slot).write_bytes(frame)
+                for upload in device.upload_rotation([(slot, frame) for slot, frame, _ in pending]):
                     receipts.append(dict(upload, sha256=digest))
-                last_upload = (name, digest)
+                last_upload = dict((last_upload or {}), **{slot: digest for slot, _, _ in pending})
+                last_write = at
                 uploaded = True
             else:
                 throttled = True  # last_upload is left alone, so the newest frame retries

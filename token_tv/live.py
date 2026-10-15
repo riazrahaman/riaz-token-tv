@@ -9,10 +9,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, SettingsUnsupported,
-                             lost_rotation, may_write, open_display)
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, USAGE_FILE, BackupMismatch,
+                             SettingsUnsupported, lost_rotation, may_write, open_display)
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import ANIMATED_STYLES, STYLES, data_digest, render_frame, render_page, watch_payload
+from token_tv.combo import market_rows
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -358,7 +359,7 @@ def main():
     stopping = threading.Event()
     original = None
     active_file = None
-    last_upload = None
+    last_upload = {}  # slot name → last uploaded sha256; the whole-slot dedupe
     last_write = None
     last_style = None
     last_data = None
@@ -395,9 +396,9 @@ def main():
                     # `activate` re-reads the clock and only writes what is wrong, so in steady
                     # state this is a handful of GETs. Ultra clocks report no file list.
                     files = device.capture().get("files")
-                    if lost_rotation(files, name):  # the primary or, for a JPEG, its twin is gone
+                    if lost_rotation(files, name):  # any wanted rotation slot is gone
                         lost = True
-                        last_upload = None  # the clock lost a frame; the dedupe must not hide that
+                        last_upload = {}  # the clock lost a frame; the dedupe must not hide that
                 phase = "upload"
                 throttled = False
                 # The budget may defer a countdown that merely ticked, but never a real change:
@@ -406,20 +407,38 @@ def main():
                 changed = data_digest(snapshot)
                 data_changed = changed != last_data
                 forced = user or lost or style != last_style or data_changed
-                if (name, digest) != last_upload:  # identical frames are not rewritten to flash
+                if name == FILES[1]:  # the animated GIF keeps its single hard-set identity
+                    events = [(name, image, digest, encoded)]
+                else:
+                    # The alternation the user asked for: the stocks face in the two stock slots and
+                    # the usage face in the third, so the slideshow's 10-second interval shows
+                    # stocks for 20 seconds, then usage for 10, then repeats with fresh frames.
+                    # A closed, missing or stale market (combo conventions) rests the clock on a
+                    # continuous usage screen by filling all three slots with the usage frame.
+                    alternation = feed is not None and market_rows(snapshot) is not None
+                    usage_image, usage_encoded = render_frame(
+                        {key: value for key, value in snapshot.items() if key != 'stocks'},
+                        0, 'pixel', quantum, LIMITS[FILES[0]][0])
+                    usage_digest = hashlib.sha256(usage_image).hexdigest()
+                    slot_image, slot_encoded, slot_digest = ((image, encoded, digest) if alternation
+                                                             else (usage_image, usage_encoded, usage_digest))
+                    events = [(ROTATION_FILES[0], slot_image, slot_digest, slot_encoded),
+                              (ROTATION_FILES[1], slot_image, slot_digest, slot_encoded),
+                              (USAGE_FILE, usage_image, usage_digest, usage_encoded)]
+                pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
+                if pending:  # only the slots whose bytes changed are rewritten
                     if forced or may_write(last_write, now, budget):
                         # The local mirrors are written as the publish event starts, just before the
                         # upload requests — a failed upload leaves a mirror ahead of the clock, which
-                        # the receipt's error record shows. A JPEG frame lands in both rotation
-                        # slots under one write-budget decision, and the slideshow's rotation keeps
-                        # re-reading them, which is what un-freezes the single-photo album.
-                        (state_dir / name).write_bytes(image)
-                        if name == FILES[0]:
-                            (state_dir / ROTATION_FILES[1]).write_bytes(image)
-                        for uploaded in device.upload_rotation(image, name):
-                            receipts.append(dict(uploaded, sha256=digest, **encoded))
-                        last_upload, last_write, last_style = (name, digest), now, style
-                        last_data = changed
+                        # the receipt's error record shows.
+                        for slot, frame, _, _ in pending:
+                            (state_dir / slot).write_bytes(frame)
+                        uploads = device.upload_rotation([(slot, frame) for slot, frame, _, _ in pending])
+                        for event, uploaded in zip(pending, uploads):
+                            receipts.append(dict(uploaded, sha256=event[2], **event[3]))
+                        last_write, last_style, last_data = now, style, changed
+                        last_upload = dict((last_upload or {}), **{slot: dig
+                                                                   for slot, _, dig, _ in pending})
                     else:
                         throttled = True  # last_upload is left alone, so the newest frame retries
                 if due:

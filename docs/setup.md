@@ -128,8 +128,10 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
   `stocks.json` takes `max_writes_per_hour` and `reassert_cycles` too, but its write budget
   defaults to `0`: a cap also throttles how fast the ticker refreshes. Each refresh uploads
   `tokentv.jpg` plus its identical `tokentv-b.jpg` twin (which is what keeps the panel re-reading
-  itself under the clock's slideshow), so an uncapped 30-second open-market poll spends about
-  240 album uploads an hour; a budget of `6` spaces refreshes to twelve uploads an hour.
+  itself under the clock's slideshow) — the stock slots are two of the three album frames the live
+  publisher alternates: stocks 20 seconds, then a usage-only screen on `tokentv-usage.jpg` for 10,
+  while a market is open. An uncapped 30-second open-market poll spends about 240 album uploads an
+  hour; a budget of `6` spaces refreshes to twelve uploads an hour.
 
 ### Stock watchlist & Follow-the-Sun markets
 

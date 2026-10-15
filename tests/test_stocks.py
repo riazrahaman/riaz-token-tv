@@ -55,12 +55,8 @@ class FakeDevice:
         self.uploads.append((name, image))
         return {'file': name, 'status': 200, 'bytes': len(image)}
 
-    def upload_rotation(self, image, name='tokentv.jpg'):
-        # Mirrors device.PhotoDisplay.upload_rotation: one JPEG frame into both rotation slots.
-        receipts = [self.upload(name, image)]
-        if name == 'tokentv.jpg':
-            receipts.append(self.upload('tokentv-b.jpg', image))
-        return receipts
+    def upload_rotation(self, frames):
+        return [self.upload(name, image) for name, image in frames]
 
     def activate(self, original, name='tokentv.jpg'):
         self.activations += 1
@@ -316,8 +312,6 @@ class PublishTests(unittest.TestCase):
         # Movers mode can mark ~120 changed cycles an hour at a 30-second poll; the budget spaces
         # upload EVENTS, and each event is one may_write decision spent on both slots.
         device = FakeDevice()
-        last = None
-        states = (None, None, None, None)
         _, _, last, uploaded = stocks.publish(device, b'image-a', self.state, self.state / 'display-original.json',
                                               None, None, None, now=0, budget=1, last_write=None)
         self.assertTrue(uploaded)
@@ -337,13 +331,14 @@ class PublishTests(unittest.TestCase):
                         {'name': 'tokentv.jpg', 'enabled': True},
                         {'name': 'tokentv-b.jpg', 'enabled': True}]
         digest = __import__('hashlib').sha256(b'frame-a').hexdigest()
+        last = {'tokentv.jpg': digest, 'tokentv-b.jpg': digest}
         stocks.publish(device, b'frame-a', self.state, self.state / 'display-original.json',
-                       {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg', ('tokentv.jpg', digest), now=10)
+                       {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg', dict(last), now=10)
         self.assertEqual(len(device.uploads), 0)  # the content and the file state are as they were
         device.album = [f for f in device.album if f['name'] != 'tokentv-b.jpg']  # the clock lost a slot
         _, _, _, uploaded = stocks.publish(device, b'frame-a', self.state, self.state / 'display-original.json',
                                            {'themes': [{'id': 2, 'enabled': True}]}, 'tokentv.jpg',
-                                           ('tokentv.jpg', digest), now=20, reassert=True)
+                                           dict(last), now=20, reassert=True)
         self.assertTrue(uploaded)  # the dedupe must not hide a lost twin
         self.assertEqual([name for name, _ in device.uploads], ['tokentv.jpg', 'tokentv-b.jpg'])
 
