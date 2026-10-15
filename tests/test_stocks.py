@@ -451,6 +451,12 @@ class CliTests(unittest.TestCase):
 class MoversTests(unittest.TestCase):
     """The whole-market movers board: screener parse, dedupe, ranking and fallback."""
 
+    def setUp(self):
+        stocks._yahoo_session_state = None  # tests must not share a cached session
+
+    def tearDown(self):
+        stocks._yahoo_session_state = None
+
     @staticmethod
     def quote(symbol, price, percent, change=None, at=1791900000):
         return {'symbol': symbol, 'regularMarketPrice': price,
@@ -504,20 +510,33 @@ class MoversTests(unittest.TestCase):
             # A larger count keeps the whole ranked page.
             self.assertEqual(len(stocks.fetch_movers('US', 4)), 5)
 
-    def test_a_screener_failure_retries_once_with_a_fresh_crumb_then_succeeds(self):
-        calls = []
+    def test_a_qualifying_failure_retries_once_with_a_fresh_crumb_then_succeeds(self):
+        posts = []
 
-        def flaky(region, sort_type):
-            calls.append(sort_type)
-            if len(calls) == 1:
+        def flaky(url, payload, headers=None):
+            posts.append(payload['sortType'])
+            if len(posts) == 1:
                 raise stocks.StockError('http_401')  # a stale crumb fails the first POST
-            return [self.quote('AAPL', 340.0, 4.0)] if sort_type == 'DESC' else [self.quote('TSLA', 100.0, -3.0)]
+            quotes = [self.quote('AAPL', 340.0, 4.0)] if payload['sortType'] == 'DESC' \
+                else [self.quote('TSLA', 100.0, -3.0)]
+            return {'finance': {'result': [{'quotes': quotes}]}}
 
-        with patch('token_tv.stocks.screener_quotes', side_effect=flaky), \
-                patch('token_tv.stocks.yahoo_session', side_effect=[('c=1', 'old'), ('c=1', 'new')]) as session:
+        with patch('token_tv.stocks._request_post_json', side_effect=flaky), \
+                patch('token_tv.stocks._fetch_yahoo_session', side_effect=[('c=1', 'old'), ('c=1', 'new')]) as fetch:
             rows = stocks.fetch_movers('US', 1)
         self.assertEqual([row['symbol'] for row in rows], ['AAPL', 'TSLA'])
-        session.assert_called_once_with(refresh=True)
+        # The crumb fetch itself ran exactly twice: the cold start, then one fresh crumb.
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(posts, ['DESC', 'DESC', 'ASC'])
+
+    def test_non_qualifying_failures_never_refresh_the_crumb(self):
+        for code in ('http_429', 'unavailable', 'crumb_unavailable', ''):  # rate limit, outage, no crumb, unknown
+            stocks._yahoo_session_state = None
+            with patch('token_tv.stocks._request_post_json', side_effect=stocks.StockError(code)), \
+                    patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
+                with self.assertRaises(stocks.StockError):
+                    stocks.fetch_movers('US', 2)
+            self.assertEqual(fetch.call_count, 1, code)  # the cold start only; no fresh-crumb fetch
 
     def test_two_screener_failures_raise_so_the_runner_keeps_the_last_board(self):
 
@@ -530,16 +549,12 @@ class MoversTests(unittest.TestCase):
                 stocks.fetch_movers('US', 2)
 
     def test_a_yahoo_cookie_and_crumb_are_cached_for_the_process(self):
-        stocks._yahoo_session_state = None
-        try:
-            with patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
-                self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))
-                self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))  # no second fetch
-                self.assertEqual(fetch.call_count, 1)
-                self.assertEqual(stocks.yahoo_session(refresh=True), ('c=1', 'crumb'))
-                self.assertEqual(fetch.call_count, 2)
-        finally:
-            stocks._yahoo_session_state = None  # tests must not share a cached session
+        with patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
+            self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))  # the cold start fetches exactly once
+            self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))  # no second fetch
+            self.assertEqual(fetch.call_count, 1)
+            self.assertEqual(stocks.yahoo_session(refresh=True), ('c=1', 'crumb'))
+            self.assertEqual(fetch.call_count, 2)
 
 
 class StockConfigTests(unittest.TestCase):
@@ -629,6 +644,9 @@ class MoversRunnerTests(unittest.TestCase):
     """In movers mode the per-symbol Finnhub/Yahoo collect loop is skipped entirely."""
 
     def test_the_movers_runner_publishes_the_board_and_needs_no_credentials(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        frozen = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo('America/New_York')).timestamp()  # mid-session ET
         board = [
             {'symbol': 'G1', 'price': 110.0, 'change': 6.0, 'percent': 6.0, 'previous_close': None, 'at': 1791900000},
             {'symbol': 'G2', 'price': 120.0, 'change': 5.0, 'percent': 5.0, 'previous_close': None, 'at': 1791900000},
@@ -641,17 +659,18 @@ class MoversRunnerTests(unittest.TestCase):
             config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
             with patch('token_tv.stocks.finnhub_token', side_effect=AssertionError('no credentials in movers mode')), \
                     patch('token_tv.stocks.fetch_market_status', side_effect=AssertionError('no Finnhub in movers mode')), \
+                    patch('token_tv.stocks.time.time', return_value=frozen), \
                     patch('token_tv.stocks.collect', side_effect=AssertionError('the per-symbol loop is skipped')) as collect, \
                     patch('token_tv.stocks.fetch_movers', return_value=board) as movers:
                 code = stocks.main(['--once', '--config', str(config)])
             self.assertEqual(code, 0)
             movers.assert_called_once()
-            self.assertIn(movers.call_args[0][1], (2,))  # the config's movers_count
+            self.assertEqual(movers.call_args[0], ('US', 2))  # the pinned, active market and movers_count
             self.assertEqual(collect.call_count, 0)
             payload = json.loads((state / 'snapshot.json').read_text())
             self.assertEqual(payload['symbols'], board)
             self.assertEqual(payload['source'], 'YAHOO')  # the screener serves every market
-            self.assertIn(payload['market']['is_open'], (True, False))
+            self.assertEqual(payload['market']['is_open'], True)
 
     def test_a_screener_failure_keeps_the_previous_board_in_the_snapshot(self):
         board = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
@@ -665,6 +684,44 @@ class MoversRunnerTests(unittest.TestCase):
                 self.assertEqual(stocks.main(['--config', str(config)]), 0)  # cycle 2 failed; the loop then ended
             payload = json.loads((state / 'snapshot.json').read_text())  # last-good board, never an empty one
             self.assertEqual(payload['symbols'], board)
+
+    def test_a_watchlist_hot_reload_without_a_finnhub_key_warns_once_and_shows_dashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
+            board = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                      'previous_close': None, 'at': 1791900000}]
+
+            edited = []
+
+            def hot_edit_then_stop(_seconds):
+                # Mock's callable side_effect uses the function's return value, so the first
+                # sleep performs the edit itself and the second ends the run.
+                if not edited:
+                    edited.append(True)
+                    config.write_text(json.dumps({'symbols': ['AAPL', 'MSFT'], 'mode': 'watchlist',
+                                                  'state_dir': str(state)}))
+                    import os as _os
+                    stamp = time.time() + 3600
+                    _os.utime(config, (stamp, stamp))
+                    return None
+                raise KeyboardInterrupt
+
+            with patch('token_tv.stocks.finnhub_token', side_effect=stocks.StockError('auth_required')), \
+                    patch('token_tv.stocks.fetch_movers',
+                          side_effect=[board, AssertionError('no movers after the reload')]) as movers, \
+                    patch('token_tv.stocks.time.sleep', side_effect=hot_edit_then_stop):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(stocks.main(['--config', str(config)]), 0)
+            self.assertEqual(movers.call_count, 1)  # cycle 1 only; cycle 2 ran the watchlist
+            self.assertIn('No Finnhub API key', err.getvalue())
+            payload = json.loads((state / 'snapshot.json').read_text())
+            self.assertEqual([row['symbol'] for row in payload['symbols']], ['AAPL', 'MSFT'])
+            for row in payload['symbols']:
+                self.assertIsNone(row['price'])  # dashes, never a fabricated zero
+                self.assertEqual(stocks.change_text(row['change'], row['percent']), '--')
 
 
 if __name__ == '__main__':

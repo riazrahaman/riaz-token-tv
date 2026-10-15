@@ -438,11 +438,14 @@ def dedupe_movers(rows):
     return [best[base] for base in order]
 
 
+CRUMB_RETRIES_FOR = ('http_401', 'http_403', 'invalid_response')
+
+
 def fetch_movers(exchange, count=MOVERS_COUNT):
     """Top gainers then top losers, deduped, as display rows: [G1..Gn, L1..Ln].
 
-    A screener failure gets exactly one fresh crumb; another failure re-raises and the
-    caller keeps the previous board rather than showing an empty one."""
+    Only auth/contract failures are worth one fresh crumb (getcrumb is rate-limited, so a 429
+    or a plain outage must never re-hit it — the caller keeps last-good and backs off instead)."""
     region = 'in' if exchange == 'NSE' else 'us'
 
     def side(sort_type, descending):
@@ -452,8 +455,10 @@ def fetch_movers(exchange, count=MOVERS_COUNT):
 
     try:
         gainers, losers = side('DESC', True), side('ASC', False)
-    except StockError:
-        yahoo_session(refresh=True)
+    except StockError as error:
+        if error.code not in CRUMB_RETRIES_FOR:
+            raise
+        yahoo_session(refresh=True)  # one fresh crumb, at most
         gainers, losers = side('DESC', True), side('ASC', False)
     return gainers + losers
 
@@ -918,6 +923,7 @@ def main(argv=None):
     status, failures = {}, 0
     cycles, last_write = 0, None
     last_movers = []  # the previous board, kept whole when a screener poll fails
+    warned_no_token = False
     try:
         while True:
             now = time.time()
@@ -931,9 +937,13 @@ def main(argv=None):
                 try:
                     token = finnhub_token()
                 except StockError:
-                    pass
+                    if not warned_no_token:
+                        print('No Finnhub API key for the watchlist. Set FINNHUB_API_KEY, or store it in the '
+                              f'macOS Keychain (security add-generic-password -s {KEYCHAIN_SERVICE} -w); '
+                              'rows show dashes until a key appears.', file=sys.stderr, flush=True)
+                        warned_no_token = True
             try:
-                status = fetch_market_status(token) if token is not None else {}
+                status = fetch_market_status(token) if token is not None else None
             except StockError:
                 # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
                 pass
@@ -945,9 +955,12 @@ def main(argv=None):
                     last_movers = rows
                     quote_failures = 0
                 except StockError:
-                    # The screener or the fresh crumb failed twice: keep the previous board.
+                    # The screener failed twice: keep the previous board.
                     rows = last_movers
                     quote_failures = 1
+            elif token is None:
+                rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
+                quote_failures = len(rows)
             else:
                 rows, quote_failures = collect(active['symbols'], token, source=active['source'])
             is_open = active['is_open']

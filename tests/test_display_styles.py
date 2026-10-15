@@ -209,6 +209,19 @@ class StocksControlsTests(unittest.TestCase):
         finally:
             self._stop(server, thread)
 
+    def test_stocks_state_clamps_an_unusable_movers_count_to_the_default(self):
+        from token_tv.live import DisplayPreferences
+        directory = Path(self.directory.name)
+        account = self._account()
+        main_config = {'accounts': [account], 'display_style': 'pixel'}
+        main_config['stocks_config'] = str(directory / 'stocks.json')
+        path = directory / 'config.json'
+        path.write_text(json.dumps(main_config))
+        preferences = DisplayPreferences(path, main_config)
+        for raw, clamped in ((99, 2), (0, 2), (-1, 2), ('2', 2), (2.0, 2), (True, 2), (None, 2), (1, 1), (4, 4)):
+            (directory / 'stocks.json').write_text(json.dumps({'symbols': ['AAPL'], 'movers_count': raw}))
+            self.assertEqual(preferences.snapshot()['stocks']['movers_count'], clamped, raw)
+
     def test_a_stock_config_that_is_not_an_object_is_a_conflict(self):
         root, _, stocks_path, server, thread = self._start(None)
         stocks_path.write_text('[1, 2, 3]')
@@ -222,17 +235,29 @@ class StocksControlsTests(unittest.TestCase):
     def test_origin_mismatch_and_bad_mode_are_rejected_like_the_style_endpoint(self):
         root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
         try:
-            for path, payload, origin in (('/stocks/mode', {'mode': 'banana'}, None),
-                                          ('/stocks/mode', {'mode': 'movers', 'extra': 1}, None),
-                                          ('/stocks/mode', {'mode': 'movers'}, 'https://unrelated.example'),
-                                          ('/stocks/symbols', {'symbols': ['AAPL']}, 'https://unrelated.example'),
-                                          ('/stocks/nope', {'mode': 'movers'}, None)):
-                headers = {'Content-Type': 'application/json'}
-                if origin:
-                    headers['Origin'] = origin
+            # A cross-origin POST is always exactly 403, on all three POST endpoints.
+            for path, payload in (('/display/style', {'style': 'pixel'}),
+                                  ('/stocks/mode', {'mode': 'movers'}),
+                                  ('/stocks/symbols', {'symbols': ['AAPL']})):
+                headers = {'Content-Type': 'application/json', 'Origin': 'https://unrelated.example'}
                 with self.assertRaises(HTTPError) as raised:
                     urlopen(Request(root + path, data=json.dumps(payload).encode(), headers=headers))
-                self.assertIn(raised.exception.code, (400, 403, 404))
+                self.assertEqual(raised.exception.code, 403, path)
+            self.assertEqual(json.loads(stocks_path.read_text())['symbols'], ['AAPL'])  # nothing changed
+        finally:
+            self._stop(server, thread)
+
+    def test_bad_bodies_are_400_and_unknown_paths_are_404(self):
+        root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
+        try:
+            # A bad body is exactly 400, and an unknown endpoint is exactly 404.
+            for path, payload, code in (('/stocks/mode', {'mode': 'banana'}, 400),
+                                        ('/stocks/mode', {'mode': 'movers', 'extra': 1}, 400),
+                                        ('/stocks/symbols', {'symbols': ['AAPL'] * 2}, 400),
+                                        ('/stocks/nope', {'mode': 'movers'}, 404)):
+                with self.assertRaises(HTTPError) as raised:
+                    self.post(root, path, payload)
+                self.assertEqual(raised.exception.code, code, path)
             self.assertEqual(json.loads(stocks_path.read_text())['symbols'], ['AAPL'])  # nothing changed
         finally:
             self._stop(server, thread)

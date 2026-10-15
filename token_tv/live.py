@@ -110,9 +110,13 @@ class DisplayPreferences:
             return None
         mode = data.get('mode')
         symbols = data.get('symbols')
+        from token_tv.stocks import MAX_SYMBOLS
+        count = data.get('movers_count')
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_SYMBOLS:
+            count = 2  # anything unusable falls back to the default, not to the raw value
         return {'mode': mode if mode in ('watchlist', 'movers') else 'watchlist',
                 'symbols': [symbol for symbol in symbols or [] if isinstance(symbol, str)],
-                'movers_count': data.get('movers_count', 2)}
+                'movers_count': count}
 
     def set_style(self, style):
         if style not in STYLES:
