@@ -389,6 +389,16 @@ def main():
                                               LIMITS[FILES[0]][0] if style not in ANIMATED_STYLES else LIMITS[FILES[1]][0])
                 name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
+                # The wanted rotation slots, known before any reassert check: all three while a
+                # stock style alternates (closed or open — closed fills the third with usage), the
+                # two stock slots for a non-stock JPEG style (0.4.7 behaviour; the usage slot is
+                # not ours to want), just the GIF for the animated one.
+                if name == FILES[1]:
+                    wanted = (name,)
+                elif style in STOCK_STYLES:
+                    wanted = ROTATION_FILES
+                else:
+                    wanted = STOCKS_FILES
                 # Re-assert the theme periodically, not only when the file name changes: a reboot
                 # or a visit to the clock's own web UI drops it back to its own theme.
                 due = active_file != name or cycles % reassert_after == 0
@@ -398,7 +408,7 @@ def main():
                     # `activate` re-reads the clock and only writes what is wrong, so in steady
                     # state this is a handful of GETs. Ultra clocks report no file list.
                     files = device.capture().get("files")
-                    if lost_rotation(files, name):  # any wanted rotation slot is gone
+                    if lost_rotation(files, name, wanted):  # any wanted rotation slot is gone
                         lost = True
                         last_upload = {}  # the clock lost a frame; the dedupe must not hide that
                 phase = "upload"
@@ -411,7 +421,6 @@ def main():
                 forced = user or lost or style != last_style or data_changed
                 if name == FILES[1]:  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
-                    wanted = (name,)
                 elif style in STOCK_STYLES:
                     # The alternation the user asked for: the stocks face in the two stock slots
                     # and the usage face in the third, so the slideshow's 10-second interval shows
@@ -429,14 +438,12 @@ def main():
                     events = [(ROTATION_FILES[0], slot_image, slot_digest, slot_encoded),
                               (ROTATION_FILES[1], slot_image, slot_digest, slot_encoded),
                               (USAGE_FILE, usage_image, usage_digest, usage_encoded)]
-                    wanted = ROTATION_FILES
                 else:
                     # A style that draws no stock board keeps 0.4.7's behavior: the chosen face in
                     # the two stock slots, and the usage slot is left alone (not uploaded, not
                     # wanted — it is disabled on the next reassert rather than shown stale).
                     events = [(ROTATION_FILES[0], image, digest, encoded),
                               (ROTATION_FILES[1], image, digest, encoded)]
-                    wanted = STOCKS_FILES
                 pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
                 if pending:  # only the slots whose bytes changed are rewritten
                     if forced or may_write(last_write, now, budget):

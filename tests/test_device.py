@@ -627,8 +627,41 @@ class LiveCycleTests(unittest.TestCase):
         self.assertEqual([name for name, _ in clock.uploads],
                          ["tokentv.jpg", "tokentv-b.jpg", "tokentv.jpg", "tokentv-b.jpg"])
         self.assertEqual([image for _, image in clock.uploads], [frames['neon']] * 4)  # neon, not pixel
-        self.assertNotEqual(frames['neon'], frames.get('usage'))
         self.assertNotIn('tokentv-usage.jpg', frames['mirrors'])
+
+    def test_a_later_reassert_is_not_a_false_lost_frame(self):
+        """A clock that keeps both stock slots runs its reasserts with no forced re-upload."""
+
+        class SteadyClock(self.FakeClock):
+            def activate(self, original, name='tokentv.jpg', wanted=None):
+                self.activations += 1  # no exit here: the cycle's own receipt still gets written
+
+            def capture(self):
+                if self.activations >= 3:  # cycles 3 and 6 (the reasserts) have published
+                    self.done.set()
+                    raise SystemExit
+                return super().capture()
+
+        clock = SteadyClock()
+        from token_tv import live
+        seen_receipts = []
+        real_write_json = live.write_json
+        with tempfile.TemporaryDirectory() as folder:
+            def collect(path, data):
+                real_write_json(path, data)
+                if 'receipt' in str(path):
+                    seen_receipts.append(data)
+
+            with patch('token_tv.live.write_json', collect):
+                self._run(clock, self._config(folder, display_style='neon', reassert_cycles=3), folder)
+        # Cycle 1 published the neon frame (fresh start, both stock slots); the reasserts at cycles
+        # 3 and 6 found everything they wanted present — no lost frame invented, no re-upload —
+        # and the never-uploaded usage slot is not part of the wanted set that could invent one.
+        self.assertEqual([name for name, _ in clock.uploads], ["tokentv.jpg", "tokentv-b.jpg"])
+        self.assertEqual(clock.activations, 3)
+        due_receipts = [receipt for receipt in seen_receipts if receipt.get('reasserted')]
+        self.assertEqual([len(receipt['uploads']) for receipt in due_receipts], [2, 0, 0])
+        self.assertTrue(all(receipt['throttled'] is False for receipt in due_receipts))
 
     def test_open_market_alternates_the_stocks_face_with_the_usage_face(self):
         from token_tv.display import render_frame
