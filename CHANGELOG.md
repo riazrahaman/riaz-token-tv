@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Two-frame rotation for the SD_PRO panel**: the firm's slideshow only re-reads the album when files change state, so a single enabled photo froze the panel between content writes. JPEG frames are now uploaded to `tokentv.jpg` and an identical `tokentv-b.jpg` (the auto-enable does the enabling; no toggles after upload), `activate()` keeps exactly those two enabled and the rest of the album asleep (a no-op when already correct), and reasserts additionally redownload when the clock has lost either slot. Write budgets gate whole two-file events (`max_writes_per_hour` semantics unchanged; the stocks default stays 0, the live default 6 — an allowed event now spends two uploads, and the rotation keeps the panel fresh between events).
+- **Two-frame rotation for the SD_PRO panel**: the firm's slideshow only re-reads the album when files change state, so a single enabled photo froze the panel between content writes. JPEG frames are now uploaded to `tokentv.jpg` and an identical `tokentv-b.jpg` (the auto-enable does the enabling; no toggles after upload), `activate()` keeps exactly those two enabled and the rest of the album asleep (a no-op when already correct), and reasserts additionally redownload when the clock has lost either slot. Write budgets gate whole two-file events (`max_writes_per_hour` semantics unchanged; the live default 6 still means ≤12 uploads/hour; an uncapped stocks feeder at its 30-second open-market poll spends ~120 events × 2 = **~240 uploads/hour** — set `max_writes_per_hour` in `stocks.json` to cap that).
 
 ## [0.4.6] — 2026-10-15
 

@@ -45,6 +45,18 @@ def may_write(last_write, now, budget):
     return last_write is None or (now - last_write) >= 3600 / budget
 
 
+def lost_rotation(present, name=FILES[0]):
+    """True when the clock is missing our frame or, for a JPEG, its rotation twin.
+
+    Reassert-time detection against the album's file list, so the byte dedupe cannot keep hiding
+    a lost slot. `present` reads as unknown when the album is unreadable (an Ultra reports none),
+    and unknown is never treated as lost."""
+    if not isinstance(present, list):
+        return False
+    names = {f["name"] for f in present if isinstance(f, dict) and isinstance(f.get("name"), str)}
+    return name not in names or (name == FILES[0] and ROTATION_FILES[1] not in names)
+
+
 class SettingsUnsupported(Exception):
     """This clock profile has no equivalent of the setting being asked for."""
 
@@ -157,7 +169,7 @@ class PhotoDisplay:
         enabled = {f['name']: f['enabled'] for f in current['files']}
         wanted = ROTATION_FILES if name == FILES[0] else (name,)
         for wanted_name in wanted:
-            if enabled.get(wanted_name) is False:  # present but asleep; an absent file is left alone
+            if wanted_name in enabled and not enabled[wanted_name]:  # truthy check: a raw `0` sleeps too
                 self.toggle("photo", "name", wanted_name, True)
         for f in current['files']:
             if f["name"] not in wanted and f['enabled']:

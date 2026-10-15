@@ -396,6 +396,15 @@ class RotationTests(unittest.TestCase):
             self.assertNotIn("tokentv-b.jpg", self.enabled(photos))  # our second slot sleeps again
             self.assertNotIn("tokentv.jpg", self.enabled(photos))
 
+    def test_lost_rotation_detects_a_missing_primary_or_twin_only_from_a_real_album(self):
+        from token_tv.device import lost_rotation
+        self.assertTrue(lost_rotation([{"name": "tokentv.jpg", "enabled": True}], "tokentv.jpg"))  # twin gone
+        self.assertTrue(lost_rotation([{"name": "tokentv-b.jpg", "enabled": True}], "tokentv.jpg"))  # primary gone
+        self.assertTrue(lost_rotation([], "tokentv.gif"))  # the gif slot is gone
+        self.assertFalse(lost_rotation([{"name": "tokentv.jpg", "enabled": True},
+                                        {"name": "tokentv-b.jpg", "enabled": False}], "tokentv.jpg"))
+        self.assertFalse(lost_rotation(None, "tokentv.jpg"))  # an unreadable album (an Ultra) is never "lost"
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -481,3 +490,88 @@ class ClockSettingsTests(unittest.TestCase):
              'nightbrightness': 19})
         # A partial night block leaves everything it does not mention alone.
         self.assertEqual(wanted_settings({'night': {'enabled': False}}), {'nightmode': 0})
+
+
+class LiveCycleTests(unittest.TestCase):
+    """live.cycle must notice the clock losing the rotation twin and re-send both slots."""
+
+    class FakeClock:
+        MODEL = 'sdpro'
+
+        def __init__(self):
+            self.uploads = []
+            self.activations = 0
+            self.album = [{'name': 'original.jpg', 'enabled': True}]
+            self.done = threading.Event()
+
+        def capture(self):
+            return {'themes': [{'id': 2, 'enabled': True}], 'theme_interval': 10,
+                    'files': [dict(f) for f in self.album], 'photo_interval': 10}
+
+        def check_backup(self, original):
+            return None
+
+        def apply_settings(self, wanted):
+            return {}
+
+        def upload(self, name, image):
+            self.uploads.append(name)
+            self.album.append({'name': name, 'enabled': True})  # the firmware's auto-enable
+            if len(self.uploads) >= 4:  # second pair in: cycle 3 has re-downloaded the twin
+                self.done.set()
+            return {'file': name, 'status': 200, 'bytes': len(image)}
+
+        def upload_rotation(self, image, name='tokentv.jpg'):
+            receipts = [self.upload(name, image)]
+            receipts.append(self.upload('tokentv-b.jpg', image))  # a JPEG frame always
+            return receipts
+
+        def activate(self, original, name='tokentv.jpg'):
+            self.activations += 1
+            if self.activations == 1:
+                self.album = [f for f in self.album if f['name'] != 'tokentv-b.jpg']  # the twin is lost
+            else:
+                raise SystemExit  # enough: end the poll thread deterministically
+
+    def test_a_missing_twin_is_lost_and_both_slots_are_resent(self):
+        from token_tv import live
+        from token_tv.sources import SourceError
+        clock = self.FakeClock()
+
+        class StubServer:
+            def __init__(self, address, handler):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *error):
+                return False
+
+            def serve_forever(self):
+                clock.done.wait(15)  # the poll thread works while this "server" holds the loop
+                raise KeyboardInterrupt
+
+        class QuickWait(threading.Event):
+            _real_wait = threading.Event.wait  # captured before the patch below
+
+            def wait(self, timeout=None):
+                return QuickWait._real_wait(self, 0.01)  # the dashboard wake-up path, never a real stall
+
+        ticks = iter(range(0, 10 ** 9, 120))  # the refresh clock advances two minutes per poll-loop check
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / 'config.json'
+            config.write_text(json.dumps({'accounts': [{'key': 'a', 'alias': 'A', 'provider': 'claude',
+                                                        'email': 'owner@example.com', 'source_home': '/unused'}],
+                                          'device_url': 'http://192.168.0.50', 'poll_seconds': 300,
+                                          'reassert_cycles': 3}))
+            with patch('token_tv.live.open_display', return_value=clock), \
+                    patch('token_tv.live.ThreadingHTTPServer', StubServer), \
+                    patch('token_tv.live.threading.Event', QuickWait), \
+                    patch('token_tv.live.time.monotonic', side_effect=lambda: next(ticks)), \
+                    patch('token_tv.sources.claude_token', side_effect=SourceError('auth_required')), \
+                    patch('sys.argv', ['token-tv', '--config', str(config), '--state-dir', folder]):
+                live.main()
+        # Cycle 1 sends both (fresh start); cycle 2 is deduped; cycle 3's reassert notices the
+        # lost twin and re-sends both — the dedupe never hides a lost slot.
+        self.assertEqual(clock.uploads, ['tokentv.jpg', 'tokentv-b.jpg', 'tokentv.jpg', 'tokentv-b.jpg'])

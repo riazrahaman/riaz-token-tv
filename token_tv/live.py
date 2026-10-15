@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, SettingsUnsupported,
-                             may_write, open_display)
+                             lost_rotation, may_write, open_display)
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import ANIMATED_STYLES, STYLES, data_digest, render_frame, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
@@ -395,10 +395,8 @@ def main():
                     # `activate` re-reads the clock and only writes what is wrong, so in steady
                     # state this is a handful of GETs. Ultra clocks report no file list.
                     files = device.capture().get("files")
-                    present = {f["name"] for f in files} if isinstance(files, list) else None
-                    lost = present is not None and (name not in present
-                                                    or (name == FILES[0] and ROTATION_FILES[1] not in present))
-                    if lost:
+                    if lost_rotation(files, name):  # the primary or, for a JPEG, its twin is gone
+                        lost = True
                         last_upload = None  # the clock lost a frame; the dedupe must not hide that
                 phase = "upload"
                 throttled = False
@@ -410,10 +408,11 @@ def main():
                 forced = user or lost or style != last_style or data_changed
                 if (name, digest) != last_upload:  # identical frames are not rewritten to flash
                     if forced or may_write(last_write, now, budget):
-                        # Written only on upload, so the local copy stays a record of what the
-                        # clock is actually showing. A JPEG frame lands in both rotation slots —
-                        # one write-budget decision, two uploads — and the slideshow's rotation
-                        # keeps re-reading them, which is what un-freezes the single-SDK panel.
+                        # The local mirrors are written as the publish event starts, just before the
+                        # upload requests — a failed upload leaves a mirror ahead of the clock, which
+                        # the receipt's error record shows. A JPEG frame lands in both rotation
+                        # slots under one write-budget decision, and the slideshow's rotation keeps
+                        # re-reading them, which is what un-freezes the single-photo album.
                         (state_dir / name).write_bytes(image)
                         if name == FILES[0]:
                             (state_dir / ROTATION_FILES[1]).write_bytes(image)

@@ -30,8 +30,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, may_write,
-                             open_display)
+from token_tv.device import (FILES, LIMITS, ROTATION_FILES, BackupMismatch, lost_rotation,
+                             may_write, open_display)
 from token_tv.display import encode_jpeg, pixel_text
 from token_tv.history import append_history
 
@@ -791,10 +791,8 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            present = {f['name'] for f in files} if isinstance(files, list) else None
-            lost = present is not None and (name not in present
-                                            or (name == FILES[0] and 'tokentv-b.jpg' not in present))
-            if lost:
+            if lost_rotation(files, name):  # the primary or, for a JPEG, its rotation twin is gone
+                lost = True
                 last_upload = None  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
         throttled = False
@@ -802,9 +800,10 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
             # A clock showing nothing bypasses the budget; the cap is there to spare flash, not
             # to withhold the frame.
             if lost or may_write(last_write, at, budget):
-                # Written only on upload, so the local copy stays a record of what the clock is
-                # actually showing. A JPEG frame lands in both rotation slots under one
-                # write-budget decision; the slideshow's rotation keeps the panel re-reading them.
+                # The local mirrors are written as the publish event starts, just before the upload
+                # requests — a failed upload leaves a mirror ahead of the clock, which the
+                # receipt's error record shows. A JPEG frame lands in both rotation slots under
+                # one write-budget decision; the slideshow's rotation keeps the panel reading them.
                 (state_dir / name).write_bytes(image)
                 if name == FILES[0]:
                     (state_dir / ROTATION_FILES[1]).write_bytes(image)

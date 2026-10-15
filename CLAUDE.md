@@ -170,9 +170,9 @@ Written to the `--state-dir` (`.runtime` by default; the installed services use
   count and bytes. This is where the history lives now; `snapshot.json` is only ever "now".
   `read_history()` and `query_symbol_changes()` answer whether a given value actually moved between
   two times, which is what makes "that row never updates" reports settleable instead of arguable.
-- `tokentv.jpg` / `tokentv.gif` (plus the identical `tokentv-b.jpg` rotation twin) — written only on
-  a successful upload, so they record what the
-  clock is actually showing rather than the latest render.
+- `tokentv.jpg` / `tokentv.gif` (plus the identical `tokentv-b.jpg` rotation twin) — written as each
+  publish event runs, just before its upload requests, so they usually record what the clock is
+  showing; a failed upload leaves a mirror ahead of the clock (the receipt's error shows that).
 
 The repository checkout is imported directly by long-running publisher processes (`python3 -m
 token_tv.cli run|stocks`). Editing files in place live-patches them, and `render_page` imports
