@@ -1,120 +1,158 @@
 /* TokenTV appearance tokens — one block per web theme.
+ *
  * Roles: ink = neutral text and numerals for every provider; claude/ollama/antigravity mark
  * identity only; lvl-* are the four used-quota bands (<50, 50–79, 80–89, 90–100).
- * Each band is a gradient: lvl-*-2 starts the fill, lvl-* is its tip and legend colour. */
+ * Each band is a gradient: lvl-*-2 starts the fill, lvl-* is its tip and legend colour.
+ *
+ * Every colour is light-dark(light, dark), so a theme needs one declaration per token and the
+ * light/dark/auto control is nothing but a color-scheme flip. Auto follows the system; Light and
+ * Dark pin it. Each costume keeps its character in both: a daylight terminal is still a terminal. */
 :root {
-  --font-body: 'Manrope', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
   --font-display: var(--font-body);
   --font-num: var(--font-display);
   --font-label: var(--font-body);
-  --bg: #0c0f14; --panel: #141922; --panel-2: #1a202b;
-  --ink: #f4f6f9; --ink-2: #9ba5b3; --ink-3: #7a8493;
-  --line: #232a35; --line-2: #313a48; --track: #232a35; --focus: #cfe0ff;
-  --claude: #f4a07a; --claude-2: #f4a07a;
-  --ollama: #b48cf2; --ollama-2: #b48cf2;
-  --antigravity: #8ab4f8; --antigravity-2: #4285f4;
-  --lvl-low: #6ee7b7; --lvl-medium: #79c0ff; --lvl-high: #f6c453; --lvl-critical: #f7768e;
-  --lvl-low-2: #22c4a6; --lvl-medium-2: #2f8cff; --lvl-high-2: #f08a24; --lvl-critical-2: #e8455f;
-  --radius-card: 22px; --radius-control: 10px;
-  color-scheme: dark;
+  color-scheme: light dark;
+}
+:root[data-mode=light] { color-scheme: only light }
+:root[data-mode=dark] { color-scheme: only dark }
+
+/* Plain: the calm default. Palette, hairlines and spacing from token-tv.riazrahaman.com, so the
+ * dashboard and the site read as one thing. The four costumes below mirror a clock face; this one
+ * gets out of the way of the numbers. */
+/* Plain's own type. Kept out of the shared :root rule below so a costume that declares only
+ * --font-body/--font-display still gets its numerals from --font-display, as it did before. */
+:root:not([data-theme]), :root[data-theme=plain] {
+  --font-num: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  --font-label: var(--font-num);
+  --accent: light-dark(#E0482A, #FF7A55);
+}
+:root, :root[data-theme=plain] {
+  --bg:      light-dark(#F2EEE4, #0C1726);
+  --panel:   light-dark(#FBF9F4, #13243B);
+  --panel-2: light-dark(#E9E4D7, #112036);
+  --ink:     light-dark(#15171C, #E7EDF6);
+  --ink-2:   light-dark(#4A4E57, #A9B7CB);
+  --ink-3:   light-dark(#7A7E87, #7D8DA5);
+  --line:    light-dark(#CFC8B8, #26405F);
+  --line-2:  light-dark(#BDB4A0, #33547B);
+  --track:   light-dark(#E4DECE, #16293F);
+  --focus:   light-dark(#E0482A, #FF7A55);
+
+  /* Provider marks stay identifiable but stop competing with the readings. */
+  --claude:       light-dark(#C2622F, #F2A06B); --claude-2:       light-dark(#C2622F, #F2A06B);
+  --ollama:       light-dark(#7B3FCF, #B38CFF); --ollama-2:       light-dark(#7B3FCF, #B38CFF);
+  --antigravity:  light-dark(#1E64D6, #5EA0FF); --antigravity-2:  light-dark(#1E64D6, #5EA0FF);
+
+  --lvl-low:      light-dark(#0B8466, #3DD6A8); --lvl-low-2:      light-dark(#0B8466, #3DD6A8);
+  --lvl-medium:   light-dark(#1E64D6, #5EA0FF); --lvl-medium-2:   light-dark(#1E64D6, #5EA0FF);
+  --lvl-high:     light-dark(#946A09, #F2C14E); --lvl-high-2:     light-dark(#946A09, #F2C14E);
+  --lvl-critical: light-dark(#C73B1F, #FF7A55); --lvl-critical-2: light-dark(#C73B1F, #FF7A55);
+
+  --radius-card: 12px; --radius-control: 8px;
 }
 
 /* Digital Terminal: single-weight phosphor console, amber timers. */
 :root[data-theme=digital] {
+  --accent: light-dark(#0a5c3e, #3dfcb0);
   --font-body: 'VT323', 'DejaVu Sans Mono', monospace;
   --font-num: 'DSEG7 Classic', 'VT323', monospace;
-  --bg: #020906; --panel: #03100b; --panel-2: #04140e;
-  --ink: #7dffd0; --ink-2: #4dbb92; --ink-3: #3a9a77;
-  --line: #164a37; --line-2: #22694f; --track: #0a2a1e; --focus: #c8ffe9;
-  --amber: #ffcf5a;
-  --claude: #7dffd0; --ollama: #7dffd0; --antigravity: #7dffd0;
-  --lvl-low: #3dfcb0; --lvl-medium: #c3f562; --lvl-high: #ff9d45; --lvl-critical: #ff5a6a;
-  --lvl-low-2: #13b884; --lvl-medium-2: #6fd13a; --lvl-high-2: #ff6a2b; --lvl-critical-2: #e8243f;
+  --font-label: var(--font-body);
+  --bg:      light-dark(#dfe9e0, #020906);
+  --panel:   light-dark(#eef4ee, #03100b);
+  --panel-2: light-dark(#d6e4d8, #04140e);
+  --ink:     light-dark(#0b3f2c, #7dffd0);
+  --ink-2:   light-dark(#1d6a4c, #4dbb92);
+  --ink-3:   light-dark(#39856a, #3a9a77);
+  --line:    light-dark(#a9c7b5, #164a37);
+  --line-2:  light-dark(#7fae94, #22694f);
+  --track:   light-dark(#c6dbcb, #0a2a1e);
+  --focus:   light-dark(#0b3f2c, #c8ffe9);
+  --amber:   light-dark(#8a5a00, #ffcf5a);
+  --claude:      light-dark(#0b3f2c, #7dffd0);
+  --ollama:      light-dark(#0b3f2c, #7dffd0);
+  --antigravity: light-dark(#0b3f2c, #7dffd0);
+  --lvl-low:      light-dark(#0a7a52, #3dfcb0); --lvl-low-2:      light-dark(#0a7a52, #13b884);
+  --lvl-medium:   light-dark(#4d7a0a, #c3f562); --lvl-medium-2:   light-dark(#4d7a0a, #6fd13a);
+  --lvl-high:     light-dark(#9a5200, #ff9d45); --lvl-high-2:     light-dark(#9a5200, #ff6a2b);
+  --lvl-critical: light-dark(#bc1427, #ff5a6a); --lvl-critical-2: light-dark(#bc1427, #e8243f);
   --radius-card: 0; --radius-control: 0;
 }
 
-/* Neon Cyberpunk: black glass, white-hot numerals, provider bloom. */
+/* Neon Cyberpunk: black glass, white-hot numerals, provider bloom. In daylight it keeps the
+ * bloom and the round geometry, over paper instead of glass. */
 :root[data-theme=neon] {
+  --accent: light-dark(#a21caf, #d946ef);
   --font-display: 'Orbitron', 'Manrope', sans-serif;
   --font-num: 'Oxanium', 'Orbitron', sans-serif;
-  --bg: #05040c; --panel: #0b0918; --panel-2: #120f26;
-  --ink: #f7f5ff; --ink-2: #aaa4cc; --ink-3: #8580ad;
-  --line: #262143; --line-2: #3a325f; --track: #17142c; --focus: #f0d9ff;
-  --claude: #ff8a2b; --claude-2: #ffd23f;
-  --ollama: #d946ef; --ollama-2: #8b5cf6;
-  --antigravity: #8ab4f8; --antigravity-2: #4285f4;
-  --lvl-low: #2cf5b0; --lvl-medium: #38d6ff; --lvl-high: #ffc23d; --lvl-critical: #ff3d81;
-  --lvl-low-2: #00b894; --lvl-medium-2: #1f7bff; --lvl-high-2: #ff8a1f; --lvl-critical-2: #ff2a4a;
+  --bg:      light-dark(#f4f1fb, #05040c);
+  --panel:   light-dark(#ffffff, #0b0918);
+  --panel-2: light-dark(#ece6fa, #120f26);
+  --ink:     light-dark(#1b1535, #f7f5ff);
+  --ink-2:   light-dark(#564b7d, #aaa4cc);
+  --ink-3:   light-dark(#776ca0, #8580ad);
+  --line:    light-dark(#d9d0f0, #262143);
+  --line-2:  light-dark(#bfb0e4, #3a325f);
+  --track:   light-dark(#e6dff8, #17142c);
+  --focus:   light-dark(#7a1fb8, #f0d9ff);
+  --claude:      light-dark(#c2510a, #ff8a2b); --claude-2:      light-dark(#a86a00, #ffd23f);
+  --ollama:      light-dark(#a21caf, #d946ef); --ollama-2:      light-dark(#6d28d9, #8b5cf6);
+  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #4285f4);
+  --lvl-low:      light-dark(#00866a, #2cf5b0); --lvl-low-2:      light-dark(#00866a, #00b894);
+  --lvl-medium:   light-dark(#0071a8, #38d6ff); --lvl-medium-2:   light-dark(#0071a8, #1f7bff);
+  --lvl-high:     light-dark(#9a6200, #ffc23d); --lvl-high-2:     light-dark(#9a6200, #ff8a1f);
+  --lvl-critical: light-dark(#c2185b, #ff3d81); --lvl-critical-2: light-dark(#c2185b, #ff2a4a);
   --radius-card: 26px; --radius-control: 999px;
 }
 
-/* Pixel Retro: 8-bit night, cream type, HP-bar bands. */
+/* Pixel Retro: 8-bit night, cream type, HP-bar bands. Daylight is the same cartridge at noon. */
 :root[data-theme=retro] {
+  --accent: light-dark(#b5560a, #ff9f43);
   --font-body: 'Jersey 10', 'DejaVu Sans Mono', monospace;
   --font-display: 'Press Start 2P', 'Jersey 10', monospace;
-  --bg: #0a0f2c; --panel: #141d52; --panel-2: #1b2766;
-  --ink: #fff3d6; --ink-2: #a9bdf0; --ink-3: #7286c6;
-  --line: #2c3c8c; --line-2: #4a64c8; --track: #0d1440; --focus: #ffe38a;
-  --outline: #0a0d26;
-  --claude: #ff9f43; --claude-2: #ffcf6b;
-  --ollama: #b388ff; --ollama-2: #e0d0ff;
-  --antigravity: #8ab4f8; --antigravity-2: #dbe8ff;
-  --lvl-low: #5ee06a; --lvl-medium: #d3e84a; --lvl-high: #ffab3d; --lvl-critical: #ff5a5f;
-  --lvl-low-2: #2aa84a; --lvl-medium-2: #8fc93a; --lvl-high-2: #ff7a1f; --lvl-critical-2: #d62b3c;
+  --font-label: var(--font-body);
+  --bg:      light-dark(#cfe4ff, #0a0f2c);
+  --panel:   light-dark(#fdf6e3, #141d52);
+  --panel-2: light-dark(#f2e6c8, #1b2766);
+  --ink:     light-dark(#17204f, #fff3d6);
+  --ink-2:   light-dark(#3a4a8c, #a9bdf0);
+  --ink-3:   light-dark(#5d6ea8, #7286c6);
+  --line:    light-dark(#17204f, #2c3c8c);
+  --line-2:  light-dark(#3a4a8c, #4a64c8);
+  --track:   light-dark(#e3d4ad, #0d1440);
+  --focus:   light-dark(#9a5f00, #ffe38a);
+  --outline: light-dark(#17204f, #0a0d26);
+  --claude:      light-dark(#b5560a, #ff9f43); --claude-2:      light-dark(#8a4e12, #ffcf6b);
+  --ollama:      light-dark(#6b32c9, #b388ff); --ollama-2:      light-dark(#4c2399, #e0d0ff);
+  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #dbe8ff);
+  --lvl-low:      light-dark(#1b8a2e, #5ee06a); --lvl-low-2:      light-dark(#1b8a2e, #2aa84a);
+  --lvl-medium:   light-dark(#6a7f14, #d3e84a); --lvl-medium-2:   light-dark(#6a7f14, #8fc93a);
+  --lvl-high:     light-dark(#9c5a00, #ffab3d); --lvl-high-2:     light-dark(#9c5a00, #ff7a1f);
+  --lvl-critical: light-dark(#c01e26, #ff5a5f); --lvl-critical-2: light-dark(#c01e26, #d62b3c);
   --radius-card: 0; --radius-control: 0;
 }
 
 /* Sci-Fi HUD: navy telemetry, cut corners, wide technical type. */
 :root[data-theme=hud] {
+  --accent: light-dark(#006a8a, #3cc4ff);
   --font-body: 'Chakra Petch', 'Manrope', sans-serif;
-  --bg: #03080e; --panel: #06101a; --panel-2: #0a1824;
-  --ink: #e9f4ff; --ink-2: #8fadc6; --ink-3: #6c8aa5;
-  --line: #142c44; --line-2: #22476a; --track: #0c1c2b; --focus: #9fe8ff;
-  --claude: #ff8a3d; --claude-2: #ffb47a;
-  --ollama: #b48cf2; --ollama-2: #d9b3ff;
-  --antigravity: #8ab4f8; --antigravity-2: #4285f4;
-  --lvl-low: #35e0a0; --lvl-medium: #3cc4ff; --lvl-high: #ffb23f; --lvl-critical: #ff4d6a;
-  --lvl-low-2: #14a874; --lvl-medium-2: #1a7dff; --lvl-high-2: #ff7a1a; --lvl-critical-2: #e01e3c;
+  --font-label: var(--font-body);
+  --bg:      light-dark(#e4edf4, #03080e);
+  --panel:   light-dark(#f7fbfe, #06101a);
+  --panel-2: light-dark(#dbe7f0, #0a1824);
+  --ink:     light-dark(#0b2133, #e9f4ff);
+  --ink-2:   light-dark(#38566d, #8fadc6);
+  --ink-3:   light-dark(#5c7a91, #6c8aa5);
+  --line:    light-dark(#b6cbdb, #142c44);
+  --line-2:  light-dark(#8fafc6, #22476a);
+  --track:   light-dark(#cddeea, #0c1c2b);
+  --focus:   light-dark(#006a8a, #9fe8ff);
+  --claude:      light-dark(#b85a14, #ff8a3d); --claude-2:      light-dark(#96501a, #ffb47a);
+  --ollama:      light-dark(#6b3fc0, #b48cf2); --ollama-2:      light-dark(#5330a0, #d9b3ff);
+  --antigravity: light-dark(#1a56c4, #8ab4f8); --antigravity-2: light-dark(#1246a8, #4285f4);
+  --lvl-low:      light-dark(#00795a, #35e0a0); --lvl-low-2:      light-dark(#00795a, #14a874);
+  --lvl-medium:   light-dark(#00688f, #3cc4ff); --lvl-medium-2:   light-dark(#00688f, #1a7dff);
+  --lvl-high:     light-dark(#8f5a00, #ffb23f); --lvl-high-2:     light-dark(#8f5a00, #ff7a1a);
+  --lvl-critical: light-dark(#c0152f, #ff4d6a); --lvl-critical-2: light-dark(#c0152f, #e01e3c);
   --radius-card: 0; --radius-control: 0;
-}
-
-/* Plain: the calm default. Same palette, type and hairlines as token-tv.riazrahaman.com and the
- * Stack Field Guide, so the dashboard and the site read as one thing. The four themes below are
- * costumes that mirror a clock face; this one gets out of the way of the numbers.
- * It is the only theme that follows the system light/dark preference. */
-:root[data-theme=plain] {
-  --font-body: 'IBM Plex Sans', 'Manrope', system-ui, -apple-system, sans-serif;
-  --font-display: var(--font-body);
-  --font-num: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-  --font-label: var(--font-num);
-
-  --bg: #F2EEE4; --panel: #FBF9F4; --panel-2: #E9E4D7;
-  --ink: #15171C; --ink-2: #4A4E57; --ink-3: #7A7E87;
-  --line: #CFC8B8; --line-2: #BDB4A0; --track: #E4DECE; --focus: #E0482A;
-  --accent: #E0482A;
-
-  /* Provider marks stay identifiable but stop competing with the readings. */
-  --claude: #C2622F; --claude-2: #C2622F;
-  --ollama: #7B3FCF; --ollama-2: #7B3FCF;
-  --antigravity: #1E64D6; --antigravity-2: #1E64D6;
-
-  --lvl-low: #0B8466; --lvl-medium: #1E64D6; --lvl-high: #B7860B; --lvl-critical: #E0482A;
-  --lvl-low-2: #0B8466; --lvl-medium-2: #1E64D6; --lvl-high-2: #B7860B; --lvl-critical-2: #E0482A;
-
-  --radius-card: 12px; --radius-control: 8px;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root[data-theme=plain] {
-    --bg: #0C1726; --panel: #13243B; --panel-2: #112036;
-    --ink: #E7EDF6; --ink-2: #A9B7CB; --ink-3: #7D8DA5;
-    --line: #26405F; --line-2: #33547B; --track: #16293F; --focus: #FF7A55;
-    --accent: #FF7A55;
-    --claude: #F2A06B; --claude-2: #F2A06B;
-    --ollama: #B38CFF; --ollama-2: #B38CFF;
-    --antigravity: #5EA0FF; --antigravity-2: #5EA0FF;
-    --lvl-low: #3DD6A8; --lvl-medium: #5EA0FF; --lvl-high: #F2C14E; --lvl-critical: #FF7A55;
-    --lvl-low-2: #3DD6A8; --lvl-medium-2: #5EA0FF; --lvl-high-2: #F2C14E; --lvl-critical-2: #FF7A55;
-  }
 }
