@@ -3,7 +3,7 @@
 <p align="center"><img src="docs/images/real-clock.jpg" alt="TokenTV on a real tiny desk clock"></p>
 <p align="center"><img src="docs/images/clock-faces.png" alt="Six clock faces (sample data)"></p>
 
-Your Claude, Ollama and Antigravity usage limits plus follow-the-sun global stock watchlists (US & India) on a [~$5 Wi-Fi desk clock](https://www.aliexpress.com/item/1005007425624137.html). No firmware flashing. The stocks face can also run as a whole-market movers board (top gainers + losers) or as a stocks-only face with no usage rows, switchable from the dashboard.  
+Your Claude, Ollama and Antigravity usage limits plus follow-the-sun global stock watchlists (US & India) on a [~$5 Wi-Fi desk clock](https://www.aliexpress.com/item/1005007425624137.html). No firmware flashing. The stocks face can also run as a whole-market movers board (top gainers + losers) or as a stocks-only Night-Cards face (rounded, sign-tinted cards, no usage rows), switchable from the dashboard.  
 **Try it:** [live demo](https://token-tv.vercel.app) or `npx github:click6067-ship-it/token-tv demo`, no clock or login needed.  
 **Set it up:** give this repo to your AI and say *"Set up TokenTV for me."* It follows [AGENTS.md](AGENTS.md).  
 **Make your own face:** no clock needed, start from the [Game Boy example](examples/gameboy) and ask your AI to change it. [Guide](docs/clock-faces.md) · [Share it](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md)  

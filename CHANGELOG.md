@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Night Cards for the `stocks` face**: the stocks-only board is rebuilt in the approved Night Cards design — dark-navy sky with star margins, four rounded cards tinted to each row's sign, the arrowed percent as the biggest text with a dim glow, the symbol and price at scale 2, and the 5%-fill magnitude bar tinted to the card. Closed or stale feeds still read CLOSED over dim dash cards.
+
 ## [0.4.5] — 2026-10-15
 ### Added
 - New `stocks` display face: full-screen 4-row gainers/losers board (no AI usage rows); works in watchlist and movers modes.
