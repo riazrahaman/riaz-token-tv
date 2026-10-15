@@ -111,6 +111,158 @@ class DisplayStyleTests(unittest.TestCase):
                 load_config(path)
 
 
+class StocksControlsTests(unittest.TestCase):
+    """POST /stocks/mode and /stocks/symbols follow the /display/style hardening pattern."""
+
+    @staticmethod
+    def _account():
+        return {'key': 'a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'owner@example.com'}
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def _start(self, stock_data, with_feed=True):
+        """A live handler + preferences bound to a temp config and stock config file."""
+        from token_tv.live import DisplayPreferences, handler
+        from token_tv.state import UsageStore
+        directory = Path(self.directory.name)
+        account = self._account()
+        main_config = {'accounts': [account], 'display_style': 'pixel'}
+        if with_feed:
+            stocks_path = directory / 'stocks.json'
+            stocks_path.write_text(json.dumps(stock_data if stock_data is not None else {}))
+            main_config['stocks_config'] = str(stocks_path)
+        else:
+            stocks_path = None
+        path = directory / 'config.json'
+        path.write_text(json.dumps(main_config))
+        row = dict(account, status='ok', windows=[{'label': 'WEEK', 'used_percent': 94, 'resets_at': None}], fetched_at=100)
+        store = UsageStore([account], fetch=Mock(return_value=row))
+        store.refresh()
+        preferences = DisplayPreferences(path, main_config)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), handler(store, preferences))
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        return f'http://127.0.0.1:{server.server_port}', preferences, stocks_path, server, thread
+
+    def _stop(self, server, thread):
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    def post(self, root, path, payload, origin=None):
+        headers = {'Content-Type': 'application/json'}
+        if origin:
+            headers['Origin'] = origin
+        return urlopen(Request(root + path, data=json.dumps(payload).encode(), headers=headers))
+
+    def test_mode_and_symbols_persist_into_the_stock_config(self):
+        root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
+        from token_tv import stocks
+        try:
+            with urlopen(root + '/display') as response:
+                display = json.load(response)
+            self.assertEqual(display['stocks'], {'mode': 'watchlist', 'symbols': ['AAPL'], 'movers_count': 2})
+            with self.post(root, '/stocks/mode', {'mode': 'movers'}) as response:
+                state = json.load(response)
+            self.assertEqual(state['stocks']['mode'], 'movers')
+            self.assertEqual(json.loads(stocks_path.read_text())['mode'], 'movers')
+            with self.post(root, '/stocks/symbols', {'symbols': ['msft', 'NVDA ']}) as response:
+                json.load(response)
+            saved = json.loads(stocks_path.read_text())
+            self.assertEqual(saved['symbols'], ['MSFT', 'NVDA'])  # upper-cased, trimmed
+            stocks.load_stock_config(stocks_path)  # the feeder reloads it without complaint
+            with self.post(root, '/stocks/mode', {'mode': 'watchlist'}):
+                pass
+        finally:
+            self._stop(server, thread)
+
+    def test_symbols_validation_paths(self):
+        root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
+        try:
+            for symbols in ([], ['aapl', 'AAPL'], ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD'],
+                            'AAPL', ['AA PL'], [{'x': 1}], [42], ['aapl', 'msft', 'nvda', 'tsla', 'amd', 'meta', 'goog']):
+                with self.assertRaises(HTTPError, msg=symbols) as raised:
+                    self.post(root, '/stocks/symbols', {'symbols': symbols})
+                self.assertEqual(raised.exception.code, 400)
+            for data in ({}, {'mode': 'movers'}, {'symbols': ['AAPL'], 'extra': 1}):
+                with self.assertRaises(HTTPError, msg=data) as raised:
+                    urlopen(Request(root + '/stocks/symbols', data=json.dumps(data).encode(),
+                                    headers={'Content-Type': 'application/json'}))
+                self.assertEqual(raised.exception.code, 400)
+            self.assertEqual(json.loads(stocks_path.read_text())['symbols'], ['AAPL'])  # nothing saved on 400
+        finally:
+            self._stop(server, thread)
+
+    def test_a_stocks_post_without_a_stock_feed_is_a_conflict(self):
+        root, _, _, server, thread = self._start(None, with_feed=False)
+        try:
+            for path, payload in (('/stocks/mode', {'mode': 'movers'}), ('/stocks/symbols', {'symbols': ['AAPL']})):
+                with self.assertRaises(HTTPError) as raised:
+                    self.post(root, path, payload)
+                self.assertEqual(raised.exception.code, 409)
+            with urlopen(root + '/display') as response:
+                self.assertIsNone(json.load(response)['stocks'])  # no feed section to render
+        finally:
+            self._stop(server, thread)
+
+    def test_stocks_state_clamps_an_unusable_movers_count_to_the_default(self):
+        from token_tv.live import DisplayPreferences
+        directory = Path(self.directory.name)
+        account = self._account()
+        main_config = {'accounts': [account], 'display_style': 'pixel'}
+        main_config['stocks_config'] = str(directory / 'stocks.json')
+        path = directory / 'config.json'
+        path.write_text(json.dumps(main_config))
+        preferences = DisplayPreferences(path, main_config)
+        for raw, clamped in ((99, 2), (0, 2), (-1, 2), ('2', 2), (2.0, 2), (True, 2), (None, 2), (1, 1), (4, 4)):
+            (directory / 'stocks.json').write_text(json.dumps({'symbols': ['AAPL'], 'movers_count': raw}))
+            self.assertEqual(preferences.snapshot()['stocks']['movers_count'], clamped, raw)
+
+    def test_a_stock_config_that_is_not_an_object_is_a_conflict(self):
+        root, _, stocks_path, server, thread = self._start(None)
+        stocks_path.write_text('[1, 2, 3]')
+        try:
+            with self.assertRaises(HTTPError) as raised:
+                self.post(root, '/stocks/mode', {'mode': 'movers'})
+            self.assertEqual(raised.exception.code, 409)  # nothing was corrupted into an object
+        finally:
+            self._stop(server, thread)
+
+    def test_origin_mismatch_and_bad_mode_are_rejected_like_the_style_endpoint(self):
+        root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
+        try:
+            # A cross-origin POST is always exactly 403, on all three POST endpoints.
+            for path, payload in (('/display/style', {'style': 'pixel'}),
+                                  ('/stocks/mode', {'mode': 'movers'}),
+                                  ('/stocks/symbols', {'symbols': ['AAPL']})):
+                headers = {'Content-Type': 'application/json', 'Origin': 'https://unrelated.example'}
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(Request(root + path, data=json.dumps(payload).encode(), headers=headers))
+                self.assertEqual(raised.exception.code, 403, path)
+            self.assertEqual(json.loads(stocks_path.read_text())['symbols'], ['AAPL'])  # nothing changed
+        finally:
+            self._stop(server, thread)
+
+    def test_bad_bodies_are_400_and_unknown_paths_are_404(self):
+        root, _, stocks_path, server, thread = self._start({'symbols': ['AAPL']})
+        try:
+            # A bad body is exactly 400, and an unknown endpoint is exactly 404.
+            for path, payload, code in (('/stocks/mode', {'mode': 'banana'}, 400),
+                                        ('/stocks/mode', {'mode': 'movers', 'extra': 1}, 400),
+                                        ('/stocks/symbols', {'symbols': ['AAPL'] * 2}, 400),
+                                        ('/stocks/nope', {'mode': 'movers'}, 404)):
+                with self.assertRaises(HTTPError) as raised:
+                    self.post(root, path, payload)
+                self.assertEqual(raised.exception.code, code, path)
+            self.assertEqual(json.loads(stocks_path.read_text())['symbols'], ['AAPL'])  # nothing changed
+        finally:
+            self._stop(server, thread)
+
+
 if __name__ == '__main__':
     unittest.main()
 

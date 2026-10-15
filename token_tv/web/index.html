@@ -63,6 +63,25 @@
       <select id="clock-style" class="control"></select>
       <button class="control primary" id="apply" type="button" disabled>Apply to clock</button>
       <p id="display-state" role="status">Loading clock status</p>
+      <div id="stocks-controls" hidden>
+        <label>Stocks</label>
+        <div id="stocks-modes" role="group" aria-label="Stocks mode">
+          <button class="control" id="stocks-watchlist" type="button" aria-pressed="true" disabled>Watchlist</button>
+          <button class="control" id="stocks-movers" type="button" aria-pressed="false" disabled>Movers</button>
+        </div>
+        <div id="stocks-editor">
+          <label>Watchlist tickers</label>
+          <div id="stocks-symbols">
+            <input class="control stocks-ticker" maxlength="16" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="AAPL" aria-label="Ticker 1">
+            <input class="control stocks-ticker" maxlength="16" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="MSFT" aria-label="Ticker 2">
+            <input class="control stocks-ticker" maxlength="16" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="NVDA" aria-label="Ticker 3">
+            <input class="control stocks-ticker" maxlength="16" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="TSLA" aria-label="Ticker 4">
+          </div>
+          <button class="control primary" id="stocks-apply" type="button" disabled>Apply tickers</button>
+        </div>
+        <p id="stocks-movers-note" class="quiet" hidden></p>
+        <p id="stocks-state" role="status" class="quiet"></p>
+      </div>
       <p class="quiet">240 × 240 · The web appearance is separate from your clock style.</p>
     </aside>
   </div>

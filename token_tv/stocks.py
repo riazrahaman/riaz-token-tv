@@ -37,6 +37,11 @@ from token_tv.history import append_history
 QUOTE_URL = 'https://finnhub.io/api/v1/quote'
 STATUS_URL = 'https://finnhub.io/api/v1/stock/market-status'
 YAHOO_CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart'
+YAHOO_SCREENER_URL = 'https://query1.finance.yahoo.com/v1/finance/screener'
+YAHOO_COOKIE_URL = 'https://fc.yahoo.com'
+YAHOO_CRUMB_URL = 'https://query1.finance.yahoo.com/v1/test/getcrumb'
+YAHOO_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+SCREENER_PAGE = 12     # candidates per screener POST; the board keeps the top few of each side
 KEYCHAIN_SERVICE = 'token-tv-finnhub'
 DEFAULT_SYMBOLS_US = ('AAPL', 'MSFT', 'NVDA', 'TSLA')
 DEFAULT_SYMBOLS_IN = ('RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS')
@@ -50,6 +55,8 @@ STALE_AFTER = 900     # a live quote older than this is marked OLD
 MAGNITUDE_FULL = 5.0  # |change %| that fills the row's magnitude bar
 SIZE = 240
 DEFAULT_STYLE = 'pixel'
+STOCK_MODES = ('watchlist', 'movers')
+MOVERS_COUNT = 2      # top-N gainers and top-N losers; the board is 2N rows
 
 
 class StockError(Exception):
@@ -301,6 +308,162 @@ def collect(symbols, token, source='FINNHUB'):
 
 
 # ---------------------------------------------------------------------------
+# Whole-market movers (Yahoo custom screener; no API key, one cookie+crumb per process)
+# ---------------------------------------------------------------------------
+_yahoo_session_state = None  # cached (cookie, crumb); the crumb is rate-limited, so never per-cycle
+
+
+def _fetch_yahoo_session():
+    """A fresh Yahoo cookie and crumb. Any failure is a StockError; no URL ever escapes."""
+    cookie = ''
+    try:
+        with urlopen(Request(YAHOO_COOKIE_URL, headers={'User-Agent': YAHOO_UA}), timeout=20) as response:
+            cookie = response.headers.get('Set-Cookie') or ''
+    except HTTPError as error:
+        cookie = error.headers.get('Set-Cookie') or ''  # fc.yahoo.com answers 404 with the cookie
+    except (URLError, OSError, TimeoutError):
+        cookie = ''
+    headers = {'User-Agent': YAHOO_UA}
+    if cookie:
+        headers['Cookie'] = cookie
+    try:
+        with urlopen(Request(YAHOO_CRUMB_URL, headers=headers), timeout=20) as response:
+            crumb = response.read().decode('utf-8', 'replace').strip()
+    except (HTTPError, URLError, OSError, TimeoutError):
+        raise StockError('crumb_unavailable') from None
+    if not crumb or len(crumb) > 32:
+        raise StockError('crumb_unavailable')
+    return cookie, crumb
+
+
+def yahoo_session(refresh=False):
+    """The process's cached (cookie, crumb), fetched once; ``refresh`` swaps in a fresh crumb."""
+    global _yahoo_session_state
+    if refresh or _yahoo_session_state is None:
+        _yahoo_session_state = _fetch_yahoo_session()
+    return _yahoo_session_state
+
+
+def screener_query(region, sort_type):
+    """The screener POST body. Filters mirror Yahoo's own day_gainers/day_losers screens."""
+    if region == 'in':
+        # India screens that return real NSE/BSE liquidity, verified against the live API.
+        operands = [
+            {'operator': 'gte', 'operands': ['intradaymarketcap', 100_000_000_000]},
+            {'operator': 'gte', 'operands': ['intradayprice', 20]},
+            {'operator': 'gt', 'operands': ['dayvolume', 100_000]},
+        ]
+    else:
+        # A mirror of Yahoo's public day_gainers / day_losers screens.
+        operands = [
+            {'operator': 'gt', 'operands': ['percentchange', 3.0 if sort_type == 'DESC' else -2.5]},
+            {'operator': 'gte', 'operands': ['intradaymarketcap', 2_000_000_000]},
+            {'operator': 'gte', 'operands': ['intradayprice', 5]},
+            {'operator': 'gt', 'operands': ['dayvolume', 15_000 if sort_type == 'DESC' else 20_000]},
+        ]
+    return {'offset': 0, 'count': SCREENER_PAGE, 'sortField': 'percentchange', 'sortType': sort_type,
+            'userId': '', 'userIdType': 'guid', 'quoteType': 'EQUITY',
+            'query': {'operator': 'and', 'operands': [{'operator': 'eq', 'operands': ['region', region]}]
+                      + operands}}
+
+
+def _request_post_json(url, payload, headers=None):
+    """POST JSON and get JSON back; on any failure raise a URL-free StockError."""
+    try:
+        h = {'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': YAHOO_UA}
+        if headers:
+            h.update(headers)
+        body = json.dumps(payload).encode()
+        with urlopen(Request(url, data=body, headers=h, method='POST'), timeout=20) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise StockError('http_' + str(error.code)) from None
+    except (URLError, OSError, ValueError, TimeoutError):
+        raise StockError('unavailable') from None
+
+
+def screener_quotes(region, sort_type):
+    """The raw quote dicts ranked percentchange DESC (gainers) or ASC (losers)."""
+    cookie, crumb = yahoo_session()
+    headers = {'Cookie': cookie} if cookie else None
+    query = urlencode({'crumb': crumb, 'corsDomain': 'finance.yahoo.com', 'formatted': 'false',
+                       'lang': 'en-US', 'region': 'US'})
+    data = _request_post_json(f'{YAHOO_SCREENER_URL}?{query}', screener_query(region, sort_type),
+                              headers=headers)
+    try:
+        quotes = data['finance']['result'][0]['quotes']
+    except (KeyError, IndexError, TypeError):
+        raise StockError('invalid_response') from None
+    return quotes if isinstance(quotes, list) else []
+
+
+def screener_rows(quotes):
+    """Display rows from screener quotes. Dead or missing quotes are dropped, never fabricated."""
+    rows = []
+    for quote in quotes:
+        if not isinstance(quote, dict):
+            continue
+        symbol = quote.get('symbol')
+        price = _number(quote.get('regularMarketPrice'))
+        percent = _number(quote.get('regularMarketChangePercent'))
+        if not isinstance(symbol, str) or not symbol.strip():
+            continue
+        if price is None or price <= 0 or percent is None:
+            continue
+        stamp = _number(quote.get('regularMarketTime'))
+        rows.append({'symbol': symbol.strip().upper(), 'price': price, 'change': _number(quote.get('regularMarketChange')),
+                     'percent': percent, 'previous_close': _number(quote.get('regularMarketPreviousClose')),
+                     'at': int(stamp) if stamp and stamp > 0 else None})
+    return rows
+
+
+def dedupe_movers(rows):
+    """One row per company: the .NS listing wins over its .BO twin; SME listings are dropped.
+
+    Rows keep their ranked order; a .BO row that later gains an .NS twin is replaced in place."""
+    best, order = {}, []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get('symbol') or '').strip().upper()
+        if not symbol or symbol.endswith('-SM'):
+            continue
+        base = display_symbol(symbol)
+        if base in best:
+            if symbol.endswith('.NS') and not best[base]['symbol'].endswith('.NS'):
+                best[base] = dict(row, symbol=symbol)
+            continue
+        best[base] = dict(row, symbol=symbol)
+        order.append(base)
+    return [best[base] for base in order]
+
+
+CRUMB_RETRIES_FOR = ('http_401', 'http_403', 'invalid_response')
+
+
+def fetch_movers(exchange, count=MOVERS_COUNT):
+    """Top gainers then top losers, deduped, as display rows: [G1..Gn, L1..Ln].
+
+    Only auth/contract failures are worth one fresh crumb (getcrumb is rate-limited, so a 429
+    or a plain outage must never re-hit it — the caller keeps last-good and backs off instead)."""
+    region = 'in' if exchange == 'NSE' else 'us'
+
+    def side(sort_type, descending):
+        board = dedupe_movers(screener_rows(screener_quotes(region, sort_type)))
+        board.sort(key=lambda row: row['percent'], reverse=descending)  # ranked, whatever the page says
+        return board[:max(1, int(count))]
+
+    try:
+        gainers, losers = side('DESC', True), side('ASC', False)
+    except StockError as error:
+        if error.code not in CRUMB_RETRIES_FOR:
+            raise
+        yahoo_session(refresh=True)  # one fresh crumb, at most
+        gainers, losers = side('DESC', True), side('ASC', False)
+    return gainers + losers
+
+
+# ---------------------------------------------------------------------------
 # Drawing
 # ---------------------------------------------------------------------------
 def change_ink(percent, palette=None):
@@ -465,7 +628,7 @@ def snapshot_payload(rows, meta):
 # Config (its own strict loader; never ``sources.load_config``)
 # ---------------------------------------------------------------------------
 STOCK_KEYS = ('device_url', 'symbols', 'symbols_in', 'interval', 'palette', 'state_dir', 'reassert_cycles',
-              'max_writes_per_hour')
+              'max_writes_per_hour', 'mode', 'movers_count')
 PALETTE_ROLES = ('background', 'text', 'rise', 'fall', 'dim')
 CREDENTIAL_WORDS = ('token', 'api_key', 'apikey', 'secret', 'password', 'credential', 'auth', 'key')
 SYMBOL_PATTERN = re.compile(r'\^?[A-Z][A-Z0-9.\-]{0,15}')
@@ -551,6 +714,14 @@ def load_stock_config(path):
             or not MIN_INTERVAL <= interval <= MAX_INTERVAL):
         raise ValueError(f'interval must be a whole number of seconds from {MIN_INTERVAL} to {MAX_INTERVAL}')
     config['interval'] = interval
+    mode = data.get('mode', 'watchlist')
+    if mode not in STOCK_MODES:
+        raise ValueError(f'mode must be one of: {", ".join(STOCK_MODES)}')
+    config['mode'] = mode
+    count = data.get('movers_count', MOVERS_COUNT)
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_SYMBOLS:
+        raise ValueError(f'movers_count must be a whole number from 1 to {MAX_SYMBOLS}')
+    config['movers_count'] = count
     if 'palette' in data:
         config['palette'] = parse_palette(data['palette'])
     if 'state_dir' in data:
@@ -656,6 +827,31 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+RELOAD_KEYS = ('symbols', 'symbols_in', 'mode', 'movers_count', 'interval')
+
+
+def reload_stock_config(path, config, mtime):
+    """Re-read the stock config when its file changed; a bad edit keeps the last-good one.
+
+    Mid-run changes to the tickers, mode, movers count and interval take effect the next
+    cycle; the device, state directory and palette are decided at startup. Startup itself
+    still exits on an invalid file, as before."""
+    path = Path(path)
+    try:
+        fresh = path.stat().st_mtime
+    except OSError:
+        return config, mtime
+    if mtime is not None and fresh == mtime:
+        return config, mtime
+    try:
+        updated = load_stock_config(path)
+    except (OSError, ValueError) as error:
+        print(f'Ignoring stock config change: {error}', flush=True)
+        return config, fresh
+    config.update({key: updated[key] for key in RELOAD_KEYS if key in updated})
+    return config, fresh
+
+
 def _state_directory(args, config):
     if args.state_dir:
         return Path(args.state_dir).expanduser()
@@ -684,6 +880,11 @@ def main(argv=None):
         print(f'{args.config} is not a valid stock config ({error}).', file=sys.stderr)
         return 1
 
+    try:
+        config_mtime = Path(args.config).stat().st_mtime
+    except OSError:
+        config_mtime = None
+
     state_dir = _state_directory(args, config)
     backup_path = state_dir / 'display-original.json'
     device = open_display(config['device_url']) if config.get('device_url') else None
@@ -701,15 +902,15 @@ def main(argv=None):
         print('Original display selection restored.')
         return 0
 
-    try:
-        token = finnhub_token()
-    except StockError:
-        print('No Finnhub API key. Set FINNHUB_API_KEY, or store it in the macOS Keychain '
-              f'(security add-generic-password -s {KEYCHAIN_SERVICE} -w).', file=sys.stderr)
-        return 1
-
-    interval = args.interval if args.interval is not None else config.get('interval', OPEN_INTERVAL)
-    interval = max(MIN_INTERVAL, int(interval))
+    if config.get('mode', 'watchlist') == 'movers':
+        token = None  # the screener is keyless; movers mode needs no credentials
+    else:
+        try:
+            token = finnhub_token()
+        except StockError:
+            print('No Finnhub API key. Set FINNHUB_API_KEY, or store it in the macOS Keychain '
+                  f'(security add-generic-password -s {KEYCHAIN_SERVICE} -w).', file=sys.stderr)
+            return 1
 
     original = active_file = last_upload = None
     # Re-assert the photo theme periodically: a reboot or a visit to the clock's own web UI drops
@@ -721,17 +922,47 @@ def main(argv=None):
     budget = max(0, int(config.get('max_writes_per_hour', 0)))
     status, failures = {}, 0
     cycles, last_write = 0, None
+    last_movers = []  # the previous board, kept whole when a screener poll fails
+    warned_no_token = False
     try:
         while True:
             now = time.time()
             cycles += 1
+            config, config_mtime = reload_stock_config(args.config, config, config_mtime)
+            mode = config.get('mode', 'watchlist')
+            interval = args.interval if args.interval is not None else config.get('interval', OPEN_INTERVAL)
+            interval = max(MIN_INTERVAL, int(interval))
+            if mode == 'watchlist' and token is None:
+                # A hot edit switched back to the watchlist: pick up a token if one appeared.
+                try:
+                    token = finnhub_token()
+                except StockError:
+                    if not warned_no_token:
+                        print('No Finnhub API key for the watchlist. Set FINNHUB_API_KEY, or store it in the '
+                              f'macOS Keychain (security add-generic-password -s {KEYCHAIN_SERVICE} -w); '
+                              'rows show dashes until a key appears.', file=sys.stderr, flush=True)
+                        warned_no_token = True
             try:
-                status = fetch_market_status(token)
+                status = fetch_market_status(token) if token is not None else None
             except StockError:
                 # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
                 pass
             active = select_active_market(config, token, now=now, us_status=status)
-            rows, quote_failures = collect(active['symbols'], token, source=active['source'])
+            if mode == 'movers':
+                active['source'] = 'YAHOO'  # the screener serves both markets, via Yahoo
+                try:
+                    rows = fetch_movers(active['exchange'], config.get('movers_count', MOVERS_COUNT))
+                    last_movers = rows
+                    quote_failures = 0
+                except StockError:
+                    # The screener failed twice: keep the previous board.
+                    rows = last_movers
+                    quote_failures = 1
+            elif token is None:
+                rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
+                quote_failures = len(rows)
+            else:
+                rows, quote_failures = collect(active['symbols'], token, source=active['source'])
             is_open = active['is_open']
             meta = {'is_open': is_open, 'session': active['session'], 'source': active['source'],
                     'exchange': active['exchange'], 'tz': active['tz'],
@@ -760,7 +991,7 @@ def main(argv=None):
             if args.once:
                 break
             wait = interval if is_open else market_poll_interval({'is_open': is_open})
-            failures = failures + 1 if (quote_failures or not status) else 0
+            failures = failures + 1 if (quote_failures or (token is not None and not status)) else 0
             if failures:
                 wait = min(max(wait, interval * (2 ** min(failures, 3))), 600)
             time.sleep(max(MIN_INTERVAL, wait))
