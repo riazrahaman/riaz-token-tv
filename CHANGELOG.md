@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-10-16
+
+### Changed
+
+- **The dashboard was rebuilt around one gauge per account.** A percentage bar reads as "how far along is this"; the question a quota dashboard answers is "how much is left", which is what a gauge reads as. Every account now gets its own card, sized to be compared with the others at a glance, and the account tabs are gone — a tab put a reading one click behind a button and misaligned the gauges it sat above. Severity is written out (`LOW USAGE` … `LIMIT REACHED`) as well as coloured, so a reading survives greyscale; the bands are unchanged. A stale reading greys its arc and says `OLD, not a current reading`; an account with no reading shows `––` and what to do about it, never a zero. Second windows became quiet rows under *Other windows*, and the clock panel no longer hides behind a toggle.
+- **One appearance, taken from the project page.** The web theme picker offered Digital Terminal, Neon Cyberpunk, Pixel Retro and Sci-Fi HUD — the same four choices the clock face dropdown already offers, two rows further down the same page. The costumes belong on the clock. The single design now follows token-tv.riazrahaman.com: IBM Plex, the 28 px hairline grid, the 2 px masthead rule over mono small caps, pill controls and 16 px cards.
+- **Light, dark and auto.** Every colour token is `light-dark(light, dark)`, so the control switches nothing but `color-scheme`.
+
+### Removed
+
+- **Gallery likes.** The counts were reactions on the upstream project's issues, which do not exist in this repository; they said nothing about whether a face is any good. The Popular/New sort went with them — without counts, Popular sorted identically to New. Faces sort newest first.
+
+### Fixed
+
+- **The Combo gallery thumbnail was byte-identical to Pixel.** `build_demo.py` handed the sampled stock board to the `stocks` style alone, so the whole combo family drew its closed-market fallback and the one face whose point is usage and the market on one screen advertised neither. It now gates on `display.STOCK_STYLES`, the list `live.py` already uses for the album alternation.
+- **The gallery repainted every five seconds.** `/display` is polled on that cadence and `live.py` serves `/frame/` with `Cache-Control: no-store`, so an always-visible clock panel would have re-rendered all thirteen faces inside the publisher's own process every five seconds — and dropped the revealed Apply button with them. It now repaints only when something visible changes.
+- **The clock panel reported the preview as if it were on the clock.** `Showing …` now names `applied_style`, which is what the gallery's *On the clock* marker already used.
+
 ## [0.4.11] — 2026-10-15
 
 ### Fixed
@@ -235,6 +253,7 @@ that actually changed.
 
 First tagged release.
 
+[0.5.0]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.5.0
 [0.4.11]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.11
 [0.4.10]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.10
 [0.4.9]: https://github.com/riazrahaman/riaz-token-tv/releases/tag/v0.4.9

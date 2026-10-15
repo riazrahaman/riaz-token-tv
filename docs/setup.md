@@ -43,8 +43,8 @@ copy locally, or fork if you want your version on GitHub.
 
 Want others to use it? Open a normal pull request and copy in the
 [New clock face checklist](../.github/PULL_REQUEST_TEMPLATE/theme.md). Shared faces appear in the
-**Gallery** for everyone on the next release, sorted by **Popular** (👍 on each theme's GitHub issue)
-or **New**. Likes are counted by hand before releases, so the list says when they were counted.
+**Gallery** for everyone on the next release, newest first. Click a thumbnail to preview a face in
+the clock panel; **Apply** then sends it, and appears only once you have looked.
 
 <details>
 <summary><b>Hardware</b></summary>
