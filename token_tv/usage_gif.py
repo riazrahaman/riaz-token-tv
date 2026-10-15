@@ -17,6 +17,7 @@ from token_tv.display import (BACKGROUND, MUTED, RULE, STATUS, TEXT, mascot, ove
                               pixel_text, primary_window, quota_period, row_shift, time_left)
 
 SHIMMER_STEP = 3  # gauge segments the highlight walks per phase — a clearly visible distance
+SHIMMER_MS = 300  # per sweep phase: obvious movement, not a strobe — a ~1.2 s walk per bar
 USAGE_PHASES = tuple(offset for offset in range(0, 10, SHIMMER_STEP))  # 0, 3, 6, 9: four stages
 USAGE_FRAMES = len(USAGE_PHASES)
 
@@ -24,8 +25,8 @@ USAGE_FRAMES = len(USAGE_PHASES)
 def render_usage_frame(snapshot, frame):
     """One shimmer frame of the usage face.
 
-    The sweep phases are ~2.8 s apart (about the panel's repaint cadence), and each one moves the
-    highlight three filled segments along, so the panel physically repaints a visibly moved bar."""
+    The sweep phases are ~300 ms apart — obvious movement, not a strobe — and each one moves the
+    highlight three filled segments along, so the walk across the bar is unmistakable."""
     shimmer = USAGE_PHASES[frame % USAGE_FRAMES]
     image = Image.new('RGB', (240, 240), BACKGROUND)
     draw = ImageDraw.Draw(image)
@@ -59,4 +60,4 @@ def render_usage_frame(snapshot, frame):
 def render_usage_gif(snapshot):
     """The usage face as a GIF: the provider gauges shimmer, everything else is still."""
     frames = [render_usage_frame(snapshot, f) for f in range(USAGE_FRAMES)]
-    return _gif_bytes(frames)
+    return _gif_bytes(frames, ms=SHIMMER_MS)

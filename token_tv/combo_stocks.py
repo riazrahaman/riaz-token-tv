@@ -48,9 +48,9 @@ def arrow(draw, x, y, up, scale, colour):
 def _arrow_and_percent(draw, right, y, percent, scale, colour, amplitude=None):
     """Arrow + magnitude right-aligned at `right`, with the dim glow copy beneath.
 
-    `amplitude` (0..1, one step per ~2.8 s) breathes the arrow and its glow across big, slow
+    `amplitude` (0..1, one step per 500 ms) breathes the arrow and its glow across big, slow
     swings: an edge-to-edge ink swing (mix .25 ↔ 1.0) with the glow riding .0 ↔ .5 — visible at
-    the panel's repaint cadence. The percent text itself is drawn identically on every frame, so
+    a glance. The percent text itself is drawn identically on every frame, so
     the GIF's frames stay compressible."""
     text = f'{abs(percent):.2f}%'
     pixel_text(draw, (right + 1, y + 1), text, scale, mix(colour, .5 * amplitude) if amplitude is not None
@@ -131,15 +131,15 @@ def render_combo_stocks(snapshot, amplitude=None):
 
 ARROW_PHASES = (1.0, 0.5, 0.0, 0.5)  # the breathe cycle: full, mid, edge, mid — big, unmistakable swings
 ARROW_FRAMES = len(ARROW_PHASES)
-PHASE_MS = 2800  # one phase per panel repaint: the SD_PRO panel re-reads a rotated file every ~2.5 s
+PHASE_MS = 500  # one breathe phase per half-second: a 2.0 s full loop — fast enough to read as alive
 
 
 def _gif_bytes(frames, ms=PHASE_MS):
-    """A 256-colour quantised GIF (no dither, cyber's encoding) paced at the panel's repaint rate.
+    """A 256-colour quantised GIF (no dither, cyber's encoding) paced by the caller (`ms`/phase).
 
     Adjacent pixel-identical frames are merged with their durations added before encoding, so no
-    encoder can coalesce a phase away: every stored frame lasts `ms` (a real repaint window) or
-    longer, and every stored frame differs from its neighbour."""
+    encoder can coalesce a phase away: every stored frame lasts `ms` or longer, and every stored
+    frame differs from its neighbour."""
     colours = set()
     for frame in frames:
         colors = frame.getcolors(maxcolors=frame.width * frame.height)
