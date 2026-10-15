@@ -139,6 +139,7 @@ but its layout on a HYTE Y70 display has not been tested. There is no Apple Watc
 - **US Equities**: Polled from Finnhub (requires free API key via Keychain service `token-tv-finnhub` or `FINNHUB_API_KEY`). Active during regular US hours (09:30–16:00 ET / 13:30–20:00 UTC, Mon–Fri).
 - **Indian Equities (NSE/BSE)**: Polled from Yahoo Finance's public v8 chart API (zero-config, no API key or registration required). Active during regular Indian hours (09:15–15:30 IST / 03:45–10:00 UTC, Mon–Fri).
 - **Off-hours gap**: When neither market is open, the runner enters off-hours mode, allowing combo faces to display full-size AI usage.
+- **Movers mode data sources**: the US board reads Yahoo's crumb-free predefined screens (`day_gainers`/`day_losers`), falling back to a single guarded custom screener POST; India ranks from the custom POST with client-side threshold checks. A flaked or degraded query never reaches the board: it gets one fresh-crumb retry, then the previous board is kept and the poll backs off.
 
 Config keys in `stocks.json`:
 - `"symbols"`: List of US tickers (defaults to `["AAPL", "MSFT", "NVDA", "TSLA"]`).

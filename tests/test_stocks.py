@@ -521,7 +521,7 @@ class CliTests(unittest.TestCase):
 
 
 class MoversTests(unittest.TestCase):
-    """The whole-market movers board: screener parse, dedupe, ranking and fallback."""
+    """The whole-market movers board: parse, flake guard, dedupe, ranking and fallback."""
 
     def setUp(self):
         stocks._yahoo_session_state = None  # tests must not share a cached session
@@ -530,10 +530,22 @@ class MoversTests(unittest.TestCase):
         stocks._yahoo_session_state = None
 
     @staticmethod
-    def quote(symbol, price, percent, change=None, at=1791900000):
+    def quote(symbol, price, percent, change=None, at=1791900000, cap=150_000_000_000.0, volume=200_000.0):
+        """A raw screener quote; the India threshold fields ride along (the US never reads them)."""
         return {'symbol': symbol, 'regularMarketPrice': price,
                 'regularMarketChange': price * percent / 100 if (change is None and percent is not None) else change,
-                'regularMarketChangePercent': percent, 'regularMarketTime': at}
+                'regularMarketChangePercent': percent, 'regularMarketTime': at,
+                'intradaymarketcap': cap, 'dayvolume': volume}
+
+    @staticmethod
+    def gainers():
+        """A Yahoo gainers page: sorted DESC as it answers, per the captured shape."""
+        return [MoversTests.quote('G1.NS', 21.0, 6.0), MoversTests.quote('G2.NS', 25.0, 5.5),
+                MoversTests.quote('G3.NS', 30.0, 5.0)]
+
+    @staticmethod
+    def losers():
+        return [MoversTests.quote('L1.NS', 25.0, -3.0), MoversTests.quote('L2.BO', 22.0, -2.6)]
 
     def test_dead_quotes_are_dropped_and_never_a_fabricated_zero(self):
         quotes = [self.quote('AAPL', 340.0, 1.2), {'symbol': 'NO-FIELDS'},
@@ -570,30 +582,89 @@ class MoversTests(unittest.TestCase):
         self.assertIn({'operator': 'gte', 'operands': ['intradayprice', 20]}, india['query']['operands'])
         self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 100_000]}, india['query']['operands'])
 
-    def test_fetch_movers_returns_the_top_gainers_then_losers_in_board_order(self):
-        def board(region, sort_type):
-            gainers = [self.quote('G3.NS', 30.0, 5.0), self.quote('G1.NS', 10.0, 6.0), self.quote('G2.NS', 20.0, 5.5)]
-            losers = [self.quote('L2.BO', 20.0, -2.0), self.quote('L1.NS', 10.0, -3.0)]
-            return gainers if sort_type == 'DESC' else losers
+    def test_a_flaked_whole_universe_response_is_rejected_before_it_can_rank(self):
+        # The captured flake shape: boundary-cluster rows at -2.52/-2.49, unsorted, total in thousands.
+        flake = [self.quote('MAN', 4.9, -2.52), self.quote('PENG', 3.4, -2.49), self.quote('RKLB', 5.0, -9.95)]
+        self.assertFalse(stocks.valid_board(flake, 'us', False, 1916), 'whole-universe total + boundary rows')
+        self.assertFalse(stocks.valid_board(flake, 'us', False, 176), 'still the unsorted unfiltered sample')
+        # India's bars: cap/price/volume are client-enforced there.
+        self.assertFalse(stocks.valid_board([self.quote('SMALL.NS', 25.0, 4.0, cap=5e10)], 'in', True, 40))
+        self.assertFalse(stocks.valid_board([self.quote('THIN.NS', 88.0, 4.0, volume=5e4)], 'in', True, 40))
+        self.assertFalse(stocks.valid_board([self.quote('CHEAP.NS', 12.0, 4.0)], 'in', True, 40))
+        self.assertFalse(stocks.valid_board(self.gainers() + self.losers(), 'in', True, 4))  # cross-side junk
+        self.assertFalse(stocks.valid_board([self.quote(f'S{i}', 10.0 + i, 4.05) for i in range(13)],
+                                           'in', True, 20))  # more rows than the request
+        self.assertFalse(stocks.valid_board({'symbol': 'X'}, 'us', True, 3))  # a missing quotes list
+        self.assertFalse(stocks.valid_board([{'symbol': 'X'}], 'us', True, 3))  # fields entirely missing
+        # A correct page — including the pre-defined rows whose cap fields are 0 — stays valid.
+        self.assertTrue(stocks.valid_board(self.gainers(), 'in', True, 4))
+        self.assertTrue(stocks.valid_board(self.losers(), 'in', False, 4))
+        self.assertTrue(stocks.valid_board([self.quote('AAPL', 300.0, 4.2, cap=0, volume=0)], 'us', True, 188))
+        self.assertTrue(stocks.valid_board([self.quote('MAN', 4.9, -17.07, cap=0, volume=0)], 'us', False, 176))
 
-        with patch('token_tv.stocks.screener_quotes', side_effect=board):
-            rows = stocks.fetch_movers('NSE', 2)
+    def test_us_movers_read_the_crumbs_free_predefined_screens(self):
+        sides = []
+        with patch('token_tv.stocks.predefined_quotes',
+                   side_effect=lambda side: (sides.append(side),
+                                             (self.gainers() if side == 'gainers' else self.losers(), 176))[1]), \
+                patch('token_tv.stocks._request_post_json',
+                      side_effect=AssertionError('the predefined GET answered; no POST may run')):
+            rows = stocks.fetch_movers('US', 2)
+        self.assertEqual(sides, ['gainers', 'losers'])  # two crumb-free GETs, in order
+        self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
+
+    def test_a_flaked_predefined_screen_falls_back_to_one_custom_post(self):
+        def flaked(side):
+            return ([self.quote('BROKEN', 12.0, -2.4)] * 2, 1916)  # the unsorted universe sample
+
+        with patch('token_tv.stocks.predefined_quotes', side_effect=flaked), \
+                patch('token_tv.stocks.screener_quotes',
+                      side_effect=lambda region, sort_type:
+                      (self.gainers(), 189) if sort_type == 'DESC' else (self.losers(), 189)):
+            rows = stocks.fetch_movers('US', 2)
+        self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
+
+    def test_fetch_movers_returns_the_top_gainers_then_losers_in_board_order(self):
+        with patch('token_tv.stocks.screener_quotes',
+                   side_effect=lambda region, sort_type:
+                   (self.gainers(), 4) if sort_type == 'DESC' else (self.losers(), 2)):
+            rows = stocks.fetch_movers('NSE', 2)  # India reads the custom POST (predefined ignores region=in)
             self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
+        with patch('token_tv.stocks.predefined_quotes',
+                   side_effect=lambda side: (self.gainers(), 4) if side == 'gainers' else (self.losers(), 2)):
             # A larger count keeps the whole ranked page.
             self.assertEqual(len(stocks.fetch_movers('US', 4)), 5)
+
+    def test_an_india_degraded_page_retries_once_with_a_fresh_crumb_then_raises(self):
+        posts = []
+
+        def degraded(region, sort_type):
+            posts.append(sort_type)
+            return ([self.quote('SMALL.NS', 25.0, 4.0, cap=5e10)], 40)  # a sub-threshold cap: never ranked
+
+        with patch('token_tv.stocks.screener_quotes', side_effect=degraded), \
+                patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
+            with self.assertRaises(stocks.StockError):
+                stocks.fetch_movers('NSE', 2)  # the caller keeps last-good and backs off
+        self.assertEqual(fetch.call_count, 1)  # exactly one fresh-crumb fetch; never more
+        self.assertEqual(posts.count('DESC'), 2)  # the retry re-ran both sides
 
     def test_a_qualifying_failure_retries_once_with_a_fresh_crumb_then_succeeds(self):
         posts = []
 
+        def predefined(side):
+            raise stocks.StockError('unavailable')  # the predefined screens are down: one POST instead
+
         def flaky(url, payload, headers=None):
             posts.append(payload['sortType'])
             if len(posts) == 1:
-                raise stocks.StockError('http_401')  # a stale crumb fails the first POST
-            quotes = [self.quote('AAPL', 340.0, 4.0)] if payload['sortType'] == 'DESC' \
+                raise stocks.StockError('http_401')  # a stale crumb fails the first custom POST
+            quotes = [self.quote('AAPL', 340.0, 4.07)] if payload['sortType'] == 'DESC' \
                 else [self.quote('TSLA', 100.0, -3.0)]
             return {'finance': {'result': [{'quotes': quotes}]}}
 
-        with patch('token_tv.stocks._request_post_json', side_effect=flaky), \
+        with patch('token_tv.stocks.predefined_quotes', side_effect=predefined), \
+                patch('token_tv.stocks._request_post_json', side_effect=flaky), \
                 patch('token_tv.stocks._fetch_yahoo_session', side_effect=[('c=1', 'old'), ('c=1', 'new')]) as fetch:
             rows = stocks.fetch_movers('US', 1)
         self.assertEqual([row['symbol'] for row in rows], ['AAPL', 'TSLA'])
@@ -604,21 +675,46 @@ class MoversTests(unittest.TestCase):
     def test_non_qualifying_failures_never_refresh_the_crumb(self):
         for code in ('http_429', 'unavailable', 'crumb_unavailable', ''):  # rate limit, outage, no crumb, unknown
             stocks._yahoo_session_state = None
-            with patch('token_tv.stocks._request_post_json', side_effect=stocks.StockError(code)), \
+            with patch('token_tv.stocks.predefined_quotes', side_effect=stocks.StockError(code)), \
+                    patch('token_tv.stocks._request_post_json', side_effect=stocks.StockError(code)), \
                     patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
                 with self.assertRaises(stocks.StockError):
                     stocks.fetch_movers('US', 2)
             self.assertEqual(fetch.call_count, 1, code)  # the cold start only; no fresh-crumb fetch
 
     def test_two_screener_failures_raise_so_the_runner_keeps_the_last_board(self):
-
-        def down(region, sort_type):
-            raise stocks.StockError('unavailable')
-
-        with patch('token_tv.stocks.screener_quotes', side_effect=down), \
+        with patch('token_tv.stocks.predefined_quotes', side_effect=stocks.StockError('unavailable')), \
+                patch('token_tv.stocks.screener_quotes', side_effect=stocks.StockError('unavailable')), \
                 patch('token_tv.stocks.yahoo_session', return_value=('', 'crumb')):
             with self.assertRaises(stocks.StockError):
                 stocks.fetch_movers('US', 2)
+
+    def test_the_predefined_get_carries_the_captured_shape_and_no_crumb(self):
+        holder = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *error):
+                return False
+
+            def read(self):
+                return json.dumps({'finance': {'total': 176, 'result': [{'quotes': [{'symbol': 'MAN'}]}]}}).encode()
+
+        def fake_urlopen(request, timeout=None):
+            holder['url'] = request.full_url
+            holder['method'] = request.get_method()
+            return Response()
+
+        with patch('token_tv.stocks.urlopen', side_effect=fake_urlopen):
+            quotes, total = stocks.predefined_quotes('losers')
+        self.assertEqual((total, quotes), (176, [{'symbol': 'MAN'}]))
+        self.assertEqual(holder['method'], 'GET')
+        url = holder['url']
+        self.assertIn('scrIds=day_losers', url)
+        self.assertNotIn('crumb', url.lower())  # crumb-free
+        self.assertIn('region=US', url)
 
     def test_a_yahoo_cookie_and_crumb_are_cached_for_the_process(self):
         with patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
