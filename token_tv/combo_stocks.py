@@ -9,6 +9,7 @@ first, then losers in movers mode. A closed, missing or stale feed draws dim das
 under a CLOSED header, never a fabricated 0.00, and claims no exchange. Nothing here
 contacts a provider or a clock.
 """
+import io
 from PIL import Image, ImageDraw
 
 from token_tv.combo import SIZE, market_rows
@@ -44,13 +45,19 @@ def arrow(draw, x, y, up, scale, colour):
     draw.polygon(pts, fill=colour)
 
 
-def _arrow_and_percent(draw, right, y, percent, scale, colour):
-    """Arrow + magnitude right-aligned at `right`, with the dim glow copy beneath."""
+def _arrow_and_percent(draw, right, y, percent, scale, colour, amplitude=None):
+    """Arrow + magnitude right-aligned at `right`, with the dim glow copy beneath.
+
+    `amplitude` (0..1, one step per 500 ms) breathes the arrow and its glow across big, slow
+    swings: an edge-to-edge ink swing (mix .25 ↔ 1.0) with the glow riding .0 ↔ .5 — visible at
+    a glance. The percent text itself is drawn identically on every frame, so
+    the GIF's frames stay compressible."""
     text = f'{abs(percent):.2f}%'
-    pixel_text(draw, (right + 1, y + 1), text, scale, mix(colour, .35), 'right')  # glow: one dim offset copy
+    pixel_text(draw, (right + 1, y + 1), text, scale, mix(colour, .5 * amplitude) if amplitude is not None
+               else mix(colour, .35), 'right')  # glow: one dim offset copy
     pixel_text(draw, (right, y), text, scale, colour, 'right')
-    width = (len(text) * 6 - 1) * scale
-    arrow(draw, right - width - 8 - 5 * scale, y + scale, percent > 0, scale, colour)
+    arrow(draw, right - ((len(text) * 6 - 1) * scale) - 8 - 5 * scale, y + scale, percent > 0, scale,
+          colour if amplitude is None else mix(colour, .25 + .75 * amplitude))
 
 
 def _bar(draw, row_ink, x0, y, x1, percent):
@@ -70,7 +77,7 @@ def _dash_card(draw, y):
     pixel_text(draw, (SIZE - 14, y + 12), '--', 2, PALETTE['dim'], 'right')
 
 
-def _card(draw, y, row):
+def _card(draw, y, row, amplitude=None):
     """One night card. Dead quotes and empty slots are dash cards; live rows never re-rank."""
     if not isinstance(row, dict) or not str(row.get('symbol') or '').strip():
         return _dash_card(draw, y)
@@ -88,15 +95,16 @@ def _card(draw, y, row):
     if percent == 0:  # flat: a dim percent, no glow, and no arrow polygon at all
         pixel_text(draw, (SIZE - 14, y + 7), f'{abs(percent):.2f}%', 3, PALETTE['dim'], 'right')
     else:
-        _arrow_and_percent(draw, SIZE - 14, y + 7, percent, 3, row_ink)
+        _arrow_and_percent(draw, SIZE - 14, y + 7, percent, 3, row_ink, amplitude=amplitude)
     _bar(draw, row_ink, 14, y + 47, SIZE - 14, percent)
 
 
-def render_combo_stocks(snapshot):
+def render_combo_stocks(snapshot, amplitude=None):
     """The Night Cards board: header dot, star margins, then four rounded market cards.
 
     A closed, missing or stale market feed reads CLOSED over dim dash cards — the face still
-    occupies its panel rather than handing it back (it is the only face the clock would show)."""
+    occupies its panel rather than handing it back (it is the only face the clock would show).
+    `amplitude` (0..1) drives the animated variant's arrow-and-glow breathing; None draws static."""
     rows = market_rows(snapshot)
     stocks = snapshot.get('stocks') if isinstance(snapshot, dict) else None
     market = (stocks or {}).get('market') or {}
@@ -117,5 +125,49 @@ def render_combo_stocks(snapshot):
         pixel_text(draw, (SIZE - 6, 4), str(source_label).upper(), 1, HEADER_INK if live else mix(HEADER_INK, .5),
                    'right')
     for index in range(MAX_ROWS):
-        _card(draw, TOP + index * PITCH, rows[index] if rows and index < len(rows) else None)
+        _card(draw, TOP + index * PITCH, rows[index] if rows and index < len(rows) else None, amplitude=amplitude)
     return image
+
+
+ARROW_PHASES = (1.0, 0.5, 0.0, 0.5)  # the breathe cycle: full, mid, edge, mid — big, unmistakable swings
+ARROW_FRAMES = len(ARROW_PHASES)
+PHASE_MS = 500  # one breathe phase per half-second: a 2.0 s full loop — fast enough to read as alive
+
+
+def _gif_bytes(frames, ms=PHASE_MS):
+    """A 256-colour quantised GIF (no dither, cyber's encoding) paced by the caller (`ms`/phase).
+
+    Adjacent pixel-identical frames are merged with their durations added before encoding, so no
+    encoder can coalesce a phase away: every stored frame lasts `ms` or longer, and every stored
+    frame differs from its neighbour."""
+    colours = set()
+    for frame in frames:
+        colors = frame.getcolors(maxcolors=frame.width * frame.height)
+        if colors:
+            colours.update(colour for _, colour in colors)
+    reference = Image.new('P', (1, 1))
+    palette = sorted(colours)[:256]
+    reference.putpalette(([v for colour in palette for v in colour] + [0] * 768)[:768])
+    indexed = [frame.quantize(palette=reference, dither=Image.Dither.NONE) for frame in frames]
+    merged, durations = [], []
+    for frame in indexed:
+        if merged and frame.tobytes() == merged[-1].tobytes():
+            durations[-1] += ms  # the encoder cannot drop what is already one frame
+        else:
+            merged.append(frame)
+            durations.append(ms)
+    buffer = io.BytesIO()
+    merged[0].save(buffer, format='GIF', save_all=True, append_images=merged[1:],
+                   duration=durations, loop=0, disposal=1, optimize=False)
+    return buffer.getvalue()
+
+
+def render_stocks_frame(snapshot, frame):
+    """One frame of the animated Night Cards board: the arrows and their glow breathe."""
+    return render_combo_stocks(snapshot, amplitude=ARROW_PHASES[frame % ARROW_FRAMES])
+
+
+def render_combo_stocks_gif(snapshot):
+    """The Night Cards board as a GIF: the arrow-and-glow layer breathes, everything else is still."""
+    frames = [render_stocks_frame(snapshot, f) for f in range(ARROW_FRAMES)]
+    return _gif_bytes(frames)

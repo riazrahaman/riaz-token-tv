@@ -30,8 +30,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw
 
-from token_tv.device import (FILES, LIMITS, ROTATION_FILES, STOCKS_FILES, BackupMismatch,
-                             lost_rotation, may_write, open_display)
+from token_tv.device import (FILES, JPEG_SLOTS, LIMITS, BackupMismatch, lost_rotation,
+                             may_write, open_display)
 from token_tv.display import encode_jpeg, pixel_text
 from token_tv.history import append_history
 
@@ -355,9 +355,17 @@ def screener_query(region, sort_type):
             {'operator': 'gt', 'operands': ['dayvolume', 100_000]},
         ]
     else:
-        # A mirror of Yahoo's public day_gainers / day_losers screens.
-        operands = [
-            {'operator': 'gt', 'operands': ['percentchange', 3.0 if sort_type == 'DESC' else -2.5]},
+        # A mirror of Yahoo's public day_gainers / day_losers screens. The losers bar is an 'lt':
+        # a 'gt' -2.5 operand would answer nothing that the guarded losers threshold can pass.
+        if sort_type == 'DESC':
+            operands = [
+                {'operator': 'gt', 'operands': ['percentchange', 3.0]},
+            ]
+        else:
+            operands = [
+                {'operator': 'lt', 'operands': ['percentchange', -2.5]},
+            ]
+        operands += [
             {'operator': 'gte', 'operands': ['intradaymarketcap', 2_000_000_000]},
             {'operator': 'gte', 'operands': ['intradayprice', 5]},
             {'operator': 'gt', 'operands': ['dayvolume', 15_000 if sort_type == 'DESC' else 20_000]},
@@ -384,18 +392,44 @@ def _request_post_json(url, payload, headers=None):
 
 
 def screener_quotes(region, sort_type):
-    """The raw quote dicts ranked percentchange DESC (gainers) or ASC (losers)."""
+    """(quotes, total) — the raw quote dicts ranked percentchange DESC (gainers) or ASC (losers)."""
     cookie, crumb = yahoo_session()
     headers = {'Cookie': cookie} if cookie else None
     query = urlencode({'crumb': crumb, 'corsDomain': 'finance.yahoo.com', 'formatted': 'false',
                        'lang': 'en-US', 'region': 'US'})
     data = _request_post_json(f'{YAHOO_SCREENER_URL}?{query}', screener_query(region, sort_type),
                               headers=headers)
+    return _extract_quotes(data)
+
+
+US_PREDEFINED_URL = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved'
+US_SCREENS = {'gainers': 'day_gainers', 'losers': 'day_losers'}
+
+
+def predefined_quotes(side):
+    """(quotes, total) — a crumb-free GET of Yahoo's own prebuilt US screen.
+
+    Verified live: the custom screener POST intermittently flakes server-side (ignoring query
+    operands and sort, answering with the unfiltered whole universe), and no crumb fixes it; the
+    predefined screens answer correctly sorted. Their rows carry cap/price/volume as 0, so
+    quality is Yahoo-side and the client guard checks the fields it has."""
+    query = urlencode({'scrIds': US_SCREENS[side], 'formatted': 'false', 'region': 'US',
+                       'count': SCREENER_PAGE})
+    data = _request_json(f'{US_PREDEFINED_URL}?{query}')
+    return _extract_quotes(data)
+
+
+def _extract_quotes(data):
+    """(quotes, total) out of a screener/predefined response; a wrong shape is a StockError."""
+    finance = data.get('finance') if isinstance(data, dict) else None
+    if not isinstance(finance, dict):
+        raise StockError('invalid_response') from None
     try:
-        quotes = data['finance']['result'][0]['quotes']
+        quotes = finance['result'][0]['quotes']
     except (KeyError, IndexError, TypeError):
         raise StockError('invalid_response') from None
-    return quotes if isinstance(quotes, list) else []
+    total = finance.get('total')
+    return (quotes, total) if isinstance(quotes, list) else ([], total)
 
 
 def screener_rows(quotes):
@@ -440,28 +474,101 @@ def dedupe_movers(rows):
 
 
 CRUMB_RETRIES_FOR = ('http_401', 'http_403', 'invalid_response')
+TOTAL_CAP = 1000  # the flake answers with the whole universe (totals in the thousands), never ours
+INVERSION_FRACTION = 0.4  # a live-updating page carries honest mid-move inversions (captured: 3-4 of 11 pairs); the flake's random sample sits near one half — and fails the thresholds anyway
+
+
+def _approximately_ranked(percents, descending):
+    """True when the page is ranked within the tolerance live updates leave behind.
+
+    A page is read while Yahoo keeps ticking quotes, so adjacent magnitude ties and mid-move
+    quotes leave several inversions; a flaked random sample of the whole universe answers grossly
+    unsorted — and, in captured cases, fails the thresholds and total too."""
+    pairs = max(1, len(percents) - 1)
+    if descending:
+        inversions = sum(1 for a, b in zip(percents, percents[1:]) if a < b)
+    else:
+        inversions = sum(1 for a, b in zip(percents, percents[1:]) if a > b)
+    return inversions <= pairs * INVERSION_FRACTION
+
+
+def _passes_thresholds(quote, region, gainers):
+    """One raw quote clears its region screen's quality bars.
+
+    The US screens' own filters are percent-change above 3 (gainers) / below -2.5 (losers) — the
+    predefined screens mirror them, so the client re-checks the boundary; the predefined rows
+    carry cap and volume as 0, so only the India re-check enforces those."""
+    price = _number(quote.get('regularMarketPrice'))
+    percent = _number(quote.get('regularMarketChangePercent'))
+    if price is None or price <= 0 or percent is None:
+        return False
+    if region == 'in':
+        cap, volume = _number(quote.get('intradaymarketcap')), _number(quote.get('dayvolume'))
+        if (cap is None or cap < 100_000_000_000 or volume is None or volume <= 100_000
+                or price < 20):
+            return False
+        return percent > 0 if gainers else percent < 0  # a gainers page never leads with a loss
+    return percent > 3.0 if gainers else percent < -2.5  # the US screens' own percent bars
+
+
+def valid_board(quotes, region, gainers, total=None):
+    """False when a screener response is flaked junk that must never reach the board.
+
+    Suspicious shapes: more rows than requested, an unfiltered whole-universe total, top quotes
+    missing their fields, kept rows missing the region's thresholds, or a grossly unsorted page —
+    live-updated pages keep a few honest inversions, which a small minority stays within."""
+    if not isinstance(quotes, list) or not quotes or len(quotes) > SCREENER_PAGE:
+        return False
+    if isinstance(total, (int, float)) and not isinstance(total, bool):
+        if not math.isfinite(total) or total > TOTAL_CAP:
+            return False
+    raws = [quote for quote in quotes if isinstance(quote, dict)
+            and isinstance(quote.get('symbol'), str)]
+    if not raws or not all(_passes_thresholds(quote, region, gainers) for quote in raws):
+        return False
+    percents = [row['percent'] for row in screener_rows(raws)]
+    return _approximately_ranked(percents, descending=gainers)
+
+
+def _mover_side(region, sort_type, gainers, count):
+    """One ranked, deduped side of the board from a validated query.
+
+    The US reads the crumb-free predefined GETs; should one flake, a single custom POST re-ranks
+    instead. India only has the custom POST — the predefined screens ignore non-US regions."""
+    if region == 'us':
+        try:
+            quotes, total = predefined_quotes('gainers' if gainers else 'losers')
+            guarded = valid_board(quotes, region, gainers, total)
+        except StockError:
+            guarded = False  # down or flaked: the fallback POST re-ranks instead
+        if not guarded:
+            quotes, total = screener_quotes(region, sort_type)
+    else:
+        quotes, total = screener_quotes(region, sort_type)
+    if not valid_board(quotes, region, gainers, total):
+        raise StockError('invalid_response')  # the caller keeps last-good and backs off
+    board = dedupe_movers(screener_rows(quotes))
+    board.sort(key=lambda row: row['percent'], reverse=sort_type == 'DESC')  # ranked, whatever the page says
+    return board[:max(1, int(count))]
 
 
 def fetch_movers(exchange, count=MOVERS_COUNT):
     """Top gainers then top losers, deduped, as display rows: [G1..Gn, L1..Ln].
 
-    Only auth/contract failures are worth one fresh crumb (getcrumb is rate-limited, so a 429
-    or a plain outage must never re-hit it — the caller keeps last-good and backs off instead)."""
+    A degraded answer (a flaked screener or a failed request) gets exactly one fresh crumb —
+    getcrumb is rate-limited — and then raises, so the caller keeps last-good and backs off."""
     region = 'in' if exchange == 'NSE' else 'us'
 
-    def side(sort_type, descending):
-        board = dedupe_movers(screener_rows(screener_quotes(region, sort_type)))
-        board.sort(key=lambda row: row['percent'], reverse=descending)  # ranked, whatever the page says
-        return board[:max(1, int(count))]
+    def board(gainers):
+        return _mover_side(region, 'DESC' if gainers else 'ASC', gainers, count)
 
     try:
-        gainers, losers = side('DESC', True), side('ASC', False)
+        return board(True) + board(False)
     except StockError as error:
-        if error.code not in CRUMB_RETRIES_FOR:
+        if error.code not in CRUMB_RETRIES_FOR:  # a 429 or an outage: never re-hit getcrumb
             raise
         yahoo_session(refresh=True)  # one fresh crumb, at most
-        gainers, losers = side('DESC', True), side('ASC', False)
-    return gainers + losers
+        return board(True) + board(False)
 
 
 # ---------------------------------------------------------------------------
@@ -793,8 +900,10 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if reasserted:
             phase = 'activate'
             files = device.capture().get('files')
-            wanted = STOCKS_FILES if name == FILES[0] else (name,)  # the feeder owns no usage slot
-            if lost_rotation(files, name, wanted):  # one of the stock slots is gone
+            # The feeder renders the static watchlist face: its frame belongs in the two JPEG
+            # slots; the GIF slots and the usage screens belong to the live publisher.
+            wanted = JPEG_SLOTS if name == FILES[0] else (name,)
+            if lost_rotation(files, name, wanted):  # one of the stock JPEG slots is gone
                 lost = True
                 last_upload = {}  # the clock lost a frame; the dedupe must not hide that
         phase = 'upload'
@@ -802,7 +911,7 @@ def publish(device, image, state_dir, backup_path, original, active_file, last_u
         if name == FILES[1]:  # a GIF stays a single hard-set file
             events = [(name, image, digest)]
         else:
-            events = [(ROTATION_FILES[0], image, digest), (ROTATION_FILES[1], image, digest)]
+            events = [(JPEG_SLOTS[0], image, digest), (JPEG_SLOTS[1], image, digest)]
         pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
         if pending:  # only the slots whose bytes changed are rewritten
             # A clock showing nothing bypasses the budget; the cap is there to spare flash, not

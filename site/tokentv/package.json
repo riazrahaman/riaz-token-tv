@@ -1,7 +1,7 @@
 {
   "name": "tokentv-page",
   "private": true,
-  "version": "0.4.7",
+  "version": "0.4.11",
   "description": "Project page for TokenTV",
   "scripts": {
     "start": "node server.js"

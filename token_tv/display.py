@@ -26,7 +26,9 @@ FONT_NUMBERS = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono'
 STYLES = ('pixel', 'digital', 'neon', 'retro', 'hud', 'space', 'gameboy', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber', 'stocks')
 # The styles that actually draw the stock board from snapshot['stocks'] (`stocks` alone; the combo
 # family carries the market beside the usage rows — its closed-market render is already the
-# full-size usage face). Every other style draws usage only, whatever the feed says.
+# full-size usage face). Every other style draws usage only, whatever the feed says. Note:
+# pulse/patrol/twinkle/cyber are animated GIFs that always take the single-file GIF branch, so
+# the JPEG alternation effectively applies to 'stocks' and 'combo'.
 STOCK_STYLES = ('stocks', 'combo', 'pulse', 'patrol', 'twinkle', 'cyber')
 ANIMATED_STYLES = ('space', 'pulse', 'patrol', 'twinkle', 'cyber')
 # Gauge-only levels; labels/percentages always use TEXT, logos retain provider ink.
@@ -354,6 +356,16 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     if style not in STYLES:
         raise ValueError('Unknown display style')
     snapshot = quantise(snapshot, quantum)
+    if style == 'stocks':  # the Night Cards board: animated arrows while a market is open
+        from token_tv.combo import market_rows
+        from token_tv.combo_stocks import render_combo_stocks, render_combo_stocks_gif
+        if market_rows(snapshot) is not None:
+            image = render_combo_stocks_gif(snapshot)  # the arrows and glows breathe over the frames
+            return image, {'fits': not limit or len(image) <= limit}
+        # closed, missing or stale: the static dim dash board under a CLOSED header
+        data, quality, subsampling = encode_jpeg(render_combo_stocks(snapshot), limit)
+        return data, {'quality': quality, 'subsampling': subsampling,
+                      'fits': not limit or len(data) <= limit}
     if style == 'space':  # animated: returns GIF bytes
         from token_tv.space import render_space
         image = render_space(snapshot)

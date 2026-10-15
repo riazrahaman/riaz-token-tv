@@ -9,16 +9,22 @@ from urllib.request import Request, urlopen
 FILES = ("tokentv.jpg", "tokentv.gif")
 # The SD_PRO slideshow re-reads the album on rotation, never while a single photo is enabled, so
 # a one-file album froze the panel between content writes even as fresh frames uploaded. The two
-# stock slots carry the stocks frame; the third carries the usage screen — at the slideshow's
-# 10-second interval the three enabled files show stocks for 20 seconds, then usage for 10, then
-# the loop restarts with freshly uploaded frames. These are our own frames, not user photos, and
-# are never deleted either.
-STOCKS_FILES = ("tokentv.jpg", "tokentv-b.jpg")
-USAGE_FILE = "tokentv-usage.jpg"
+# stock slots carry the stocks face as an animated GIF (the arrows breathe); the third carries
+# the usage screen with shimmering gauges — at the slideshow's 10-second interval the three
+# enabled files show stocks for 20 seconds, then usage for 10, then the loop restarts with
+# freshly uploaded frames. These are our own frames, not user photos, and are never deleted
+# either. The static JPEG slots keep 0.4.7's two-frame behaviour for the styles that draw no
+# stock board (and the combo family's static alternation).
+STOCKS_FILES = ("tokentv.gif", "tokentv-b.gif")
+USAGE_FILE = "tokentv-usage.gif"
 ROTATION_FILES = STOCKS_FILES + (USAGE_FILE,)
+JPEG_SLOTS = ("tokentv.jpg", "tokentv-b.jpg")
+JPEG_USAGE_FILE = "tokentv-usage.jpg"
 # The album page accepts GIFs up to 240×240; keep them well under the free space.
 LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv-b.jpg": (60000, "image/jpeg"),
-          "tokentv-usage.jpg": (60000, "image/jpeg"), "tokentv.gif": (400000, "image/gif")}
+          "tokentv-usage.jpg": (60000, "image/jpeg"),
+          "tokentv.gif": (400000, "image/gif"), "tokentv-b.gif": (400000, "image/gif"),
+          "tokentv-usage.gif": (400000, "image/gif")}
 LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
 MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
 # The clock writes settings with one name and reports them under another, so a read-and-compare has
@@ -52,9 +58,9 @@ def may_write(last_write, now, budget):
 def wanted_slots(name=FILES[0], wanted=None):
     """The album slots that must be on for this frame kind.
 
-    A JPEG frame alternating style: all three slots (two stocks + the usage screen). A JPEG
-    non-alternating style: the two stock slots only, leaving the usage slot asleep. A GIF: its
-    single file. The publisher may pass its own wanted list (the feeder owns no usage slot)."""
+    The animated alternation: all three GIF slots (two stocks, one usage). A static two-frame
+    style: the two JPEG slots, leaving the GIF slots asleep. A GIF frame: its single file. The
+    publisher may pass its own wanted list (the feeder owns no usage slot)."""
     if wanted is not None:
         return tuple(wanted)
     return ROTATION_FILES if name == FILES[0] else (name,)
@@ -164,14 +170,14 @@ class PhotoDisplay:
     def upload_rotation(self, frames):
         """Upload the rotation frames in the slot order given, under one upstream budget decision.
 
-        While a market is open the frames are (tokentv.jpg, stocks), (tokentv-b.jpg, stocks),
-        (tokentv-usage.jpg, usage): the slideshow's 10-second interval makes the 20-seconds-stocks
-        /10-seconds-usage loop the user asked for. A closed market sends the usage frame for every
-        slot, so the clock rests on a continuous usage screen; a non-alternating style sends only
-        its chosen face into the two stock slots. `frames[0]` is the frame the device shows when
-        the album only supports one (an Ultra). The firmware auto-enables a newly uploaded file:
-        nothing here toggles after an upload (that request is the known unreliable one), and no
-        photo is ever deleted."""
+        While a market is open the frames are (tokentv.gif, stocks-gif), (tokentv-b.gif,
+        stocks-gif), (tokentv-usage.gif, usage-gif): the slideshow's 10-second interval makes the
+        20-seconds-stocks /10-seconds-usage loop the user asked for. A closed market sends the
+        usage GIF for every slot, so the clock rests on a continuous (shimmering) usage screen;
+        a non-alternating style sends its chosen JPEG face into the two static JPEG slots.
+        `frames[0]` is the frame the device shows when the album only supports one (an Ultra). The
+        firmware auto-enables a newly uploaded file: nothing here toggles after an upload (that
+        request is the known unreliable one), and no photo is ever deleted."""
         return [dict(self.upload(name, image)) for name, image in frames]
 
     def toggle(self, category, key, value, enabled):
@@ -203,7 +209,7 @@ class PhotoDisplay:
             self.toggle("photo", "name", f["name"], f["enabled"])
         _, raw = self.request("/photo/list")
         present = {f["name"] for f in json.loads(raw)["files"]}
-        for name in set(FILES) | set(ROTATION_FILES) | set(LEGACY_FILES):
+        for name in set(FILES) | set(ROTATION_FILES) | set(JPEG_SLOTS) | {JPEG_USAGE_FILE} | set(LEGACY_FILES):
             if name in present and not any(f["name"] == name for f in original["files"]):
                 self.toggle("photo", "name", name, False)
         self.request("/photo/interval?val=" + str(original["photo_interval"]))
@@ -253,9 +259,11 @@ class UltraDisplay(PhotoDisplay):
         name, image = frames[0]
         return [self.upload(name, image)]
 
-    def activate(self, original, name=FILES[0]):
+    def activate(self, original, name=FILES[0], wanted=None):
         # Stop the slideshow so the user's own photos never rotate in, select the album theme, show ours.
-        # The image is chosen after the theme, as geekmagic-hacs does on the same firmware.
+        # The image is chosen after the theme, as geekmagic-hacs does on the same firmware. `wanted`
+        # carries the album slots the rotating clocks keep switched on; an Ultra hard-sets one image
+        # and has no album to re-enable, so it is accepted and ignored.
         current = self.capture()
         if current["autoplay"]:
             self.request(f"/set?i_i={int(current['i_i'])}&autoplay=0")

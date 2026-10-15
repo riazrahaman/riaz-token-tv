@@ -280,20 +280,24 @@ class StocksOnlyFaceTests(unittest.TestCase):
                             {'symbol': 'INFY.NS', 'price': 812.1, 'change': -30.1, 'percent': -3.71,
                              'previous_close': None, 'at': now}]}
 
-    def test_stocks_is_a_static_jpeg_style(self):
+    def test_stocks_animates_while_the_market_is_open(self):
         from token_tv.display import ANIMATED_STYLES, STYLES, render_page
         self.assertIn('stocks', STYLES)
-        self.assertNotIn('stocks', ANIMATED_STYLES)
+        self.assertNotIn('stocks', ANIMATED_STYLES)  # animated-while-alive, a member of neither list
         snapshot = {'accounts': {}, 'stocks': self._feed()}
         body = render_page(snapshot, style='stocks')
-        self.assertEqual(body[:3], b'\xff\xd8\xff')  # JPEG, not one of the animated GIF styles
+        self.assertEqual(body[:4], b'GIF8')  # an animated GIF, not one of the static styles
         image = Image.open(io.BytesIO(body))
-        self.assertEqual(image.size, (240, 240))
-        self.assertLess(len(body), 60000)
-        self.assertGreater(len(image.getcolors(240 * 240)), 20)
-        # Board inks arrive on the pixels: both a rise and a fall share the face.
-        self.assertIn((8, 247, 66), {colour for _, colour in image.getcolors(240 * 240)})
-        self.assertIn((255, 68, 68), {colour for _, colour in image.getcolors(240 * 240)})
+        self.assertEqual((image.format, image.size), ('GIF', (240, 240)))
+        self.assertGreaterEqual(image.n_frames, 4)
+        self.assertLessEqual(len(body), 250000)
+        # The arrows breathe: the frames are not all alike...
+        image.seek(0); first = image.convert('RGB')
+        image.seek(2); third = image.convert('RGB')
+        self.assertNotEqual(list(first.getdata()), list(third.getdata()))
+        # ...but both carry the board inks: a rise and a fall share the face.
+        self.assertIn((8, 247, 66), {c for _, c in third.getcolors(240 * 240)})
+        self.assertIn((255, 68, 68), {c for _, c in third.getcolors(240 * 240)})
 
     def test_a_closed_or_missing_feed_draws_dashes_and_never_zeros(self):
         from token_tv import combo_stocks
@@ -341,14 +345,13 @@ class StocksOnlyFaceTests(unittest.TestCase):
 
     def test_the_magnitude_bar_keeps_the_five_percent_fill_convention(self):
         from token_tv import combo_stocks
-        from token_tv.display import render_page
         at = time.time()
         def bar_ink(percent):
             row = {'symbol': 'APPN', 'price': 42.52, 'change': 1.0, 'percent': percent,
                    'previous_close': None, 'at': at}
             feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
                     'symbols': [row] + self._feed()['symbols'][1:]}
-            image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
+            image = combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})  # the static board
             y = combo_stocks.TOP + 47
             strip = image.crop((14, y, 227, y + 2))
             return sum(1 for px in strip.getdata() if px[1] > px[2] + 25)  # green-ish fill pixels
@@ -356,12 +359,11 @@ class StocksOnlyFaceTests(unittest.TestCase):
 
     def test_a_flat_quote_draws_no_arrow_on_its_card(self):
         from token_tv import combo_stocks
-        from token_tv.display import render_page
         at = time.time()
         def board(first_row):
             feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
                     'symbols': [first_row] + self._feed()['symbols'][1:]}
-            return Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
+            return combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})  # the static board
         flat = {'symbol': 'FLAT', 'price': 10.0, 'change': 0.0, 'percent': 0.0, 'previous_close': None, 'at': at}
         down = {'symbol': 'OUST', 'price': 30.74, 'change': -1.13, 'percent': -3.55, 'previous_close': None, 'at': at}
         y = combo_stocks.TOP
@@ -382,14 +384,17 @@ class StocksOnlyFaceTests(unittest.TestCase):
         self.assertNotEqual(fewer, live)
 
     def test_the_stocks_face_fits_the_firmware_limit(self):
-        from token_tv.device import FILES, LIMITS
+        from token_tv.device import LIMITS
         from token_tv.display import render_page
-        body = render_page({'accounts': {}, 'stocks': self._feed()}, style='stocks',
-                           limit=LIMITS[FILES[0]][0])
-        self.assertLessEqual(len(body), LIMITS[FILES[0]][0])
+        body = render_page({'accounts': {}, 'stocks': self._feed()}, style='stocks')  # a live, open market: GIF
+        self.assertLessEqual(len(body), LIMITS["tokentv.gif"][0])
         image = Image.open(io.BytesIO(body))
-        self.assertEqual(image.size, (240, 240))
-        self.assertEqual(image.format, 'JPEG')
+        self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
+        # The closed board is the static JPEG side of the style, still on the JPEG budget.
+        closed = render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks',
+                             limit=LIMITS["tokentv.jpg"][0])
+        self.assertLessEqual(len(closed), LIMITS["tokentv.jpg"][0])
+        self.assertEqual(Image.open(io.BytesIO(closed)).format, 'JPEG')
 
     def test_post_display_style_accepts_the_stocks_face(self):
         from token_tv.live import DisplayPreferences, handler
@@ -420,6 +425,114 @@ class StocksOnlyFaceTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join()
+
+
+class AnimatedScreenTests(unittest.TestCase):
+    """The animatic: breathing arrows on the stocks GIF, shimmering gauges on the usage GIF."""
+
+    @staticmethod
+    def _snapshot(now):
+        feed = {'updated_at': int(now), 'source': 'YAHOO',
+                'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+                'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                             'previous_close': None, 'at': int(now)},
+                            {'symbol': 'OUST', 'price': 30.74, 'change': -1.13, 'percent': -3.55,
+                             'previous_close': None, 'at': int(now)}]}
+        accounts = {'claude_a': {'key': 'claude_a', 'provider': 'claude', 'alias': 'CLAUDE A', 'status': 'ok',
+                                 'fetched_at': int(now),
+                                 'windows': [{'label': 'WEEK', 'used_percent': 61.0, 'resets_at': None}]}}
+        return {'schema': 1, 'updated_at': int(now), 'accounts': accounts, 'stocks': feed}
+
+    @staticmethod
+    def _durations(image):
+        read = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            read.append(image.info.get('duration'))
+        return read
+
+    def test_the_stocks_screen_animates_its_arrows(self):
+        from token_tv.combo_stocks import PHASE_MS
+        from token_tv.display import render_frame
+        body, meta = render_frame(self._snapshot(time.time()), 0, 'stocks', 900, 400000)
+        self.assertEqual(body[:4], b'GIF8')
+        self.assertTrue(meta['fits'])
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
+        self.assertEqual(image.n_frames, 4)  # four big breathing phases, none coalesced away
+        self.assertLessEqual(len(body), 250000)
+        durations = self._durations(image)
+        self.assertEqual(durations, [PHASE_MS] * image.n_frames)  # 500 ms: a 2.0 s breathe loop
+        self.assertTrue(all(d >= 250 for d in durations), durations)
+        frames = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            frames.append(image.convert('RGB').tobytes())
+        self.assertTrue(all(a != b for a, b in zip(frames, frames[1:])), durations)  # no coalesce possible
+        # The bright apex frame carries the rise ink (and the trough frame all but extinguishes it).
+        image.seek(0)
+        self.assertIn((8, 247, 66), {c for _, c in image.convert('RGB').getcolors(240 * 240)})
+
+    def test_the_encoder_merges_identical_adjacent_frames_into_one_long_phase(self):
+        from token_tv.combo_stocks import PHASE_MS, _gif_bytes
+        still = Image.new('RGB', (4, 4), (10, 14, 28))  # a degenerate board: nothing animates
+        body = _gif_bytes([still] * 3)
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual((image.n_frames, self._durations(image)), (1, [3 * PHASE_MS]))  # merged, not dropped
+
+    def test_the_usage_screen_animates_its_gauges(self):
+        from token_tv.usage_gif import SHIMMER_MS, USAGE_FRAMES, render_usage_gif
+        body = render_usage_gif(self._snapshot(time.time()))
+        self.assertEqual(body[:4], b'GIF8')
+        self.assertLessEqual(len(body), 150000)
+        image = Image.open(io.BytesIO(body))
+        self.assertEqual((image.size, image.format), ((240, 240), 'GIF'))
+        durations = self._durations(image)
+        # The shimmer phases pace at 300 ms (obvious, not a strobe); none can be coalesced away.
+        self.assertEqual(image.n_frames, USAGE_FRAMES)
+        self.assertEqual(durations, [SHIMMER_MS] * USAGE_FRAMES)
+        self.assertTrue(all(d >= 250 for d in durations), durations)
+        frames = []
+        for frame in range(image.n_frames):
+            image.seek(frame)
+            frames.append(image.convert('RGB').tobytes())
+        self.assertTrue(all(a != b for a, b in zip(frames, frames[1:])), durations)
+
+    def test_a_static_style_stays_a_static_jpeg(self):
+        from token_tv.display import render_frame
+        for style in ('neon', 'digital'):
+            body, _ = render_frame(self._snapshot(time.time()), 0, style, 900, 60000)
+            self.assertEqual(body[:3], b'\xff\xd8\xff')  # JPEG, unchanged by the alternation
+            self.assertEqual(Image.open(io.BytesIO(body)).format, 'JPEG')
+
+    def test_the_frame_preview_serves_gif_bytes_as_image_gif(self):
+        from token_tv.live import handler
+
+        class FeedStore:  # the /frame preview renders store.snapshot(): this one carries a live stock feed
+            def snapshot(self):
+                return self._snapshot(time.time())
+
+        live_store = {'schema': 1, 'updated_at': int(time.time()), 'accounts': {}, 'stocks': {
+            'updated_at': int(time.time()), 'source': 'YAHOO',
+            'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+            'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                         'previous_close': None, 'at': int(time.time())}]}}
+        FeedStore.snapshot = lambda self: live_store
+        server = ThreadingHTTPServer(('127.0.0.1', 0), handler(FeedStore()))
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        root = f'http://127.0.0.1:{server.server_port}'
+        try:
+            with urlopen(root + '/frame/0.jpg?style=stocks') as response:  # an alive market: GIF
+                self.assertEqual(response.headers['Content-Type'], 'image/gif')
+                self.assertEqual(response.read()[:4], b'GIF8')
+            with urlopen(root + '/frame/0.jpg?style=neon') as response:  # a static style: JPEG
+                self.assertEqual(response.headers['Content-Type'], 'image/jpeg')
+                self.assertEqual(response.read()[:3], b'\xff\xd8\xff')
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
 
 if __name__ == '__main__':

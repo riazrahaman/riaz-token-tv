@@ -12,7 +12,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from token_tv import live
-from token_tv.device import BackupMismatch, PhotoDisplay, UltraDisplay, open_display
+from token_tv.device import (JPEG_SLOTS, BackupMismatch, PhotoDisplay, UltraDisplay,
+                             open_display)
 
 
 class DisplayTests(unittest.TestCase):
@@ -58,14 +59,14 @@ class DisplayTests(unittest.TestCase):
             original = display.capture()
             photos["files"].extend([{"name": name, "enabled": True} for name in ("tokentv-c.jpg", "tokentv-m.jpg", "tokentv.jpg")])
             display.upload("tokentv.jpg", b"EXACT-JPEG")
-            display.activate(original)
+            display.activate(original, wanted=JPEG_SLOTS)  # the static two-frame slots
             self.assertEqual([p["name"] for p in photos["files"] if p["enabled"]], ["tokentv.jpg"])
             # Switching to the animated face shows only the GIF; switching back restores the JPEG.
             photos["files"].append({"name": "tokentv.gif", "enabled": False})
             display.upload("tokentv.gif", b"GIF89a-EXACT")
             display.activate(original, "tokentv.gif")
             self.assertEqual([p["name"] for p in photos["files"] if p["enabled"]], ["tokentv.gif"])
-            display.activate(original, "tokentv.jpg")
+            display.activate(original, wanted=JPEG_SLOTS)
             self.assertEqual([p["name"] for p in photos["files"] if p["enabled"]], ["tokentv.jpg"])
             with self.assertRaises(ValueError):
                 display.upload("other.gif", b"GIF89a")
@@ -211,9 +212,11 @@ class UltraTests(unittest.TestCase):
             self.assertEqual(self.calls[start:], [("GET", "/app.json"), ("GET", "/album.json"), ("GET", "/set?i_i=5&autoplay=0"),
                                                   ("GET", "/set?theme=3"), ("GET", "/set?img=%2Fimage%2Ftokentv.jpg")])
             self.assertEqual((self.state["theme"], self.state["autoplay"], self.state["img"]), (3, 0, "/image/tokentv.jpg"))
-            # Already in the album with autoplay off: only the image changes.
+            # Already in the album with autoplay off: only the image changes — and the publisher's
+            # three-argument activate call (with the wanted slot list) is accepted and ignored.
             start = len(self.calls)
-            display.activate(original, "tokentv.gif")
+            display.activate(original, "tokentv.gif", [("tokentv.gif", ""), ("tokentv-b.gif", ""),
+                                                       ("tokentv-usage.gif", "")])
             self.assertEqual(self.calls[start:], [("GET", "/app.json"), ("GET", "/album.json"), ("GET", "/set?img=%2Fimage%2Ftokentv.gif")])
 
             start = len(self.calls)
@@ -345,55 +348,53 @@ class RotationTests(unittest.TestCase):
         handler, _ = self.clock(calls)
         with serve(handler) as url:
             display = PhotoDisplay(url)
-            receipts = display.upload_rotation([("tokentv.jpg", b"STOCKS-FRAME"),
-                                                ("tokentv-b.jpg", b"STOCKS-FRAME"),
-                                                ("tokentv-usage.jpg", b"USAGE-FRAME")])
-        self.assertEqual([r["file"] for r in receipts], ["tokentv.jpg", "tokentv-b.jpg", "tokentv-usage.jpg"])
+            receipts = display.upload_rotation([("tokentv.gif", b"STOCKS-GIF"),
+                                                ("tokentv-b.gif", b"STOCKS-GIF"),
+                                                ("tokentv-usage.gif", b"USAGE-GIF")])
+        self.assertEqual([r["file"] for r in receipts], ["tokentv.gif", "tokentv-b.gif", "tokentv-usage.gif"])
         uploads = [(path, body) for kind, path, body in calls
                    if kind == "POST" and path == "/photo/upload"]
         self.assertEqual([path for path, _ in uploads], ["/photo/upload"] * 3)
-        self.assertIn(b'filename="tokentv.jpg"', uploads[0][1])
-        self.assertIn(b"\r\n\r\nSTOCKS-FRAME\r\n", uploads[0][1])
-        self.assertIn(b'filename="tokentv-b.jpg"', uploads[1][1])
-        self.assertIn(b'filename="tokentv-usage.jpg"', uploads[2][1])
-        # The two stocks slots carry the same stocks bytes, and no toggle rides after the upload.
+        self.assertIn(b'filename="tokentv.gif"', uploads[0][1])
+        self.assertIn(b"\r\n\r\nSTOCKS-GIF\r\n", uploads[0][1])
+        self.assertIn(b'filename="tokentv-b.gif"', uploads[1][1])
+        self.assertIn(b'filename="tokentv-usage.gif"', uploads[2][1])
+        # The two stocks slots carry the same animated bytes, and no toggle rides after the upload.
         self.assertEqual(uploads[0][1].split(b"\r\n\r\n")[1].rsplit(b"\r\n--", 1)[0],
                          uploads[1][1].split(b"\r\n\r\n")[1].rsplit(b"\r\n--", 1)[0])
         self.assertNotEqual(uploads[0][1], uploads[2][1])  # the usage slot carries the usage frame
         self.assertFalse(any("toggle" in call[1] for call in calls))
         self.assertFalse(any("delete" in call[1] for call in calls))
 
-    def test_activate_enables_every_slot_disables_everything_else_then_is_a_noop(self):
+    def test_activate_enables_every_gif_slot_and_disables_the_legacy_jpg_slots(self):
         calls = []
         handler, photos = self.clock(calls)
         with serve(handler) as url:
             display = PhotoDisplay(url)
             original = display.capture()
-            display.upload_rotation([("tokentv.jpg", b"STOCKS-FRAME"), ("tokentv-b.jpg", b"STOCKS-FRAME"),
-                                     ("tokentv-usage.jpg", b"USAGE-FRAME")])  # the firmware auto-enabled all three
+            display.upload_rotation([("tokentv.gif", b"STOCKS-GIF"), ("tokentv-b.gif", b"STOCKS-GIF"),
+                                     ("tokentv-usage.gif", b"USAGE-GIF")])  # the firmware auto-enabled all three
             toggles_before = [c[1] for c in calls if "toggle" in c[1]]
             self.assertEqual(toggles_before, [])  # no toggle is chained after an upload (the flaky one)
             display.activate(original)
-            self.assertEqual(sorted(self.enabled(photos)), ["tokentv-b.jpg", "tokentv-usage.jpg", "tokentv.jpg"])
+            self.assertEqual(sorted(self.enabled(photos)), ["tokentv-b.gif", "tokentv-usage.gif", "tokentv.gif"])
             for name in ("original.jpg", "like.gif", "1.jpg", "space man.gif"):
                 self.assertIn(f"/photo/toggle?name={name.replace(' ', '%20')}&state=0", [c[1] for c in calls])
+            # The legacy JPEG slots of the single-photo era are asleep again (present, but not wanted).
+            self.assertNotIn("tokentv.jpg", self.enabled(photos))
+            self.assertNotIn("tokentv-b.jpg", self.enabled(photos))
             # Steady state: every slot already on, nothing else enabled — the next reassert writes nothing.
             start = len(calls)
             display.activate(original)
             self.assertEqual([c[1] for c in calls[start:]], ["/theme/list", "/photo/list"])  # reads only
-            # A narrower wanted set (the two stock slots) puts the usage slot back to sleep.
-            from token_tv.device import STOCKS_FILES
+            # A narrower wanted set (the static JPEG slots) puts the GIF slots back to sleep.
+            from token_tv.device import JPEG_SLOTS
             start = len(calls)
-            display.activate(original, "tokentv.jpg", wanted=STOCKS_FILES)
-            self.assertIn("/photo/toggle?name=tokentv-usage.jpg&state=0", [c[1] for c in calls[start:]])
-            self.assertNotIn("tokentv-usage.jpg", self.enabled(photos))
-            # A GIF cycle shows only the GIF; switching back JPEG restores the alternating slots.
-            display.upload("tokentv.gif", b"GIF89a-EXACT")
-            display.activate(original, "tokentv.gif")
-            self.assertEqual(self.enabled(photos), ["tokentv.gif"])
-            display.activate(original, "tokentv.jpg")
-            self.assertEqual(sorted(self.enabled(photos)),
-                             ["tokentv-b.jpg", "tokentv-usage.jpg", "tokentv.jpg"])
+            display.activate(original, wanted=JPEG_SLOTS)
+            self.assertIn("/photo/toggle?name=tokentv-usage.gif&state=0", [c[1] for c in calls[start:]])
+            self.assertNotIn("tokentv-usage.gif", self.enabled(photos))
+            # The static two-frame behaviour returns: two JPEG slots, GIF slots asleep.
+            self.assertEqual(sorted(self.enabled(photos)), JPEG_SLOTS and ["tokentv-b.jpg", "tokentv.jpg"])
 
     def test_restore_leaves_the_rotation_slots_off_as_part_of_the_baseline(self):
         calls = []
@@ -401,13 +402,14 @@ class RotationTests(unittest.TestCase):
         with serve(handler) as url:
             display = PhotoDisplay(url)
             original = display.capture()
-            display.upload_rotation([("tokentv.jpg", b"STOCKS-FRAME"), ("tokentv-b.jpg", b"STOCKS-FRAME"),
-                                     ("tokentv-usage.jpg", b"USAGE-FRAME")])
+            display.upload_rotation([("tokentv.gif", b"STOCKS-GIF"), ("tokentv-b.gif", b"STOCKS-GIF"),
+                                     ("tokentv-usage.gif", b"USAGE-GIF")])
             display.activate(original)
             display.restore(original)
             self.assertEqual(self.enabled(photos), ["original.jpg", "space man.gif", "like.gif", "1.jpg"])
-            self.assertNotIn("tokentv-b.jpg", self.enabled(photos))  # every slot of ours sleeps again
-            self.assertNotIn("tokentv-usage.jpg", self.enabled(photos))
+            for slot in ("tokentv.gif", "tokentv-b.gif", "tokentv-usage.gif",
+                         "tokentv.jpg", "tokentv-b.jpg", "tokentv-usage.jpg"):
+                self.assertNotIn(slot, self.enabled(photos))  # every slot of ours sleeps again
 
     def test_activate_pins_the_slideshow_interval_that_makes_the_20_10_loop(self):
         calls = []
@@ -415,25 +417,29 @@ class RotationTests(unittest.TestCase):
         photos["interval"] = 30  # the clock's stored slideshow interval, drifted from ours
         with serve(handler) as url:
             display = PhotoDisplay(url)
-            display.upload_rotation([("tokentv.jpg", b"S"), ("tokentv-b.jpg", b"S"), ("tokentv-usage.jpg", b"U")])
+            display.upload_rotation([("tokentv.gif", b"S"), ("tokentv-b.gif", b"S"),
+                                     ("tokentv-usage.gif", b"U")])
             display.activate({"themes": []})
         # Three enabled slots at a 10-second interval loop 20 s stocks then 10 s usage — the
-        # schedule the user asked for, driven by the firmware's rotation.
+        # schedule the user asked for, driven by the firmware's rotation (now animated).
         self.assertIn("/photo/interval?val=10", [c[1] for c in calls])
 
     def test_lost_rotation_detects_any_missing_wanted_slot_only_from_a_real_album(self):
-        from token_tv.device import STOCKS_FILES, lost_rotation
-        full = [{"name": "tokentv.jpg", "enabled": True}, {"name": "tokentv-b.jpg", "enabled": True},
-                {"name": "tokentv-usage.jpg", "enabled": False}]
-        self.assertFalse(lost_rotation(full, "tokentv.jpg"))  # all wanted present (disabled is fine)
-        for missing in ("tokentv.jpg", "tokentv-b.jpg", "tokentv-usage.jpg"):
-            self.assertTrue(lost_rotation([f for f in full if f["name"] != missing], "tokentv.jpg"), missing)
-        # A caller can narrow the wanted set: the feeder owns only the two stock slots.
-        self.assertFalse(lost_rotation(full, "tokentv.jpg", wanted=STOCKS_FILES))
-        self.assertTrue(lost_rotation([f for f in full if f["name"] != "tokentv-b.jpg"],
-                                      "tokentv.jpg", wanted=STOCKS_FILES))
-        self.assertTrue(lost_rotation([], "tokentv.gif"))  # the gif slot is gone
-        self.assertFalse(lost_rotation(None, "tokentv.jpg"))  # an unreadable album (an Ultra) is never "lost"
+        from token_tv.device import JPEG_SLOTS, ROTATION_FILES, lost_rotation
+        full = [{"name": "tokentv.gif", "enabled": True}, {"name": "tokentv-b.gif", "enabled": True},
+                {"name": "tokentv-usage.gif", "enabled": False}]
+        self.assertFalse(lost_rotation(full, "tokentv.gif", ROTATION_FILES))  # all wanted present (disabled is fine)
+        for missing in ("tokentv.gif", "tokentv-b.gif", "tokentv-usage.gif"):
+            self.assertTrue(lost_rotation([f for f in full if f["name"] != missing], "tokentv.gif", ROTATION_FILES),
+                            missing)
+        # A caller can narrow the wanted set: the feeder owns the two static JPEG slots.
+        self.assertFalse(lost_rotation([*full, {"name": "tokentv.jpg", "enabled": True},
+                                        {"name": "tokentv-b.jpg", "enabled": True}],
+                                       "tokentv.gif", wanted=JPEG_SLOTS))
+        self.assertTrue(lost_rotation([*full, {"name": "tokentv.jpg", "enabled": True}],
+                                      "tokentv.gif", wanted=JPEG_SLOTS))  # the -b jpg slot is gone
+        self.assertTrue(lost_rotation([], "tokentv-usage.gif"))
+        self.assertFalse(lost_rotation(None, "tokentv.gif"))  # an unreadable album (an Ultra) is never "lost"
 
 
 if __name__ == "__main__":
@@ -557,8 +563,11 @@ class LiveCycleTests(unittest.TestCase):
         def activate(self, original, name='tokentv.jpg', wanted=None):
             self.activations += 1
             if self.activations == 1:
-                self.album = [f for f in self.album if f['name'] != 'tokentv-b.jpg']  # a slot is lost
+                from token_tv.device import wanted_slots
+                target = wanted_slots(name, wanted)[1 if len(wanted_slots(name, wanted)) > 1 else 0]
+                self.album = [f for f in self.album if f['name'] != target]  # one wanted slot is lost
             else:
+                self.done.set()
                 raise SystemExit  # enough: end the poll thread deterministically
 
     FROZEN = 1791900000.0
@@ -627,8 +636,41 @@ class LiveCycleTests(unittest.TestCase):
         self.assertEqual([name for name, _ in clock.uploads],
                          ["tokentv.jpg", "tokentv-b.jpg", "tokentv.jpg", "tokentv-b.jpg"])
         self.assertEqual([image for _, image in clock.uploads], [frames['neon']] * 4)  # neon, not pixel
-        self.assertNotEqual(frames['neon'], frames.get('usage'))
         self.assertNotIn('tokentv-usage.jpg', frames['mirrors'])
+
+    def test_a_later_reassert_is_not_a_false_lost_frame(self):
+        """A clock that keeps both stock slots runs its reasserts with no forced re-upload."""
+
+        class SteadyClock(self.FakeClock):
+            def activate(self, original, name='tokentv.jpg', wanted=None):
+                self.activations += 1  # no exit here: the cycle's own receipt still gets written
+
+            def capture(self):
+                if self.activations >= 3:  # cycles 3 and 6 (the reasserts) have published
+                    self.done.set()
+                    raise SystemExit
+                return super().capture()
+
+        clock = SteadyClock()
+        from token_tv import live
+        seen_receipts = []
+        real_write_json = live.write_json
+        with tempfile.TemporaryDirectory() as folder:
+            def collect(path, data):
+                real_write_json(path, data)
+                if 'receipt' in str(path):
+                    seen_receipts.append(data)
+
+            with patch('token_tv.live.write_json', collect):
+                self._run(clock, self._config(folder, display_style='neon', reassert_cycles=3), folder)
+        # Cycle 1 published the neon frame (fresh start, both stock slots); the reasserts at cycles
+        # 3 and 6 found everything they wanted present — no lost frame invented, no re-upload —
+        # and the never-uploaded usage slot is not part of the wanted set that could invent one.
+        self.assertEqual([name for name, _ in clock.uploads], ["tokentv.jpg", "tokentv-b.jpg"])
+        self.assertEqual(clock.activations, 3)
+        due_receipts = [receipt for receipt in seen_receipts if receipt.get('reasserted')]
+        self.assertEqual([len(receipt['uploads']) for receipt in due_receipts], [2, 0, 0])
+        self.assertTrue(all(receipt['throttled'] is False for receipt in due_receipts))
 
     def test_open_market_alternates_the_stocks_face_with_the_usage_face(self):
         from token_tv.display import render_frame
@@ -644,23 +686,23 @@ class LiveCycleTests(unittest.TestCase):
                                   stocks_snapshot=str(Path(folder) / 'stocks-snapshot.json'))
 
             def after():
+                from token_tv.usage_gif import render_usage_gif
                 saved = json.loads((Path(folder) / 'snapshot.json').read_text())
                 saved.pop('display', None)
-                frames['stocks'], _ = render_frame(saved, 0, 'stocks', 900, 60000)
-                frames['usage'], _ = render_frame({k: v for k, v in saved.items() if k != 'stocks'},
-                                                  0, 'pixel', 900, 60000)
+                frames['stocks'], _ = render_frame(saved, 0, 'stocks', 900, 400000)  # the breathing GIF
+                frames['usage'] = render_usage_gif({k: v for k, v in saved.items() if k != 'stocks'})
 
             self._run(clock, config, folder, after=after)
         self.assertEqual([name for name, _ in clock.uploads],
-                         ["tokentv.jpg", "tokentv-b.jpg", "tokentv-usage.jpg"] * 2)
-        # The 20-second side of the loop is the stocks face in the two stock slots; the 10-second
-        # side is the usage face in the third slot.
+                         ["tokentv.gif", "tokentv-b.gif", "tokentv-usage.gif"] * 2)
+        # The 20-second side of the loop is the animated stocks GIF in the two stock slots; the
+        # 10-second side is the shimmering usage GIF in the third slot.
         self.assertEqual([image for _, image in clock.uploads[:3]],
                          [frames['stocks'], frames['stocks'], frames['usage']])
         self.assertNotEqual(frames['stocks'], frames['usage'])
 
     def test_a_closed_market_rests_the_clock_on_the_usage_screen(self):
-        from token_tv.display import render_frame
+        from token_tv.usage_gif import render_usage_gif
         clock = self.FakeClock()
         frames = {}
         with tempfile.TemporaryDirectory() as folder:
@@ -675,9 +717,9 @@ class LiveCycleTests(unittest.TestCase):
             def after():
                 saved = json.loads((Path(folder) / 'snapshot.json').read_text())
                 saved.pop('display', None)
-                frames['usage'], _ = render_frame({k: v for k, v in saved.items() if k != 'stocks'},
-                                                  0, 'pixel', 900, 60000)
+                frames['usage'] = render_usage_gif({k: v for k, v in saved.items() if k != 'stocks'})
 
             self._run(clock, config, folder, after=after)
-        # A closed market fills every slot with the usage face: the loop only runs while open.
+        # A closed market fills every GIF slot with the shimmering usage screen: the loop only
+        # runs while open.
         self.assertEqual([image for _, image in clock.uploads], [frames['usage']] * 6)
