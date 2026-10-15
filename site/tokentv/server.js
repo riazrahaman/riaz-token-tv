@@ -45,7 +45,13 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/visits") {
     const urlObj = new URL(req.url, "http://localhost");
     const isHit = urlObj.searchParams.get("hit") !== "0";
-    const VISITS_FILE = path.join(ROOT, ".visits.json");
+    // Railway containers are ephemeral: a redeploy wipes everything outside a mounted
+    // volume, which reset the visit counter on every push. When a volume is attached
+    // Railway injects RAILWAY_VOLUME_MOUNT_PATH, so the counter lives there and survives
+    // redeploys; the repo-local file remains the fallback for local development.
+    const VISITS_FILE = process.env.RAILWAY_VOLUME_MOUNT_PATH
+      ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, ".visits.json")
+      : path.join(ROOT, ".visits.json");
     let count = 1;
     try {
       if (fs.existsSync(VISITS_FILE)) {

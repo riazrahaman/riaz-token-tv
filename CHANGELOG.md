@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Site visit counter survives redeploys** — Railway containers are ephemeral, so the counter file was wiped on every push (resetting to 2–3). `server.js` now stores `.visits.json` on the attached Railway volume via `RAILWAY_VOLUME_MOUNT_PATH`, with the repo-local file as the local-development fallback.
+
 ## [0.4.11] — 2026-10-15
 
 ### Fixed
