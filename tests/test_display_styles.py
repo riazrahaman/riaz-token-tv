@@ -349,10 +349,27 @@ class StocksOnlyFaceTests(unittest.TestCase):
             feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
                     'symbols': [row] + self._feed()['symbols'][1:]}
             image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
-            y = combo_stocks.TOP + 46
+            y = combo_stocks.TOP + 47
             strip = image.crop((14, y, 227, y + 2))
             return sum(1 for px in strip.getdata() if px[1] > px[2] + 25)  # green-ish fill pixels
         self.assertGreater(bar_ink(5.0), bar_ink(2.5))  # twice the move, twice the fill
+
+    def test_a_flat_quote_draws_no_arrow_on_its_card(self):
+        from token_tv import combo_stocks
+        from token_tv.display import render_page
+        at = time.time()
+        def board(first_row):
+            feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
+                    'symbols': [first_row] + self._feed()['symbols'][1:]}
+            return Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': feed}, style='stocks')))
+        flat = {'symbol': 'FLAT', 'price': 10.0, 'change': 0.0, 'percent': 0.0, 'previous_close': None, 'at': at}
+        down = {'symbol': 'OUST', 'price': 30.74, 'change': -1.13, 'percent': -3.55, 'previous_close': None, 'at': at}
+        y = combo_stocks.TOP
+        arrow_box = (100, y + 10, 125, y + 23)  # where the arrow polygon sits beside the percent
+        flat_pixels = list(board(flat).crop(arrow_box).getdata())
+        self.assertTrue(all(max(px) < 50 for px in flat_pixels), 'the flat card drew an arrow')
+        down_pixels = list(board(down).crop(arrow_box).getdata())
+        self.assertTrue(any(px[0] > 120 and px[1] < 100 for px in down_pixels), 'the control arrow is missing')
 
     def test_rows_fills_the_four_slots_and_a_dead_quote_is_a_dash_slot(self):
         from token_tv.display import render_page

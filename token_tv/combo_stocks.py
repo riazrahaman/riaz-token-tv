@@ -83,10 +83,13 @@ def _card(draw, y, row):
     if row.get('price') is None or percent is None:  # a dead quote: dashes at the price and percent anchors
         pixel_text(draw, (SIZE - 14, y + 12), '--', 2, PALETTE['dim'], 'right')
         return
-    _arrow_and_percent(draw, SIZE - 14, y + 7, percent, 3, row_ink)
     change = row.get('change')
-    pixel_text(draw, (SIZE - 14, y + 34), '--' if change is None else f'{change:+.2f}', 2, mix(row_ink, .8), 'right')
-    _bar(draw, row_ink, 14, y + 46, SIZE - 14, percent)
+    pixel_text(draw, (SIZE - 14, y + 30), '--' if change is None else f'{change:+.2f}', 2, mix(row_ink, .8), 'right')
+    if percent == 0:  # flat: a dim percent, no glow, and no arrow polygon at all
+        pixel_text(draw, (SIZE - 14, y + 7), f'{abs(percent):.2f}%', 3, PALETTE['dim'], 'right')
+    else:
+        _arrow_and_percent(draw, SIZE - 14, y + 7, percent, 3, row_ink)
+    _bar(draw, row_ink, 14, y + 47, SIZE - 14, percent)
 
 
 def render_combo_stocks(snapshot):
