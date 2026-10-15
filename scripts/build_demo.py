@@ -12,12 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from token_tv.display import STYLES, render_page  # noqa: E402
+from token_tv.display import STOCK_STYLES, STYLES, render_page  # noqa: E402
 from token_tv.web_assets import ASSETS, WEB  # noqa: E402
 from token_tv.sample import snapshot  # noqa: E402
 from token_tv.catalog import payload as theme_payload  # noqa: E402
 
-REPO = 'https://github.com/click6067-ship-it/token-tv'
+REPO = 'https://github.com/riazrahaman/riaz-token-tv'
 META = '''<meta name="description" content="Your AI limits, on a tiny desk clock. Claude, Ollama and Antigravity usage, several accounts, no firmware flashing.">
 <meta property="og:title" content="TokenTV · Live demo">
 <meta property="og:description" content="Your AI limits, on a tiny desk clock. Claude, Ollama and Antigravity · multiple accounts · no flashing.">
@@ -50,8 +50,10 @@ def build(out, site):
     frames = out / 'frames'
     frames.mkdir()
     rendered = snapshot(time.time())
-    # The stocks gallery entry shows a live movers-style board; the sample usage snapshot alone
-    # would render it closed, and the demo host has no feeder.
+    # Every face that draws stocks needs the feed, not just the stocks one: the combo family
+    # falls back to the plain usage board when the market is closed, so without this the Combo
+    # gallery thumbnail is byte-identical to Pixel and shows none of what the face is for.
+    # The demo host has no feeder, so the board is sampled here.
     stocks_feed = {'updated_at': time.time(), 'source': 'YAHOO',
                    'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
                    'symbols': [{'symbol': 'NVDA', 'price': 188.42, 'change': 9.55, 'percent': 5.33,
@@ -64,7 +66,7 @@ def build(out, site):
                                 'previous_close': None, 'at': int(time.time())}]}
     paths = {}
     for style in STYLES:
-        frame = dict(rendered, stocks=stocks_feed) if style == 'stocks' else rendered
+        frame = dict(rendered, stocks=stocks_feed) if style in STOCK_STYLES else rendered
         image = render_page(frame, style=style)
         name = f"{style}.{'gif' if image[:4] == b'GIF8' else 'jpg'}"  # Space is animated
         (frames / name).write_bytes(image)

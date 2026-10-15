@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="version" content="0.4.11">
+<meta name="version" content="0.5.0">
 <title>TokenTV — AI usage on a $5 desk clock</title>
 <meta name="description" content="How a $5 Wi-Fi desk clock shows live AI usage and a stock watchlist without ever being reflashed — the design, the code flow, the hardware, and what was contributed on top of the original.">
 <link rel="canonical" href="https://token-tv.riazrahaman.com/">
@@ -50,7 +50,7 @@
         <b>What this page covers</b> &rarr; the design, the code flow, the hardware, and exactly what was built on top of someone else's good idea.<br>
         <b>Hardware</b> &rarr; $5 Wi-Fi Desk Clock (<a href="https://ar.aliexpress.com/item/1005011924447121.html?channel=twinner" target="_blank" rel="noopener noreferrer">AliExpress</a>)<br>
         <b>Base</b> &rarr; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> (MIT)<br>
-        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.4.11</span><br>
+        <b>Edition</b> &rarr; <span>October 2026</span> &middot; <span id="heroVersion">v0.5.0</span><br>
         <b>Visits</b> &rarr; <span id="heroVisits">counting...</span>
       </div>
     </div>
@@ -519,6 +519,11 @@
       <p>The markets' face animates between rotations: the gain/loss arrows breathe a full edge-to-edge loop every 2 seconds, and the usage gauges carry a ~1.2-second shimmer — as looping GIFs, because the vendor firmware repaints the panel continuously only for GIFs. Finding that pacing took two hardware iterations: too fast and the encoder coalesced the phases away, matching the panel's ~2.5&nbsp;s repaint made it read as a slow crawl.</p>
       <span class="where">combo_stocks.py · usage_gif.py · display.py</span>
     </li>
+    <li style="--c:var(--c-app)">
+      <h3>A dashboard that answers the question it is asked</h3>
+      <p>Rebuilt around one gauge per account rather than a bar per provider: a bar reads as &ldquo;how far along is this&rdquo;, a ring reads as &ldquo;how full is this&rdquo;, and the second one is the question. Account tabs are gone &mdash; a tab put a reading behind a click. Severity is written out as well as coloured, so a reading survives greyscale; a stale one greys its arc and says so, and an account with no reading shows a dash and what to do about it, never a zero. The four web costumes went too: they duplicated the clock-face picker two rows below them, and one design borrowed from this page took their place, in light, dark or auto.</p>
+      <span class="where">token_tv/web/ &middot; 276 lines of CSS, down from 782</span>
+    </li>
     <li style="--c:var(--c-cfg)">
       <h3>The clock's own settings, and its identity</h3>
       <p>Brightness and the night window moved out of the device's web UI and into version-controlled config, applied only where they differ. The clock is now pinned by MAC address, because a DHCP lease can move an address between identical-looking devices and nothing else would notice.</p>
@@ -587,7 +592,7 @@
 <footer>
   <span>Project &middot; TokenTV &middot; Oct 2026</span>
   <span>MIT &middot; <a href="https://github.com/riazrahaman/riaz-token-tv">github.com/riazrahaman/riaz-token-tv</a> &middot; forked from <a href="https://github.com/click6067-ship-it/token-tv">click6067-ship-it/token-tv</a> &middot; built in collaboration with Claude, Antigravity &amp; OpenCode</span>
-  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.4.11</span><span id="visits"></span></span>
+  <span class="foot-meta"><span id="siteVersion" title="Site version">v0.5.0</span><span id="visits"></span></span>
 </footer>
 
 </main>

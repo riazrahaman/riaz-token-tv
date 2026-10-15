@@ -17,7 +17,7 @@ The third image marks Ollama as an old reading and gives Antigravity no data.
 Checked on Linux (2026-10-04). Python 3.10+.
 
 ```bash
-git clone https://github.com/click6067-ship-it/token-tv && cd token-tv
+git clone https://github.com/riazrahaman/riaz-token-tv && cd token-tv
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python examples/gameboy/gameboy.py   # writes before.png, after.png, after-old-unknown.png here
 ```
@@ -30,7 +30,7 @@ python3 -m venv .venv && .venv/bin/pip install -e .
    (or ask your AI for a different look).
 3. Run `.venv/bin/python examples/my-face/gameboy.py` and open `examples/my-face/after.png` (240×240).
 
-Want to keep it on GitHub? Fork the repository and commit your folder. Want others to see it? [Share a face](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md).
+Want to keep it on GitHub? Fork the repository and commit your folder. Want others to see it? [Share a face](https://github.com/riazrahaman/riaz-token-tv/issues/new?template=share_a_face.md).
 
 ## What the face does
 

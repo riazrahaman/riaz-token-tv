@@ -1,33 +1,28 @@
 'use strict';
-/* TokenTV web dashboard. Every theme renders the same nodes; style.css composes them. */
-const THEMES = [
- {id:'plain', name:'Plain', eyebrow:'', title:'AI usage', note:''},
- {id:'digital', name:'Digital Terminal', eyebrow:'', title:'AI USAGE DASHBOARD', note:''},
- {id:'neon', name:'Neon Cyberpunk', eyebrow:'Today', title:'AI USAGE', note:''},
- {id:'retro', name:'Pixel Retro', eyebrow:'', title:'AI PROVIDERS', note:'USAGE DASHBOARD'},
- {id:'hud', name:'Sci-Fi HUD', eyebrow:'', title:'AI PROVIDER USAGE', note:'Real-time usage monitor'}
-];
-const STATUS = {ok:'Connected', loading:'Loading', auth_required:'Login needed', identity_mismatch:'Check identity', quota_unavailable:'Quota unavailable', stale:'OLD · Previous value', rate_limited:'Retry later', error:'Fetch failed'};
+/* TokenTV web dashboard.
+ *
+ * One card per account, every reading visible at once: a gauge reads as "how full is this",
+ * which is the question, where a bar reads as "how far along is this". Severity is carried by
+ * the band word as well as the colour, so a reading survives greyscale.
+ *
+ * Every appearance renders the same nodes; style.css skins them. */
+const STATUS = {ok:'Connected', loading:'Loading', auth_required:'Login needed', identity_mismatch:'Check identity', quota_unavailable:'No quota reported', stale:'Old reading', rate_limited:'Retry later', error:'Fetch failed'};
+const EXPLAIN = {auth_required:'sign in to the CLI', identity_mismatch:'this account does not match the config', quota_unavailable:'connected, but the service reports no limit', rate_limited:'the service asked us to wait', error:'could not read this account', loading:'first reading on its way'};
 const PROVIDERS = ['claude', 'ollama', 'antigravity'];
-const COMPANIES = {claude:'ANTHROPIC', ollama:'OLLAMA', antigravity:'GOOGLE'};
+const LABELS = {claude:'Claude', ollama:'Ollama', antigravity:'Antigravity'};
 const svgNS = 'http://www.w3.org/2000/svg';
 const $ = s => document.querySelector(s);
 const readPreference = (k, f) => {try {return JSON.parse(localStorage.getItem(k)) ?? f} catch {return f}};
 const savePreference = (k, v) => {try {localStorage.setItem(k, JSON.stringify(v))} catch {/* Private browsing may disallow storage. */}};
-let accountChoices = readPreference('tokentv.accounts', {});
-if (!accountChoices || typeof accountChoices !== 'object' || Array.isArray(accountChoices)) accountChoices = {};
 // The static demo (scripts/build_demo.py) serves sample data and pre-rendered clock frames.
 const DEMO = document.documentElement.hasAttribute('data-demo');
 let snapshot = null, offline = false, polling = false, displayInfo = null, clockChoice = null, applying = false, clockError = false;
 const el = (tag, text, cls) => {const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n};
 function svgNode(tag, attrs) {const n = document.createElementNS(svgNS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n}
 const clamp = v => Math.max(0, Math.min(100, v));
-/* Unlit seven-segment cells behind Digital numerals: every glyph cell becomes 8. */
-const ghost = text => text.replace(/[^\s:]/g, '8');
 const pad = n => String(n).padStart(2, '0');
-function seeded(seed) {return () => {seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296}}
 
-/* Provider marks: vector glyphs for most themes, the project's pixel mascots for Pixel Retro. */
+/* Provider marks: identity only. The reading itself is never colour-coded by provider. */
 function icon(provider) {
  const s = svgNode('svg', {viewBox:'0 0 48 48', 'aria-hidden':'true', fill:'none', stroke:'currentColor', 'stroke-linecap':'round', 'stroke-linejoin':'round', class:'glyph'});
  if (provider === 'claude') {
@@ -46,168 +41,151 @@ function icon(provider) {
  }
  return s;
 }
-function mascot(provider) {const img = el('img', undefined, 'pixel-mascot'); img.src = `/assets/${provider}-pixel.png`; img.alt = ''; img.width = 32; img.height = 32; img.decoding = 'async'; return img}
 function clockGlyph() {
  const s = svgNode('svg', {viewBox:'0 0 24 24', 'aria-hidden':'true', fill:'none', stroke:'currentColor', 'stroke-width':1.8, 'stroke-linecap':'round', class:'clock-icon'});
  s.append(svgNode('circle', {cx:12, cy:12, r:9}), svgNode('path', {d:'M12 7.5V12l3 2'}));
- const p = svgNode('svg', {viewBox:'0 0 9 9', 'aria-hidden':'true', 'shape-rendering':'crispEdges', class:'clock-pixel'});
- for (const [x, y, w, h, c] of [[2,0,5,1,'o'],[1,1,1,1,'o'],[7,1,1,1,'o'],[0,2,1,5,'o'],[8,2,1,5,'o'],[1,7,1,1,'o'],[7,7,1,1,'o'],[2,8,5,1,'o'],[1,2,7,5,'f'],[2,1,5,1,'f'],[2,7,5,1,'f'],[4,2,1,3,'o'],[5,4,2,1,'o']])
-  p.append(svgNode('rect', c === 'o' ? {x, y, width:w, height:h, fill:'currentColor'} : {x, y, width:w, height:h, fill:'#fff3d6', class:'face'}));
- const wrap = el('span', undefined, 'clock-mark'); wrap.setAttribute('aria-hidden', 'true'); wrap.append(s, p); return wrap;
+ const wrap = el('span', undefined, 'clock-mark'); wrap.setAttribute('aria-hidden', 'true'); wrap.append(s); return wrap;
 }
 
-/* Pixel Retro scenery on a 200×62 logical grid, anchored bottom-right. Sky objects sit
- * near x≈138 so they fall between the title row and the score column. */
-function scene(provider) {
- const W = 200, H = 62, rnd = seeded({claude:11, ollama:23, antigravity:37}[provider]);
- const s = svgNode('svg', {viewBox:`0 0 ${W} ${H}`, preserveAspectRatio:'xMaxYMax slice', 'shape-rendering':'crispEdges', class:'scene', 'aria-hidden':'true'});
- const rect = (x, y, w, h, fill, cls) => {const r = svgNode('rect', {x, y, width:w, height:h, fill}); if (cls) r.setAttribute('class', cls); s.append(r)};
- const bands = colors => colors.forEach((c, i) => rect(0, Math.floor(i * H / colors.length), W, Math.ceil(H / colors.length) + 1, c));
- const ridge = (f, fill) => {let d = `M0 ${H}`; for (let x = 0; x < W; x += 2) d += `V${Math.round(f(x))}H${x + 2}`; s.append(svgNode('path', {d:d + `V${H}Z`, fill}))};
- const disc = (cx, cy, r, fill) => {for (let dy = -r; dy <= r; dy++) {const w = Math.round(Math.sqrt(r * r - dy * dy)); rect(cx - w, cy + dy, 2 * w + 1, 1, fill)}};
- const pine = (x, base, h, fill) => {for (let i = 0; i < h; i++) {const w = 1 + 2 * Math.floor(i / 2); rect(x - Math.floor(w / 2), base - h + i, w, 1, fill)} rect(x, base, 1, 2, fill)};
- const stars = (n, x0, y1, colors) => {for (let i = 0; i < n; i++) rect(x0 + Math.floor(rnd() * (W - x0)), Math.floor(rnd() * y1), 1, 1, colors[i % colors.length], i % 3 ? '' : 'twinkle')};
- if (provider === 'claude') {
-  bands(['#2a1330', '#3a1834', '#4d1f36', '#652836', '#7f3335', '#9a4133', '#b65231', '#cf6630']);
-  disc(138, 15, 9, '#ff9e4f'); disc(138, 15, 7, '#ffc067'); disc(138, 14, 4, '#ffe08f');
-  for (const y of [17, 20, 23]) rect(128, y, 21, 1, '#4d1f36');
-  for (const [x, y] of [[112, 24], [119, 21], [126, 27]]) {rect(x, y, 1, 1, '#2a1330'); rect(x + 1, y + 1, 1, 1, '#2a1330'); rect(x + 2, y, 1, 1, '#2a1330')}
-  ridge(x => 41 - 9 * Math.max(0, Math.sin((x - 40) / 18)) - 3 * Math.sin(x / 6) - (x > 150 ? 5 * Math.max(0, Math.sin((x - 150) / 10)) : 0), '#5a2236');
-  ridge(x => 49 - 3 * Math.sin(x / 9 + 1) - 2 * Math.sin(x / 4), '#371428');
-  for (const x of [152, 158, 163, 182, 188, 194]) pine(x, 52, 7 + (x % 3), '#24101e');
- } else if (provider === 'ollama') {
-  bands(['#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f', '#2d1e6a', '#33226f']);
-  stars(30, 40, 26, ['#d9c6ff', '#f3ecff']);
-  disc(137, 11, 5, '#efe6ff'); disc(139, 10, 4, '#0d0a28');
-  let x = 52;
-  while (x < W) {const w = 6 + Math.floor(rnd() * 7), h = 10 + Math.floor(rnd() * 13); rect(x, 52 - h, w, h + 10, '#241a4a'); for (let wy = 54 - h; wy < 50; wy += 3) for (let wx = x + 1; wx < x + w - 1; wx += 2) if (rnd() > .55) rect(wx, wy, 1, 1, rnd() > .7 ? '#e0d0ff' : '#b48cf2'); x += w + 2}
-  for (let p = 0; p < W; p += 5) pine(p + 2, 58, 6 + Math.floor(rnd() * 5), '#150f33');
-  for (let i = 0; i < 9; i++) rect(60 + Math.floor(rnd() * 138), 38 + Math.floor(rnd() * 12), 1, 1, '#c8b0ff', 'twinkle');
- } else {
-  bands(['#0d0a28', '#120d33', '#170f3e', '#1c1349', '#211654', '#271a5f', '#2d1e6a', '#33226f']);
-  stars(80, 0, 46, ['#efe6ff', '#b9a6ff', '#ffffff']);
-  disc(140, 15, 8, '#8f6cf2'); disc(138, 13, 6, '#a98bff'); disc(136, 11, 2, '#cdbbff');
-  for (let i = -15; i <= 15; i++) rect(140 + i, 16 + Math.round(-i * .28), 1, 1, Math.abs(i) < 8 ? '#e2d6ff' : '#bca8ff');
-  disc(108, 26, 2, '#d9cff7');
-  ridge(x => 50 - 4 * Math.abs(Math.sin(x / 13)) - 2 * Math.sin(x / 5), '#120c33');
-  ridge(x => 56 - 2 * Math.abs(Math.sin(x / 8 + 2)), '#0a0722');
-  for (const [cx, cy] of [[120, 58], [150, 59], [184, 58]]) rect(cx, cy, 3, 1, '#1d1550');
- }
- return s;
-}
-/* The TokenTV cube mascot for the Pixel Retro banner (36×32 logical pixels). */
-function retroMascot() {
- const s = svgNode('svg', {viewBox:'0 0 44 34', 'shape-rendering':'crispEdges', class:'mascot-art'});
- const r = (x, y, w, h, fill, cls) => {const n = svgNode('rect', {x, y, width:w, height:h, fill}); if (cls) n.setAttribute('class', cls); s.append(n)};
- const O = '#151238', C = '#fff1d6', D = '#e3c79c', N = '#1c2a63', M = '#7ff5c8', P = '#ff7aa8', Y = '#ffd86b';
- r(15, 1, 3, 3, P); r(15, 1, 1, 1, '#ffd0e0'); r(16, 4, 1, 4, O);
- r(5, 8, 22, 1, O); r(4, 9, 1, 16, O); r(27, 9, 1, 16, O); r(5, 25, 22, 1, O);
- r(5, 9, 22, 16, C); r(25, 10, 2, 15, D); r(5, 23, 22, 2, D); r(6, 10, 4, 1, '#ffffff');
- r(8, 11, 16, 10, O); r(9, 12, 14, 8, N); r(9, 12, 14, 1, '#25367a');
- r(12, 14, 2, 1, M); r(11, 15, 1, 1, M); r(14, 15, 1, 1, M); r(18, 14, 2, 1, M); r(17, 15, 1, 1, M); r(20, 15, 1, 1, M);
- r(14, 18, 4, 1, M); r(13, 17, 1, 1, M); r(18, 17, 1, 1, M); r(10, 17, 2, 1, P); r(20, 17, 2, 1, P);
- r(1, 15, 3, 1, O); r(1, 16, 1, 5, O); r(2, 16, 2, 4, C); r(1, 21, 3, 1, O);
- r(28, 13, 2, 2, O); r(29, 9, 2, 4, O); r(28, 5, 4, 1, O); r(27, 6, 1, 3, O); r(32, 6, 1, 3, O); r(28, 6, 4, 3, C); r(28, 9, 4, 1, O);
- r(8, 26, 1, 4, O); r(9, 26, 4, 3, '#2a2f6a'); r(13, 26, 1, 4, O); r(8, 30, 6, 1, O);
- r(18, 26, 1, 4, O); r(19, 26, 4, 3, '#2a2f6a'); r(23, 26, 1, 4, O); r(18, 30, 6, 1, O);
- for (const [x, y, w, h] of [[36,2,2,1],[39,2,2,1],[35,3,7,2],[36,5,5,1],[37,6,3,1],[38,7,1,1]]) r(x, y, w, h, '#ff5d8f', 'beat');
- for (const [x, y] of [[33, 13], [40, 18], [1, 3]]) {r(x, y - 1, 1, 3, Y, 'twinkle'); r(x - 1, y, 3, 1, Y, 'twinkle')}
- return s;
-}
-function buildStarfield() {
- const rnd = seeded(5), s = svgNode('svg', {viewBox:'0 0 480 300', preserveAspectRatio:'xMidYMid slice', 'shape-rendering':'crispEdges'});
- for (let i = 0; i < 140; i++) {const big = i % 17 === 0, r = svgNode('rect', {x:Math.floor(rnd() * 480), y:Math.floor(rnd() * 300), width:big ? 2 : 1, height:big ? 2 : 1, fill:['#ffffff', '#b9c8ff', '#ffe9a8'][i % 3]}); if (i % 4 === 0) r.setAttribute('class', 'twinkle'); r.style.animationDelay = (-rnd() * 4).toFixed(2) + 's'; s.append(r)}
- $('#starfield').append(s);
-}
 function resetTime(epoch) {if (!Number.isFinite(epoch) || epoch <= 0) return '—'; let m = Math.ceil((epoch - Date.now() / 1000) / 60); if (m <= 0) return 'Awaiting reset'; return m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : `${Math.floor(m / 60)}h ${pad(m % 60)}m`}
+/* A window's label is '5H', 'WEEK' — or, for Ollama Cloud, the budget itself ('$102'). */
+const budget = w => w && String(w.label || '').startsWith('$');
 function period(w) {if (!w) return 'QUOTA'; return w.label === 'BUDGET' ? 'CREDIT BUDGET' : w.label === 'WEEK' ? 'WEEKLY' : w.label === '5H' ? '5-HOUR' : String(w.label || 'QUOTA')}
+function windowName(w) {
+ if (!w) return 'no window';
+ if (budget(w)) return 'monthly credit';
+ return {'5H':'5-hour window', WEEK:'weekly window', DAY:'daily window', MONTH:'monthly window'}[w.label] || period(w).toLowerCase();
+}
+function windowShort(w) {if (!w) return '—'; if (budget(w)) return 'credit'; return {'5H':'5-hour', WEEK:'weekly', DAY:'daily', MONTH:'monthly'}[w.label] || period(w).toLowerCase()}
+/* The bands the clock faces and the legend share: <50 low, 50–79 medium, 80–89 high, 90+ critical. */
 function level(v) {return v < 50 ? 'low' : v < 80 ? 'medium' : v < 90 ? 'high' : 'critical'}
 function levelText(v) {return v >= 100 ? 'Limit reached' : v >= 90 ? 'Near limit' : v >= 80 ? 'High usage' : v >= 50 ? 'Moderate' : 'Low usage'}
-function gauge(value, label) {
- const g = el('div', undefined, 'meter');
- if (Number.isFinite(value)) {value = clamp(value); g.dataset.level = level(value); g.style.setProperty('--value', value + '%'); g.style.setProperty('--v', String(Math.max(1, value))); g.setAttribute('role', 'meter'); g.setAttribute('aria-label', label); g.setAttribute('aria-valuemin', '0'); g.setAttribute('aria-valuemax', '100'); g.setAttribute('aria-valuenow', String(value))}
- else {g.classList.add('unknown-meter'); g.setAttribute('aria-label', label + ' unavailable')}
- for (let i = 0; i < 10; i++) {const seg = el('span', undefined, 'meter-segment'), fill = el('span', undefined, 'meter-fill'); seg.style.setProperty('--i', String(i)); fill.style.setProperty('--fill', Number.isFinite(value) ? clamp((value - i * 10) * 10) + '%' : '0%'); seg.append(fill); g.append(seg)}
- return g;
-}
-function stat(key, value, cls) {const s = el('div', undefined, 'stat' + (cls ? ' ' + cls : '')); s.append(el('span', key, 'stat-k'), typeof value === 'string' ? el('span', value, 'stat-v') : value); return s}
 
-function setTheme(theme) {
- const config = THEMES.find(t => t.id === theme) || THEMES[0];
- document.documentElement.dataset.theme = config.id; savePreference('tokentv.theme', config.id);
- $('#eyebrow').textContent = config.eyebrow; $('#eyebrow').hidden = !config.eyebrow;
- $('#page-title').textContent = config.title;
- $('#intro-note').textContent = config.note; $('#intro-note').hidden = !config.note;
- for (const b of document.querySelectorAll('[data-theme-choice]')) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === config.id));
+/* The gauge. --pct drives stroke-dasharray in CSS; the number carries the same value in text. */
+function arc(value, label) {
+ const figure = el('div', undefined, 'figure');
+ const s = svgNode('svg', {class:'arc', viewBox:'0 0 120 120', 'aria-hidden':'true'});
+ s.append(svgNode('circle', {class:'arc-track', cx:60, cy:60, r:52}));
+ if (Number.isFinite(value)) {const fill = svgNode('circle', {class:'arc-fill', cx:60, cy:60, r:52}); fill.style.setProperty('--pct', String(clamp(value))); s.append(fill)}
+ const num = el('div', undefined, 'percentage');
+ if (Number.isFinite(value)) {
+  const digits = el('span', String(Math.round(clamp(value))), 'pct-num');
+  num.dataset.digits = String(digits.textContent.length);  // '100' must stay inside the ring
+  num.append(digits, el('span', '%', 'percent-sign'));
+  num.setAttribute('role', 'meter'); num.setAttribute('aria-label', label);
+  num.setAttribute('aria-valuemin', '0'); num.setAttribute('aria-valuemax', '100'); num.setAttribute('aria-valuenow', String(Math.round(clamp(value))));
+ } else {
+  num.append(el('span', '––', 'pct-num no-reading'));
+  num.setAttribute('role', 'img'); num.setAttribute('aria-label', label + ' unavailable');
+ }
+ figure.append(s, num); return figure;
 }
-for (const t of THEMES) {
- const b = el('button', undefined, 'theme-button'); b.type = 'button'; b.dataset.themeChoice = t.id; b.setAttribute('aria-pressed', 'false');
- const sw = el('span', undefined, 'swatch'); sw.dataset.swatch = t.id; sw.setAttribute('aria-hidden', 'true'); sw.append(el('i'), el('i'), el('i'));
- b.append(sw, el('span', t.name, 'theme-name')); b.onclick = () => setTheme(t.id); $('#themes').append(b);
-}
-setTheme(readPreference('tokentv.theme', THEMES[0].id));
 
-function providerCard(provider, accounts) {
- let a = accounts.find(x => x.key === accountChoices[provider]) || accounts[0];
- if (!a) a = {key:provider, alias:provider.toUpperCase(), provider, status:'loading', windows:[]};
- const prior = $(`.provider-card[data-provider="${provider}"] .more-windows`);
+/* 'ANTIGRAVITY B' next to the word Antigravity is the provider name twice, and it is what
+ * overflows a 320px card. Drop the duplicated prefix and keep what distinguishes the account. */
+function shortAlias(a, provider) {
+ const alias = String(a.alias || '').trim(), name = (LABELS[provider] || provider).toUpperCase();
+ if (!alias) return '';
+ const rest = alias.toUpperCase().startsWith(name) ? alias.slice(name.length).trim() : alias;
+ return rest || alias;
+}
+/* One account, one card. No tabs: a tab hides a reading behind a click. */
+function readingCard(account, siblings) {
+ const a = account, provider = a.provider;
  const stale = offline || a.status === 'stale';
  const valid = (a.windows || []).filter(w => Number.isFinite(w.used_percent));
  // A mismatched identity must not expose another person's quota as this account.
  const windows = a.status === 'identity_mismatch' ? [] : valid;
  const primary = windows.reduce((p, w) => !p || w.used_percent > p.used_percent ? w : p, null);
  const value = primary ? clamp(primary.used_percent) : null;
- const shell = el('div', undefined, 'card-shell'); shell.dataset.provider = provider;
- const card = el('article', undefined, 'provider-card');
- Object.assign(card.dataset, {provider, key:a.key, stale:String(stale), level:value === null ? 'unknown' : level(value)});
- const art = el('div', undefined, 'card-art'); art.setAttribute('aria-hidden', 'true'); art.append(scene(provider));
- const head = el('div', undefined, 'card-head'), logo = el('div', undefined, 'provider-icon'); logo.append(icon(provider), mascot(provider));
- const name = el('div', undefined, 'provider-name'); name.append(el('h2', provider.toUpperCase(), 'provider-title'), el('span', COMPANIES[provider], 'company'));
- const tabs = el('div', undefined, 'account-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', provider.toUpperCase() + ' accounts');
- for (const row of accounts) {const letter = (row.alias || '').split(' ').at(-1); const b = el('button', letter, 'account-tab'); b.type = 'button'; b.dataset.account = row.key; b.title = row.alias; b.setAttribute('aria-label', row.alias); b.setAttribute('aria-pressed', String(row.key === a.key)); b.onclick = () => {accountChoices[provider] = row.key; savePreference('tokentv.accounts', accountChoices); renderAccounts(); $(`[data-account="${row.key}"]`)?.focus()}; tabs.append(b)}
- head.append(logo, name, tabs);
- const reading = el('div', undefined, 'reading'), meta = el('div', undefined, 'reading-meta');
- meta.append(el('span', period(primary) + ' USED', 'reading-label'));
- if (primary) meta.append(el('span', stale ? 'OLD · Last known usage' : levelText(value), 'level-label'));
- else meta.append(el('span', a.status === 'quota_unavailable' ? 'Connected. No quota reported.' : STATUS[a.status] || 'No reading available.', 'unknown-message'));
- const num = el('div', value === null ? '—' : undefined, 'percentage');
- if (value !== null) {const digits = el('span', String(Math.round(value)), 'pct-num'); digits.dataset.ghost = ghost(digits.textContent); num.append(digits, el('span', '%', 'percent-sign'))}
- reading.append(meta, num);
- const timer = el('div', undefined, 'timer'), until = el('span', primary ? resetTime(primary.resets_at) : '—', 'timer-value');
- if (/^[\ddh ]+$/.test(until.textContent)) until.dataset.ghost = ghost(until.textContent);
- timer.append(clockGlyph(), el('span', 'RESETS IN', 'timer-label'), until);
- const row = el('div', undefined, 'gauge'); row.append(gauge(value, a.alias + ' ' + period(primary) + ' used quota'), el('span', value === null ? '—' : Math.round(value) + '%', 'gauge-value'));
- card.append(art, head, reading, timer, row);
- const others = windows.filter(w => w !== primary);
- if (others.length) {
-  const details = el('details', undefined, 'more-windows'); details.open = prior?.open || false;
-  const named = period(others[0]) === 'CREDIT BUDGET' ? 'Credit budget' : period(others[0])[0] + period(others[0]).slice(1).toLowerCase();
-  details.append(el('summary', others.length === 1 ? `${named} window` : `${others.length} more windows`));
-  for (const w of others) {const line = el('div', undefined, 'window-detail'); line.append(el('span', period(w), 'window-name'), gauge(w.used_percent, a.alias + ' ' + period(w) + ' used quota'), el('span', Math.round(w.used_percent) + '%', 'window-percent'), el('span', resetTime(w.resets_at), 'window-timer')); details.append(line)}
-  card.append(details);
+
+ const card = el('article', undefined, 'read');
+ Object.assign(card.dataset, {provider, key:a.key || provider, state: value === null ? 'blank' : stale ? 'stale' : 'ok'});
+ if (value !== null && !stale) card.dataset.level = level(value);
+
+ const head = el('header');
+ const who = el('span', undefined, 'who'); who.append(el('i', undefined, 'mark'), el('span', LABELS[provider] || provider, 'who-name'));
+ who.querySelector('.mark').append(icon(provider));
+ if (siblings > 1) who.append(el('span', shortAlias(a, provider), 'alias'));
+ head.append(who, el('span', value === null ? '—' : windowName(primary), 'win'));
+
+ const label = (a.alias || LABELS[provider] || provider) + ' ' + period(primary) + ' used quota';
+ const used = el('p', undefined, 'used');
+ if (value === null) used.append(el('span', STATUS[a.status] || 'No reading', 'band flag'), el('span', EXPLAIN[a.status] || 'no reading available', 'used-note'));
+ else if (stale) used.append(el('span', 'OLD', 'band flag'), el('span', 'not a current reading', 'used-note'));
+ else used.append(el('span', levelText(value), 'band'), el('span', budget(primary) ? `of your ${primary.label} monthly budget` : 'used of your limit', 'used-note'));
+
+ const foot = el('footer'), timer = el('div', undefined, 'timer');
+ timer.append(clockGlyph());
+ if (value === null) timer.append(el('span', 'no reading', 'timer-value'));
+ else {
+  const t = primary ? resetTime(primary.resets_at) : '—';
+  if (stale) timer.append(el('span', 'last read ' + checkedText(a, true), 'timer-value'));
+  else if (t === '—') timer.append(el('span', 'no reset time reported', 'timer-value'));
+  else {
+   timer.append(el('span', value >= 90 ? 'clears in' : 'resets in', 'timer-label'));
+   timer.append(el('span', t, 'timer-value'));
+  }
  }
- const checked = stale ? a.last_success_at : a.fetched_at;
- let when = el('span', '—', 'stat-v');
- if (checked) {const d = new Date(checked * 1000); when = el('time', d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}), 'stat-v'); when.dateTime = d.toISOString(); when.title = d.toLocaleString('en-GB')}
- const foot = el('div', undefined, 'card-foot');
- foot.append(stat('Account', a.alias || '—'), stat('Window', primary ? period(primary) : '—'), stat('Source', a.source === 'mini' ? 'This computer' : a.source ? 'Linked snapshot' : '—'), stat(stale ? 'Last good' : 'Checked', when), stat('Status', el('span', offline ? 'OFFLINE · Previous value' : STATUS[a.status] || 'Unknown', 'row-status stat-v'), 'stat-status'));
- card.append(foot); shell.append(card); return shell;
+ foot.append(timer);
+ card.append(head, arc(value, label), used, foot);
+ return card;
 }
+function checkedText(a, relative) {
+ const at = a.status === 'stale' ? a.last_success_at : a.fetched_at;
+ if (!Number.isFinite(at)) return 'an unknown time ago';
+ if (!relative) return new Date(at * 1000).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+ const m = Math.max(0, Math.round(Date.now() / 1000 - at) / 60);
+ return m < 1 ? 'just now' : m < 60 ? `${Math.round(m)}m ago` : `${Math.floor(m / 60)}h ago`;
+}
+
+/* Second windows are detail, so they are quiet rows rather than more cards. */
+function otherWindows(rows) {
+ const list = $('#other-list'), fragment = document.createDocumentFragment();
+ let count = 0;
+ for (const a of rows) {
+  if (a.status === 'identity_mismatch') continue;
+  const valid = (a.windows || []).filter(w => Number.isFinite(w.used_percent));
+  const primary = valid.reduce((p, w) => !p || w.used_percent > p.used_percent ? w : p, null);
+  for (const w of valid) {
+   if (w === primary) continue;
+   const v = clamp(w.used_percent), li = el('li'); li.dataset.level = level(v);
+   const who = el('span', undefined, 'who'); who.append(el('i', undefined, 'mark'), el('span', a.alias || LABELS[a.provider] || a.provider, 'who-name'));
+   who.querySelector('.mark').append(icon(a.provider));
+   const track = el('span', undefined, 'track'), fill = el('i');
+   fill.style.setProperty('--pct', String(v)); track.append(fill);
+   track.setAttribute('role', 'meter'); track.setAttribute('aria-label', (a.alias || a.provider) + ' ' + period(w) + ' used quota');
+   track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.setAttribute('aria-valuenow', String(Math.round(v)));
+   const when = resetTime(w.resets_at);
+   li.append(who, el('span', windowShort(w), 'win'), track, el('b', Math.round(v) + '%'),
+             el('span', offline || a.status === 'stale' ? 'OLD' : when === '—' ? 'no reset time' : 'resets ' + when, 't'));
+   fragment.append(li); count++;
+  }
+ }
+ list.replaceChildren(fragment);
+ $('#other-windows').hidden = !count;
+}
+
 function renderAccounts() {
  if (!snapshot) return;
- const focused = document.activeElement?.dataset?.account, rows = Object.values(snapshot.accounts || {}), fragment = document.createDocumentFragment();
- const used = PROVIDERS.filter(p => rows.some(a => a.provider === p)); // only services that are set up
- for (const provider of used.length ? used : PROVIDERS) fragment.append(providerCard(provider, rows.filter(a => a.provider === provider)));
+ const rows = Object.values(snapshot.accounts || {});
+ const order = new Map(PROVIDERS.map((p, i) => [p, i]));
+ rows.sort((a, b) => (order.get(a.provider) ?? 9) - (order.get(b.provider) ?? 9) || String(a.key).localeCompare(String(b.key)));
+ const per = {};
+ for (const a of rows) per[a.provider] = (per[a.provider] || 0) + 1;
+ const fragment = document.createDocumentFragment();
+ if (!rows.length) for (const provider of PROVIDERS) fragment.append(readingCard({key:provider, alias:LABELS[provider], provider, status:'loading', windows:[]}, 1));
+ else for (const a of rows) fragment.append(readingCard(a, per[a.provider]));
  $('#providers').replaceChildren(fragment);
+ otherWindows(rows);
  const reporting = offline ? 0 : rows.filter(a => a.status === 'ok' && (a.windows || []).some(w => Number.isFinite(w.used_percent))).length;
- $('#account-count').textContent = pad(rows.length); $('#reporting-count').textContent = pad(reporting);
- $('#foot-reporting').textContent = `${reporting} / ${rows.length} reporting`;
- if (focused) {const b = [...document.querySelectorAll('[data-account]')].find(b => b.dataset.account === focused); b?.focus({preventScroll:true})}
+ $('#foot-reporting').textContent = `${reporting} of ${rows.length} account${rows.length === 1 ? '' : 's'} reporting`;
 }
+
 /* Demo data stores resets as seconds from now so the timers stay plausible on any day. */
 function demoSnapshot(data) {
  const now = Date.now() / 1000;
- for (const a of Object.values(data.accounts)) {a.fetched_at = a.last_success_at = now; for (const w of a.windows) w.resets_at = now + w.resets_in}
+ for (const a of Object.values(data.accounts)) {a.fetched_at = a.last_success_at = now; for (const w of a.windows) w.resets_at = Number.isFinite(w.resets_in) ? now + w.resets_in : w.resets_at}
  return {...data, updated_at: now};
 }
 async function update() {
@@ -217,41 +195,62 @@ async function update() {
   const data = DEMO ? demoSnapshot(await r.json()) : await r.json(); if (!data.accounts || !Number.isFinite(data.updated_at)) throw Error();
   snapshot = data; offline = false;
   const staleCount = Object.values(data.accounts).filter(a => a.status === 'stale').length;
-  $('#connection').textContent = DEMO ? 'Demo · sample data' : staleCount ? `${staleCount} stale · Live server` : 'Live';
-  $('#notice').hidden = !staleCount; $('#notice').textContent = staleCount + ' account' + (staleCount === 1 ? ' has' : 's have') + ' an older reading. Check the selected account’s source and last successful update.';
-  $('#updated').textContent = data.updated_at ? 'Server checked ' + new Date(data.updated_at * 1000).toLocaleTimeString('en-GB') : 'Waiting for first reading';
-  $('#signal').dataset.strength = staleCount ? '2' : '3';
+  $('#connection').textContent = DEMO ? 'Demo · sample data' : staleCount ? `${staleCount} old` : 'Live';
+  $('#notice').hidden = !staleCount; $('#notice').textContent = staleCount + ' account' + (staleCount === 1 ? ' has' : 's have') + ' an older reading. Check that account’s source and last successful update.';
+  $('#updated').textContent = data.updated_at ? 'checked ' + new Date(data.updated_at * 1000).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) : 'waiting for the first reading';
  } catch {
-  offline = true; $('#connection').textContent = 'Server offline'; $('#notice').hidden = false; $('#signal').dataset.strength = '0';
+  offline = true; $('#connection').textContent = 'Offline'; $('#notice').hidden = false;
   $('#notice').textContent = snapshot ? 'Connection lost. Showing the last received readings as OLD.' : 'Cannot reach TokenTV. Is token-tv still running?';
   if (!snapshot) $('#providers').replaceChildren(el('p', 'No usage data received.', 'loading'));
  } finally {polling = false; document.body.dataset.offline = String(offline); renderAccounts()}
 }
-function tick() {
- const now = new Date(), t = $('#local-time');
- const iso = t.querySelector('.date-iso'), time = t.querySelector('.time');
- iso.textContent = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`; iso.dataset.ghost = '8888-88-88';
- t.querySelector('.date-long').textContent = now.toLocaleDateString('en-US', {month:'short', day:'2-digit', year:'numeric'}).toUpperCase();
- time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`; time.dataset.ghost = '88:88:88';
-}
-$('#clock-zone').textContent = new Intl.DateTimeFormat('en-US', {timeZoneName:'short'}).formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || 'Local';
 
-function showClock(show) {$('#clock-panel').hidden = !show; $('#clock-toggle').setAttribute('aria-expanded', String(show)); if (show) {refreshDisplay(true); $('#close-clock').focus()} else $('#clock-toggle').focus()}
-$('#clock-toggle').onclick = () => showClock($('#clock-panel').hidden); $('#close-clock').onclick = () => showClock(false);
+/* ---- the clock: preview, face, apply ---- */
+const styleName = s => s === 'retro' ? 'Pixel Retro' : s === 'hud' ? 'Sci-Fi HUD' : s ? s[0].toUpperCase() + s.slice(1) : 'Unknown';
 let lastImageStyle = null, lastImageAt = 0;
 function paintClock(forceImage = false) {
  const style = clockChoice || displayInfo?.style;
- $('#clock-style').disabled = applying || !displayInfo; $('#apply').disabled = DEMO || applying || !displayInfo || (style === displayInfo.style && displayInfo.status !== 'error' && !clockError);
- $('#apply').textContent = applying ? 'Sending image…' : 'Apply to clock'; $('#apply').dataset.state = applying ? 'loading' : clockError || displayInfo?.status === 'error' ? 'error' : displayInfo?.status === 'ok' ? 'success' : 'default';
- $('#display-state').textContent = DEMO ? 'Demo · install TokenTV to drive a real clock' : clockError ? 'Could not apply. Please retry.' : !displayInfo ? 'Clock status unavailable' : style !== displayInfo.style ? 'Preview only · Apply to send' : displayInfo.status === 'queued' ? 'Sending image…' : displayInfo.status === 'error' ? 'Clock upload failed. Please retry.' : displayInfo.status === 'preview_only' ? 'Preview only · No clock connected' : 'Image sent · ' + styleName(displayInfo.applied_style);
- if (style && !$('#clock-panel').hidden && (forceImage || style !== lastImageStyle || Date.now() - lastImageAt > 30000)) {lastImageStyle = style; lastImageAt = Date.now(); $('#frame').src = DEMO ? displayInfo.frames?.[style] || `/frames/${encodeURIComponent(style)}.jpg` : '/frame/0.jpg?style=' + encodeURIComponent(style) + '&t=' + lastImageAt; $('#frame').alt = styleName(style) + ' live clock preview'}
+ $('#clock-style').disabled = applying || !displayInfo;
+ $('#apply').disabled = DEMO || applying || !displayInfo || (style === displayInfo.style && displayInfo.status !== 'error' && !clockError);
+ $('#apply').textContent = applying ? 'Sending image…' : 'Apply to clock';
+ $('#apply').dataset.state = applying ? 'loading' : clockError || displayInfo?.status === 'error' ? 'error' : displayInfo?.status === 'ok' ? 'success' : 'default';
+ $('#display-state').textContent = DEMO ? 'Demo · install TokenTV to drive a real clock' : clockError ? 'Could not apply. Please retry.' : !displayInfo ? 'Clock status unavailable' : style !== displayInfo.style ? 'Preview only · Apply to send' : displayInfo.status === 'queued' ? 'Sending image…' : displayInfo.status === 'error' ? 'Clock upload failed. Please retry.' : displayInfo.status === 'preview_only' ? 'Preview only · no clock connected' : 'Image sent · ' + styleName(displayInfo.applied_style);
+ $('#clock-face').textContent = displayInfo?.applied_style ? styleName(displayInfo.applied_style) : '—';
+ if (style && (forceImage || style !== lastImageStyle || Date.now() - lastImageAt > 30000)) {
+  lastImageStyle = style; lastImageAt = Date.now();
+  $('#frame').src = DEMO ? displayInfo.frames?.[style] || `/frames/${encodeURIComponent(style)}.jpg` : '/frame/0.jpg?style=' + encodeURIComponent(style) + '&t=' + lastImageAt;
+  $('#frame').alt = styleName(style) + ' live clock preview';
+ }
 }
-const styleName = s => s === 'retro' ? 'Pixel Retro' : s === 'hud' ? 'Sci-Fi HUD' : s ? s[0].toUpperCase() + s.slice(1) : 'Unknown';
 let displayPolling = false;
-async function refreshDisplay(forceImage = false) {if (displayPolling) return; displayPolling = true; try {const r = await fetch(DEMO ? '/demo-display.json' : '/display', {cache:'no-store'}); if (!r.ok) throw Error(); const data = await r.json(); const dirty = displayInfo && clockChoice !== displayInfo.style; displayInfo = data; if (!clockChoice || !dirty) clockChoice = data.style; const select = $('#clock-style'); if (!select.options.length) for (const s of data.styles) {const o = el('option', styleName(s)); o.value = s; select.append(o)} select.value = clockChoice; paintClock(forceImage); paintStocks(); if (DEMO && themeData && !lastThumbFrames) {lastThumbFrames = true; paintThemes()}} catch {$('#display-state').textContent = 'Clock status unavailable'} finally {displayPolling = false}}
+async function refreshDisplay(forceImage = false) {
+ if (displayPolling) return; displayPolling = true;
+ try {
+  const r = await fetch(DEMO ? '/demo-display.json' : '/display', {cache:'no-store'}); if (!r.ok) throw Error();
+  const data = await r.json();
+  const dirty = displayInfo && clockChoice !== displayInfo.style;
+  displayInfo = data; if (!clockChoice || !dirty) clockChoice = data.style;
+  const select = $('#clock-style');
+  if (!select.options.length) for (const s of data.styles) {const o = el('option', styleName(s)); o.value = s; select.append(o)}
+  select.value = clockChoice; paintClock(forceImage); paintStocks();
+  if (themeData) paintThemes();
+ } catch {$('#display-state').textContent = 'Clock status unavailable'} finally {displayPolling = false}
+}
+async function applyStyle(style) {
+ if (applying || DEMO || !style) return;
+ applying = true; clockError = false; clockChoice = style; $('#clock-style').value = style; paintClock(); paintThemes();
+ try {
+  const r = await fetch('/display/style', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({style})});
+  if (!r.ok) throw Error();
+  displayInfo = await r.json();
+ } catch {clockError = true} finally {applying = false; paintClock(true); paintStocks(); paintThemes()}
+}
 $('#clock-style').onchange = e => {clockChoice = e.target.value; clockError = false; paintClock(true); paintThemes()};
-$('#apply').onclick = async () => {if (applying || !clockChoice) return; applying = true; clockError = false; paintClock(); try {const r = await fetch('/display/style', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({style:clockChoice})}); if (!r.ok) throw Error(); displayInfo = await r.json()} catch {clockError = true} finally {applying = false; paintClock(true)}};
-/* Stocks face controls: a mode toggle and, in watchlist mode, a 4-slot ticker editor. */
+$('#apply').onclick = () => applyStyle(clockChoice);
+$('#frame').onerror = () => {$('#display-state').textContent = 'Clock preview unavailable. It will retry.'};
+
+/* Stocks face controls: a mode toggle and, in watchlist mode, a 4-slot ticker editor.
+ * Shown only when /display reports a stocks payload, i.e. when the face actually uses them. */
 const stockSlots = () => [...document.querySelectorAll('#stocks-symbols .stocks-ticker')];
 let stocksBusy = false, stocksDirty = false, stocksError = false;
 function paintStocks() {
@@ -289,47 +288,99 @@ $('#stocks-apply').onclick = () => {
   if (!symbols.length) {$('#stocks-state').textContent = 'Add at least one ticker'; return}
   postStocks('/stocks/symbols', {symbols});
 };
-let themeData = null, themeSort = 'popular', lastThumbFrames = false;
-const REPO_URL = 'https://github.com/click6067-ship-it/token-tv';
-const day = s => new Date(s).toLocaleDateString();
-const likeText = t => ({counted: `👍 ${t.likes} · counted ${day(t.likes_counted_at)}`, stale: `👍 ${t.likes} · last counted ${t.likes_counted_at ? day(t.likes_counted_at) : 'at an unknown time'}`, unavailable: 'Likes unavailable', not_open: 'Likes not open yet', local: 'Your local face'})[t.likes_state] || 'Likes unavailable';
-function sortThemes(list, mode) {
+
+/* ---- gallery: the thumbnail is the product, so it gets the space ---- */
+let themeData = null, revealedId = null, themePaintSig = null;
+const REPO_URL = 'https://github.com/riazrahaman/riaz-token-tv';
+/* Newest first, then id. The catalog still carries like counts from the upstream project's
+ * issues; they say nothing about a face and are not shown. */
+function sortThemes(list) {
  const added = t => t.added_at ? -Date.parse(t.added_at) : Infinity;
- const fresh = [...list].sort((a, b) => added(a) - added(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
- return mode === 'new' ? fresh : [...fresh.filter(t => t.likes !== null).sort((a, b) => b.likes - a.likes), ...fresh.filter(t => t.likes === null)];
+ return [...list].sort((a, b) => added(a) - added(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 function thumbSrc(id) {
  if (DEMO) return displayInfo?.frames?.[id] || `/frames/${encodeURIComponent(id)}.jpg`;
  return '/frame/0.jpg?style=' + encodeURIComponent(id);
 }
-function paintThemes() {
- const list = $('#theme-list'); list.replaceChildren();
- document.querySelectorAll('.theme-sort button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sort === themeSort)));
+function paintThemes(force = false) {
+ const list = $('#theme-list');
  if (!themeData) return;
- $('#likes-as-of').textContent = themeData.last_attempt_at ? 'Last likes refresh: ' + day(themeData.last_attempt_at) : 'Likes not counted yet';
- for (const t of sortThemes(themeData.themes, themeSort)) {
+ /* Every card holds a <img src="/frame/0.jpg?style=…">, which the server renders on request and
+  * sends no-store. refreshDisplay runs every five seconds, so repainting unconditionally would
+  * re-render all thirteen faces in the publisher's own process — and would drop the revealed
+  * Apply button and the keyboard focus with it. Repaint only when something visible changed. */
+ const sig = [displayInfo?.applied_style, clockChoice, applying, revealedId, themeData.themes.length].join('\u0000');
+ if (!force && sig === themePaintSig) return;
+ themePaintSig = sig;
+ const ordered = sortThemes(themeData.themes);
+ const onClock = displayInfo?.applied_style;
+ const fragment = document.createDocumentFragment();
+ $('#gallery-count').textContent = `${ordered.length} face${ordered.length === 1 ? '' : 's'}`;
+ $('#gallery-state').textContent = '';
+ for (const t of ordered) {
   const item = el('li', undefined, 'theme-card'); item.dataset.id = t.id;
   const usable = t.installed && !t.needs_update;
+  const current = usable && t.id === onClock;
+  if (current) item.classList.add('current');
+  if (usable && t.id === clockChoice && !current) item.classList.add('previewing');
+  if (usable && t.id === revealedId) item.classList.add('revealed');
+  const figure = el('figure');
   const src = usable ? thumbSrc(t.id) : t.preview_url;
-  if (src) {const img = el('img', undefined, 'theme-thumb'); img.src = src; img.alt = t.name + ' clock face'; img.width = 240; img.height = 240; img.loading = 'lazy'; item.append(img)}
-  const head = el('div', undefined, 'theme-title'); head.append(el('strong', t.name), el('span', t.local ? 'Local' : 'by ' + t.author, 'theme-author')); item.append(head);
-  item.append(el('p', likeText(t), 'theme-likes'));
-  const actions = el('div', undefined, 'theme-actions');
-  if (usable) {
-   const preview = el('button', clockChoice === t.id ? 'Previewing' : 'Preview', 'control'); preview.type = 'button';
-   preview.onclick = () => {clockChoice = t.id; clockError = false; $('#clock-style').value = t.id; showClock(true); paintClock(true); paintThemes(); $('#clock-panel').scrollIntoView({block:'start'})};
-   actions.append(preview);
-  } else actions.append(el('span', `Needs v${t.min_version} · update TokenTV`, 'theme-update'));
-  const link = (text, href) => {const a = el('a', text); a.href = href; a.rel = 'noopener'; a.target = '_blank'; actions.append(a)};
+  // The thumbnail is a preview button: looking costs nothing, applying writes to flash.
+  const look = el('button', undefined, 'thumb-button'); look.type = 'button';
+  look.setAttribute('aria-label', 'Preview ' + t.name + ' on the clock panel');
+  if (src) {const img = el('img', undefined, 'theme-thumb'); img.src = src; img.alt = t.name + ' clock face'; img.width = 240; img.height = 240; img.loading = 'lazy'; look.append(img)}
+  else look.append(el('span', 'No preview', 'no-thumb'));
+  look.onclick = () => {
+   if (!usable) return;
+   // First tap previews and reveals Apply; applying needs a second, deliberate tap.
+   revealedId = t.id; clockChoice = t.id; clockError = false; $('#clock-style').value = t.id;
+   paintClock(true); paintThemes();
+   $('#clock-panel').scrollIntoView({block:'nearest', behavior:'smooth'});
+  };
+  figure.append(look);
+  if (usable && !current && !DEMO) {
+   const apply = el('button', applying && clockChoice === t.id ? 'Sending…' : 'Apply', 'apply'); apply.type = 'button';
+   apply.setAttribute('aria-label', 'Apply ' + t.name + ' to the clock');
+   apply.disabled = applying;
+   apply.onclick = () => applyStyle(t.id);
+   figure.append(apply);
+  }
+  item.append(figure);
+  const meta = el('div', undefined, 'theme-title');
+  meta.append(el('strong', t.name));
+  if (current) meta.append(el('span', 'On the clock', 'now'));
+  else if (!usable) meta.append(el('span', `Needs v${t.min_version}`, 'theme-update'));
+  else meta.append(el('span', t.local ? 'Local' : t.author, 'theme-author'));
+  item.append(meta);
+  if (!usable) item.append(el('p', 'Update TokenTV to use this face', 'theme-update'));
+  const links = el('div', undefined, 'theme-actions');
+  const link = (text, href) => {const a = el('a', text); a.href = href; a.rel = 'noopener'; a.target = '_blank'; links.append(a)};
   if (DEMO) link('Get', REPO_URL + '/blob/main/docs/setup.md');
-  if (t.like_url) link('Like on GitHub', t.like_url);
   if (t.source_url) link('Source', t.source_url);
-  item.append(actions); list.append(item);
+  if (links.childElementCount) item.append(links);
+  fragment.append(item);
  }
+ const hadFocus = list.contains(document.activeElement);
+ list.replaceChildren(fragment);
+ if (hadFocus && revealedId) list.querySelector(`[data-id="${revealedId}"] .thumb-button`)?.focus({preventScroll:true});
 }
-async function loadThemes() {try {const r = await fetch(DEMO ? '/demo-themes.json' : '/themes', {cache:'no-store'}); if (!r.ok) throw Error(); themeData = await r.json(); paintThemes()} catch {$('#likes-as-of').textContent = 'Themes unavailable · your clock styles still work'}}
-document.querySelectorAll('.theme-sort button').forEach(b => {b.onclick = () => {themeSort = b.dataset.sort; paintThemes()}});
-$('#frame').onerror = () => {$('#display-state').textContent = 'Clock preview unavailable. Reopen to retry.'};
+async function loadThemes() {try {const r = await fetch(DEMO ? '/demo-themes.json' : '/themes', {cache:'no-store'}); if (!r.ok) throw Error(); themeData = await r.json(); paintThemes()} catch {$('#gallery-state').textContent = 'Themes unavailable · your clock styles still work'}}
 
-$('#mascot').append(retroMascot()); buildStarfield(); tick();
-update(); refreshDisplay(); loadThemes(); setInterval(update, 30000); setInterval(tick, 1000); setInterval(() => {if (!$('#clock-panel').hidden) refreshDisplay()}, 5000);
+/* ---- appearance ----
+ * One design. The page used to offer four costumes mirroring four clock faces, which was the
+ * same choice twice: the faces are on the clock, where they belong. What is left is the only
+ * preference a reader actually has — light, dark, or follow the system. Every token is
+ * light-dark(), so the whole page turns on one color-scheme declaration. */
+const MODES = ['auto', 'light', 'dark'];
+function setMode(mode) {
+ const m = MODES.includes(mode) ? mode : 'auto';
+ document.documentElement.dataset.mode = m; savePreference('tokentv.mode', m);
+ for (const b of document.querySelectorAll('[data-mode-choice]')) b.setAttribute('aria-pressed', String(b.dataset.modeChoice === m));
+}
+for (const b of document.querySelectorAll('[data-mode-choice]')) b.onclick = () => setMode(b.dataset.modeChoice);
+setMode(readPreference('tokentv.mode', 'auto'));
+
+
+update(); refreshDisplay(); loadThemes();
+setInterval(update, 30000); setInterval(() => refreshDisplay(), 5000);

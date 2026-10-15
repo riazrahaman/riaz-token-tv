@@ -38,7 +38,7 @@ async function themes_checks(page){
  await page.locator('[data-sort=new]').click();assert.deepEqual(await page.locator('.theme-card').evaluateAll(n=>n.map(x=>x.dataset.id)),['vapor','retro','neon','digital','space']);
  await page.locator('[data-id=neon] button').click();assert.equal(await page.locator('#clock-panel').isVisible(),true);assert.equal(await page.locator('#clock-style').inputValue(),'neon');assert.equal(posts,0);
  await page.locator('[data-id=digital] button').click();assert.equal(await page.locator('#clock-style').inputValue(),'digital');assert.equal(await page.locator('#frame').evaluate(e=>{const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}),true);assert.equal(posts,0);
- assert.equal(await page.locator('.gallery-links a',{hasText:'Share a face'}).getAttribute('href'),'https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md');
+ assert.equal(await page.locator('.gallery-links a',{hasText:'Share a face'}).getAttribute('href'),'https://github.com/riazrahaman/riaz-token-tv/issues/new?template=share_a_face.md');
  await page.unroute('**/themes');await page.locator('#close-clock').click();
 }
 async function demo_checks(browser,demo){

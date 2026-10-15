@@ -54,4 +54,4 @@ It runs with built-in sample readings, so no clock or login is needed to try a n
 
 TokenTV was built with AI assistance (Claude Code). The author reviewed and tested it on the hardware above.
 
-Demo https://token-tv.vercel.app · GitHub https://github.com/click6067-ship-it/token-tv
+Demo https://token-tv.vercel.app · GitHub https://github.com/riazrahaman/riaz-token-tv
