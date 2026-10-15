@@ -1,8 +1,10 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -444,6 +446,225 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn('not a valid stock config', err.getvalue())
             run.assert_not_called()
+
+
+class MoversTests(unittest.TestCase):
+    """The whole-market movers board: screener parse, dedupe, ranking and fallback."""
+
+    @staticmethod
+    def quote(symbol, price, percent, change=None, at=1791900000):
+        return {'symbol': symbol, 'regularMarketPrice': price,
+                'regularMarketChange': price * percent / 100 if (change is None and percent is not None) else change,
+                'regularMarketChangePercent': percent, 'regularMarketTime': at}
+
+    def test_dead_quotes_are_dropped_and_never_a_fabricated_zero(self):
+        quotes = [self.quote('AAPL', 340.0, 1.2), {'symbol': 'NO-FIELDS'},
+                  self.quote('ZERO', 0, 5.0), self.quote('NOPCT', 12.0, None), 'junk']
+        rows = stocks.screener_rows(quotes)
+        self.assertEqual([row['symbol'] for row in rows], ['AAPL'])
+        for row in rows:
+            self.assertEqual(set(row), set(sample_rows()[0]))  # the row contract combo faces read
+            self.assertNotIn('0', stocks.price_text(row['price'])[:1])
+
+    def test_dedupe_keeps_the_ns_listing_over_its_bo_twin_and_drops_sme_junk(self):
+        rows = stocks.screener_rows([self.quote('TCS.BO', 100.0, 4.0), self.quote('TCS.NS', 110.0, 4.0),
+                                     self.quote('INFY.NS', 50.0, 3.0), self.quote('SMEJUNK-SM', 9.0, 9.9)])
+        deduped = stocks.dedupe_movers(rows)
+        self.assertEqual([row['symbol'] for row in deduped], ['TCS.NS', 'INFY.NS'])
+        self.assertEqual(deduped[0]['price'], 110.0)
+        # An .NS twin that arrives after its .BO twin takes the slot without disturbing the order.
+        flipped = stocks.screener_rows([self.quote('INFY.BO', 50.0, 3.0), self.quote('TCS.BO', 110.0, 4.0),
+                                        self.quote('TCS.NS', 110.0, 4.0)])
+        self.assertEqual([row['symbol'] for row in stocks.dedupe_movers(flipped)], ['INFY.BO', 'TCS.NS'])
+
+    def test_screener_query_mirrors_the_verified_gainers_and_losers_screens(self):
+        gainers = stocks.screener_query('us', 'DESC')
+        self.assertEqual((gainers['count'], gainers['sortField'], gainers['sortType']), (12, 'percentchange', 'DESC'))
+        self.assertEqual(gainers['query']['operands'][0], {'operator': 'eq', 'operands': ['region', 'us']})
+        self.assertIn({'operator': 'gt', 'operands': ['percentchange', 3.0]}, gainers['query']['operands'])
+        self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 15000]}, gainers['query']['operands'])
+        losers = stocks.screener_query('us', 'ASC')
+        self.assertIn({'operator': 'gt', 'operands': ['percentchange', -2.5]}, losers['query']['operands'])
+        self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 20000]}, losers['query']['operands'])
+        india = stocks.screener_query('in', 'DESC')
+        self.assertEqual(india['query']['operands'][0], {'operator': 'eq', 'operands': ['region', 'in']})
+        self.assertIn({'operator': 'gte', 'operands': ['intradaymarketcap', 100_000_000_000]}, india['query']['operands'])
+        self.assertIn({'operator': 'gte', 'operands': ['intradayprice', 20]}, india['query']['operands'])
+        self.assertIn({'operator': 'gt', 'operands': ['dayvolume', 100_000]}, india['query']['operands'])
+
+    def test_fetch_movers_returns_the_top_gainers_then_losers_in_board_order(self):
+        def board(region, sort_type):
+            gainers = [self.quote('G3.NS', 30.0, 5.0), self.quote('G1.NS', 10.0, 6.0), self.quote('G2.NS', 20.0, 5.5)]
+            losers = [self.quote('L2.BO', 20.0, -2.0), self.quote('L1.NS', 10.0, -3.0)]
+            return gainers if sort_type == 'DESC' else losers
+
+        with patch('token_tv.stocks.screener_quotes', side_effect=board):
+            rows = stocks.fetch_movers('NSE', 2)
+            self.assertEqual([row['symbol'] for row in rows], ['G1.NS', 'G2.NS', 'L1.NS', 'L2.BO'])
+            # A larger count keeps the whole ranked page.
+            self.assertEqual(len(stocks.fetch_movers('US', 4)), 5)
+
+    def test_a_screener_failure_retries_once_with_a_fresh_crumb_then_succeeds(self):
+        calls = []
+
+        def flaky(region, sort_type):
+            calls.append(sort_type)
+            if len(calls) == 1:
+                raise stocks.StockError('http_401')  # a stale crumb fails the first POST
+            return [self.quote('AAPL', 340.0, 4.0)] if sort_type == 'DESC' else [self.quote('TSLA', 100.0, -3.0)]
+
+        with patch('token_tv.stocks.screener_quotes', side_effect=flaky), \
+                patch('token_tv.stocks.yahoo_session', side_effect=[('c=1', 'old'), ('c=1', 'new')]) as session:
+            rows = stocks.fetch_movers('US', 1)
+        self.assertEqual([row['symbol'] for row in rows], ['AAPL', 'TSLA'])
+        session.assert_called_once_with(refresh=True)
+
+    def test_two_screener_failures_raise_so_the_runner_keeps_the_last_board(self):
+
+        def down(region, sort_type):
+            raise stocks.StockError('unavailable')
+
+        with patch('token_tv.stocks.screener_quotes', side_effect=down), \
+                patch('token_tv.stocks.yahoo_session', return_value=('', 'crumb')):
+            with self.assertRaises(stocks.StockError):
+                stocks.fetch_movers('US', 2)
+
+    def test_a_yahoo_cookie_and_crumb_are_cached_for_the_process(self):
+        stocks._yahoo_session_state = None
+        try:
+            with patch('token_tv.stocks._fetch_yahoo_session', return_value=('c=1', 'crumb')) as fetch:
+                self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))
+                self.assertEqual(stocks.yahoo_session(), ('c=1', 'crumb'))  # no second fetch
+                self.assertEqual(fetch.call_count, 1)
+                self.assertEqual(stocks.yahoo_session(refresh=True), ('c=1', 'crumb'))
+                self.assertEqual(fetch.call_count, 2)
+        finally:
+            stocks._yahoo_session_state = None  # tests must not share a cached session
+
+
+class StockConfigTests(unittest.TestCase):
+    quote = MoversTests.__dict__['quote']
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.directory.name) / 'stocks.json'
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def write(self, data):
+        self.path.write_text(json.dumps(data))
+
+    def test_mode_and_movers_count_validate(self):
+        self.write({'mode': 'movers', 'movers_count': 2})
+        config = stocks.load_stock_config(self.path)
+        self.assertEqual((config['mode'], config['movers_count']), ('movers', 2))
+        self.write({})
+        defaults = stocks.load_stock_config(self.path)
+        self.assertEqual((defaults['mode'], defaults['movers_count']), ('watchlist', stocks.MOVERS_COUNT))
+        for bad in ({'mode': 'banana'}, {'mode': 2}, {'mode': None}, {'mode': 'Movers'},
+                    {'movers_count': 0}, {'movers_count': 5}, {'movers_count': True},
+                    {'movers_count': '2'}, {'movers_count': 2.0}, {'movers_count': -1}):
+            bad_case = dict({'mode': 'watchlist'}, **bad)
+            self.write(bad_case)
+            with self.assertRaises(ValueError, msg=bad):
+                stocks.load_stock_config(self.path)
+
+    def test_the_movers_row_contract_is_the_watchlist_row_contract(self):
+        # combo*.py faces read these rows unchanged: symbol/price/change/percent/previous_close/at.
+        row = stocks.screener_rows([self.quote('RELIANCE.NS', 1174.6, 0.68, change=7.9)])[0]
+        self.assertEqual(sorted(row), sorted(sample_rows()[0]))
+        self.assertEqual(row['symbol'], 'RELIANCE.NS')
+        self.assertAlmostEqual(row['change'], 7.9)
+        self.assertEqual(stocks.display_symbol(row['symbol']), 'RELIANCE')
+
+
+class ReloadTests(unittest.TestCase):
+    """Mid-run config edits take effect next cycle; a bad edit keeps the last-good config."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.directory.name) / 'stocks.json'
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def write(self, data):
+        self.path.write_text(json.dumps(data))
+        stamp = time.time() + 3600
+        os.utime(self.path, (stamp, stamp))  # a distinctive mtime; equal files must not reload
+        return stamp
+
+    def test_an_unchanged_file_is_not_reloaded(self):
+        mtime = self.write({'symbols': ['AAPL']})
+        config = stocks.load_stock_config(self.path)
+        config['device_url'] = 'http://192.168.0.50'  # a never-touch key from the live process
+        new_config, new_mtime = stocks.reload_stock_config(self.path, config, mtime)
+        self.assertIs(new_config, config)  # a same-mtime cycle reuses the live object
+        self.assertEqual(new_mtime, mtime)
+
+    def test_a_valid_edit_reloads_its_keys_and_keeps_never_touch_keys(self):
+        mtime = self.write({'symbols': ['AAPL'], 'symbols_in': ['TCS.NS'], 'mode': 'watchlist'})
+        config = stocks.load_stock_config(self.path)
+        config['device_url'], config['state_dir'] = 'http://192.168.0.50', 'kept'
+        mtime = self.write({'symbols': ['MSFT', 'NVDA'], 'mode': 'movers', 'movers_count': 1, 'interval': 60})
+        config, fresh = stocks.reload_stock_config(str(self.path), config, mtime - 60)
+        self.assertEqual(config['symbols'], ['MSFT', 'NVDA'])
+        self.assertEqual((config['mode'], config['movers_count'], config['interval']), ('movers', 1, 60))
+        self.assertEqual((config['device_url'], config['state_dir']), ('http://192.168.0.50', 'kept'))
+        self.assertEqual(fresh, mtime)
+
+    def test_an_invalid_edit_keeps_the_last_good_config_without_crashing(self):
+        mtime = self.write({'symbols': ['AAPL']})
+        config, _ = stocks.reload_stock_config(str(self.path), stocks.load_stock_config(self.path), None)
+        mtime = self.write({'symbols': ['aapl'], 'mode': 'nope'})  # an invalid edit
+        last_good, stamp = stocks.reload_stock_config(str(self.path), config, mtime - 60)
+        self.assertEqual(last_good['symbols'], ['AAPL'])
+        self.assertEqual(stamp, mtime)  # one warning per edit, not one per cycle
+        config, stamp2 = stocks.reload_stock_config(str(self.path), config, stamp)
+        self.assertIs(config, last_good)
+
+
+class MoversRunnerTests(unittest.TestCase):
+    """In movers mode the per-symbol Finnhub/Yahoo collect loop is skipped entirely."""
+
+    def test_the_movers_runner_publishes_the_board_and_needs_no_credentials(self):
+        board = [
+            {'symbol': 'G1', 'price': 110.0, 'change': 6.0, 'percent': 6.0, 'previous_close': None, 'at': 1791900000},
+            {'symbol': 'G2', 'price': 120.0, 'change': 5.0, 'percent': 5.0, 'previous_close': None, 'at': 1791900000},
+            {'symbol': 'L1', 'price': 10.0, 'change': -3.0, 'percent': -3.0, 'previous_close': None, 'at': 1791900000},
+            {'symbol': 'L2', 'price': 20.0, 'change': -2.0, 'percent': -2.0, 'previous_close': None, 'at': 1791900000},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.finnhub_token', side_effect=AssertionError('no credentials in movers mode')), \
+                    patch('token_tv.stocks.fetch_market_status', side_effect=AssertionError('no Finnhub in movers mode')), \
+                    patch('token_tv.stocks.collect', side_effect=AssertionError('the per-symbol loop is skipped')) as collect, \
+                    patch('token_tv.stocks.fetch_movers', return_value=board) as movers:
+                code = stocks.main(['--once', '--config', str(config)])
+            self.assertEqual(code, 0)
+            movers.assert_called_once()
+            self.assertIn(movers.call_args[0][1], (2,))  # the config's movers_count
+            self.assertEqual(collect.call_count, 0)
+            payload = json.loads((state / 'snapshot.json').read_text())
+            self.assertEqual(payload['symbols'], board)
+            self.assertEqual(payload['source'], 'YAHOO')  # the screener serves every market
+            self.assertIn(payload['market']['is_open'], (True, False))
+
+    def test_a_screener_failure_keeps_the_previous_board_in_the_snapshot(self):
+        board = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                  'previous_close': None, 'at': 1791900000}]
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.fetch_movers', side_effect=[board, stocks.StockError('unavailable')]), \
+                    patch('token_tv.stocks.time.sleep', side_effect=[None, KeyboardInterrupt]):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)  # cycle 2 failed; the loop then ended
+            payload = json.loads((state / 'snapshot.json').read_text())  # last-good board, never an empty one
+            self.assertEqual(payload['symbols'], board)
 
 
 if __name__ == '__main__':
