@@ -368,7 +368,7 @@ if (siteVersion) {
 
 /* ---------------- Visit Counter ---------------- */
 async function initVisitCounter() {
-  const BASE = "https://abacus.jasoncameron.dev",
+  const BASE = "https://abacus-production-cbb0.up.railway.app",
         NAMESPACE = "token-tv.riazrahaman.com",
         KEY = (document.documentElement.dataset.visitKey || document.body.dataset.visitKey || "pageviews"),
         FLAG = "visit-counted";
@@ -377,25 +377,13 @@ async function initVisitCounter() {
   if (!already) { try { sessionStorage.setItem(FLAG, "1"); } catch {} }
 
   let value = null;
-  // 1. Try local /api/visits endpoint
   try {
-    const localRes = await fetch(`/api/visits?hit=${already ? 0 : 1}`);
-    if (localRes.ok) {
-      const data = await localRes.json();
-      if (typeof data.value === "number") value = data.value;
+    const res = await fetch(`${BASE}/${already ? "get" : "hit"}/${NAMESPACE}/${KEY}`, { referrerPolicy: "no-referrer" });
+    if (res.ok) {
+      const d = await res.json();
+      if (typeof d.value === "number") value = d.value;
     }
   } catch {}
-
-  // 2. Fallback to Abacus cloud counter
-  if (value === null) {
-    try {
-      const res = await fetch(`${BASE}/${already ? "get" : "hit"}/${NAMESPACE}/${KEY}`, { referrerPolicy: "no-referrer" });
-      if (res.ok) {
-        const d = await res.json();
-        if (typeof d.value === "number") value = d.value;
-      }
-    } catch {}
-  }
 
   if (value === null) return;
   const formatted = `${value.toLocaleString()} ${value === 1 ? "visit" : "visits"}`;

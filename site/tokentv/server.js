@@ -42,31 +42,6 @@ const server = http.createServer((req, res) => {
   } catch {
     return send(res, 400, "Bad Request", { "Content-Type": TYPES[".txt"] });
   }
-  if (pathname === "/api/visits") {
-    const urlObj = new URL(req.url, "http://localhost");
-    const isHit = urlObj.searchParams.get("hit") !== "0";
-    // Railway containers are ephemeral: a redeploy wipes everything outside a mounted
-    // volume, which reset the visit counter on every push. When a volume is attached
-    // Railway injects RAILWAY_VOLUME_MOUNT_PATH, so the counter lives there and survives
-    // redeploys; the repo-local file remains the fallback for local development.
-    const VISITS_FILE = process.env.RAILWAY_VOLUME_MOUNT_PATH
-      ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, ".visits.json")
-      : path.join(ROOT, ".visits.json");
-    let count = 1;
-    try {
-      if (fs.existsSync(VISITS_FILE)) {
-        count = JSON.parse(fs.readFileSync(VISITS_FILE, "utf8")).count || 1;
-      }
-    } catch {}
-    if (isHit && req.method === "GET") {
-      count += 1;
-      try {
-        fs.writeFileSync(VISITS_FILE, JSON.stringify({ count }), "utf8");
-      } catch {}
-    }
-    return send(res, 200, JSON.stringify({ value: count }), { "Content-Type": TYPES[".json"], "Cache-Control": "no-store" });
-  }
-
   if (pathname.endsWith("/")) pathname += "index.html";
 
   // Resolve, then confirm the result is still inside ROOT. This is what stops `..` traversal,
