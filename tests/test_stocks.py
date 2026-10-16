@@ -974,5 +974,26 @@ class MoversRunnerTests(unittest.TestCase):
         self.assertEqual(kept['updated_at'], int(us_noon))  # the fetch, not the poll that failed
 
 
+    def test_an_empty_board_is_never_a_live_market(self):
+        """A restart inside a session whose screener is down has no board at all.
+
+        `last_movers` starts empty, so the provenance guard has nothing to compare; an empty board
+        must still not be published as an open session reporting no rows."""
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'symbols_in': ['RELIANCE.NS'],
+                                          'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.fetch_market_status', return_value=None), \
+                    patch('token_tv.stocks.is_us_market_open', return_value=False), \
+                    patch('token_tv.stocks.is_indian_market_open', return_value=True), \
+                    patch('token_tv.stocks.fetch_movers', side_effect=stocks.StockError('invalid_response')):
+                self.assertEqual(stocks.main(['--once', '--config', str(config)]), 0)
+            payload = json.loads((state / 'snapshot.json').read_text())
+        self.assertEqual(payload['symbols'], [])
+        self.assertEqual(payload['market']['is_open'], False)
+        self.assertEqual(payload['market']['session'], 'closed')
+
+
 if __name__ == '__main__':
     unittest.main()

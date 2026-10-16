@@ -1098,6 +1098,11 @@ def main(argv=None):
                     if last_movers_exchange and last_movers_exchange != active['exchange']:
                         active = dict(active, exchange=last_movers_exchange,
                                       is_open=False, session='closed')
+                if not rows:
+                    # Nothing has arrived yet — a restart inside a session whose screener is down
+                    # has no board at all. An empty board is not a live market: say shut, so the
+                    # dashboard reads "closed" rather than an open session reporting no rows.
+                    active = dict(active, is_open=False, session='closed')
             elif token is None:
                 rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
                 quote_failures = len(rows)
