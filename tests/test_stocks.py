@@ -531,11 +531,16 @@ class MoversTests(unittest.TestCase):
 
     @staticmethod
     def quote(symbol, price, percent, change=None, at=1791900000, cap=150_000_000_000.0, volume=200_000.0):
-        """A raw screener quote; the India threshold fields ride along (the US never reads them)."""
+        """A raw screener quote, in the shape a response really has.
+
+        The cap and volume keys are the quote fields Yahoo answers with (`marketCap`,
+        `regularMarketVolume`) — not the screener query's `intradaymarketcap`/`dayvolume`, which
+        this fixture used to carry. Agreeing with the client's own mistake is how a permanently
+        failing India board passed its tests for a release."""
         return {'symbol': symbol, 'regularMarketPrice': price,
                 'regularMarketChange': price * percent / 100 if (change is None and percent is not None) else change,
                 'regularMarketChangePercent': percent, 'regularMarketTime': at,
-                'intradaymarketcap': cap, 'dayvolume': volume}
+                'marketCap': cap, 'regularMarketVolume': volume}
 
     @staticmethod
     def gainers():
@@ -610,8 +615,12 @@ class MoversTests(unittest.TestCase):
         self.assertFalse(stocks.valid_board([self.quote('THIN.NS', 88.0, 4.0, volume=5e4)], 'in', True, 40))
         self.assertFalse(stocks.valid_board([self.quote('CHEAP.NS', 12.0, 4.0)], 'in', True, 40))
         self.assertFalse(stocks.valid_board(self.gainers() + self.losers(), 'in', True, 4))  # cross-side junk
-        self.assertFalse(stocks.valid_board([self.quote(f'S{i}', 10.0 + i, 4.05) for i in range(13)],
-                                           'in', True, 20))  # more rows than the request
+        # Yahoo answers the custom POST with its own page size, so the guard is a flake ceiling:
+        # its own 25-row India page is fine, an implausible one is not.
+        self.assertTrue(stocks.valid_board([self.quote(f'S{i}', 300.0 - i, 9.0 - i * 0.1) for i in range(25)],
+                                           'in', True, 40))
+        self.assertFalse(stocks.valid_board([self.quote(f'S{i}', 300.0 - i, 9.0 - i * 0.01)
+                                             for i in range(stocks.SCREENER_MAX_ROWS + 1)], 'in', True, 40))
         self.assertFalse(stocks.valid_board({'symbol': 'X'}, 'us', True, 3))  # a missing quotes list
         self.assertFalse(stocks.valid_board([{'symbol': 'X'}], 'us', True, 3))  # fields entirely missing
         # A correct page — including the pre-defined rows whose cap fields are 0 — stays valid.
@@ -973,6 +982,29 @@ class MoversRunnerTests(unittest.TestCase):
         self.assertEqual(kept['market'], {'is_open': False, 'session': 'closed', 'exchange': 'US'})
         self.assertEqual(kept['updated_at'], int(us_noon))  # the fetch, not the poll that failed
 
+
+    def test_the_india_thresholds_read_the_fields_a_response_actually_carries(self):
+        """The India bars are client-enforced, so they must read the quote's own field names.
+
+        `screener_query` asks on `intradaymarketcap`/`dayvolume`; the response answers with
+        `marketCap`/`regularMarketVolume`. Reading the query names found None on every row, so
+        every India board failed its own thresholds and `fetch_movers('NSE')` raised
+        invalid_response on every poll while the screener answered correctly."""
+        good = {'symbol': 'HBLENGINE.NS', 'regularMarketPrice': 800.25,
+                'regularMarketChangePercent': 12.63, 'regularMarketChange': 89.7,
+                'regularMarketTime': 1791900000,
+                'marketCap': 221825253376, 'regularMarketVolume': 9007122}
+        self.assertTrue(stocks._passes_thresholds(good, 'in', True))
+        self.assertTrue(stocks.valid_board([good], 'in', True, 25))
+        # The query's own names are not what a response carries: a quote with only those is
+        # missing its cap and volume, and must not pass.
+        query_named = {k: v for k, v in good.items() if k not in ('marketCap', 'regularMarketVolume')}
+        query_named.update({'intradaymarketcap': 221825253376, 'dayvolume': 9007122})
+        self.assertFalse(stocks._passes_thresholds(query_named, 'in', True))
+        # The bars themselves still bite on the real field names.
+        self.assertFalse(stocks._passes_thresholds(dict(good, marketCap=5e10), 'in', True))
+        self.assertFalse(stocks._passes_thresholds(dict(good, regularMarketVolume=5e4), 'in', True))
+        self.assertFalse(stocks._passes_thresholds(dict(good, regularMarketPrice=12.0), 'in', True))
 
     def test_an_empty_board_is_never_a_live_market(self):
         """A restart inside a session whose screener is down has no board at all.

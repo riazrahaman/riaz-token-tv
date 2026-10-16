@@ -43,6 +43,10 @@ YAHOO_COOKIE_URL = 'https://fc.yahoo.com'
 YAHOO_CRUMB_URL = 'https://query1.finance.yahoo.com/v1/test/getcrumb'
 YAHOO_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
 SCREENER_PAGE = 12     # candidates per screener POST; the board keeps the top few of each side
+# Yahoo honours `count` on the predefined GETs but answers the custom POST with its own page (25
+# observed for India), so the page-size guard is a flake ceiling, not the requested count. The
+# whole-universe flake is still caught by its total, its thresholds and its ranking.
+SCREENER_MAX_ROWS = 50
 KEYCHAIN_SERVICE = 'token-tv-finnhub'
 DEFAULT_SYMBOLS_US = ('AAPL', 'MSFT', 'NVDA', 'TSLA')
 DEFAULT_SYMBOLS_IN = ('RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS')
@@ -503,7 +507,12 @@ def _passes_thresholds(quote, region, gainers):
     if price is None or price <= 0 or percent is None:
         return False
     if region == 'in':
-        cap, volume = _number(quote.get('intradaymarketcap')), _number(quote.get('dayvolume'))
+        # The response carries quote fields, not the screener's query fields: the India screen asks
+        # on `intradaymarketcap`/`dayvolume`, and the rows come back as `marketCap` and
+        # `regularMarketVolume`. Reading the query names found None on every row, so every India
+        # board failed its own thresholds and `fetch_movers('NSE')` raised invalid_response on
+        # every poll — the screener was answering correctly the whole time.
+        cap, volume = _number(quote.get('marketCap')), _number(quote.get('regularMarketVolume'))
         if (cap is None or cap < 100_000_000_000 or volume is None or volume <= 100_000
                 or price < 20):
             return False
@@ -517,7 +526,7 @@ def valid_board(quotes, region, gainers, total=None):
     Suspicious shapes: more rows than requested, an unfiltered whole-universe total, top quotes
     missing their fields, kept rows missing the region's thresholds, or a grossly unsorted page —
     live-updated pages keep a few honest inversions, which a small minority stays within."""
-    if not isinstance(quotes, list) or not quotes or len(quotes) > SCREENER_PAGE:
+    if not isinstance(quotes, list) or not quotes or len(quotes) > SCREENER_MAX_ROWS:
         return False
     if isinstance(total, (int, float)) and not isinstance(total, bool):
         if not math.isfinite(total) or total > TOTAL_CAP:
