@@ -726,7 +726,11 @@ def render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=0):
 
 def snapshot_payload(rows, meta):
     """The credential-free snapshot written beside the frame. It holds numbers only."""
-    return {'updated_at': int(meta.get('now') or 0), 'source': meta.get('source', 'FINNHUB'),
+    # `rows_at` is when these rows were actually fetched, which is not the poll time when a
+    # screener failed and the previous board was kept. The consumers age the board against this,
+    # so a board that stopped arriving goes stale instead of looking refreshed every poll.
+    return {'updated_at': int(meta.get('rows_at') or meta.get('now') or 0),
+            'source': meta.get('source', 'FINNHUB'),
             'market': {'is_open': meta.get('is_open'), 'session': meta.get('session'),
                        'exchange': meta.get('exchange', 'US')},
             'symbols': [dict(row) for row in rows]}
@@ -1046,6 +1050,8 @@ def main(argv=None):
     status, failures = {}, 0
     cycles, last_write = 0, None
     last_movers = []  # the previous board, kept whole when a screener poll fails
+    last_movers_at = None  # when that kept board was fetched, so its age stays honest
+    last_movers_exchange = None  # and which market it belongs to
     warned_no_token = False
     try:
         while True:
@@ -1071,16 +1077,27 @@ def main(argv=None):
                 # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
                 pass
             active = select_active_market(config, token, now=now, us_status=status)
+            rows_at = now
             if mode == 'movers':
                 active['source'] = 'YAHOO'  # the screener serves both markets, via Yahoo
                 try:
                     rows = fetch_movers(active['exchange'], config.get('movers_count', MOVERS_COUNT))
-                    last_movers = rows
+                    last_movers, last_movers_at = rows, now
+                    last_movers_exchange = active['exchange']
                     quote_failures = 0
                 except StockError:
-                    # The screener failed twice: keep the previous board.
+                    # The screener failed twice: keep the previous board, but not the session it
+                    # was fetched under. A board kept from another exchange is not this market's
+                    # trading: calling it open rode a frozen US close through an open NSE session,
+                    # labelled REGULAR, for as long as the Indian screener kept failing. It is
+                    # reported as what it is — that exchange's closed board — so a consumer rests
+                    # on usage rather than presenting dead prices as live.
                     rows = last_movers
+                    rows_at = last_movers_at
                     quote_failures = 1
+                    if last_movers_exchange and last_movers_exchange != active['exchange']:
+                        active = dict(active, exchange=last_movers_exchange,
+                                      is_open=False, session='closed')
             elif token is None:
                 rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
                 quote_failures = len(rows)
@@ -1089,7 +1106,7 @@ def main(argv=None):
             is_open = active['is_open']
             meta = {'is_open': is_open, 'session': active['session'], 'source': active['source'],
                     'exchange': active['exchange'], 'tz': active['tz'],
-                    'now': now, 'palette': config.get('palette')}
+                    'now': now, 'rows_at': rows_at, 'palette': config.get('palette')}
             image = render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=LIMITS[FILES[0]][0])
             payload = snapshot_payload(rows, meta)
             write_json(state_dir / 'snapshot.json', payload)

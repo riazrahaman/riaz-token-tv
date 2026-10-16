@@ -883,6 +883,11 @@ class MoversRunnerTests(unittest.TestCase):
             self.assertEqual(payload['symbols'], board)
 
     def test_a_watchlist_hot_reload_without_a_finnhub_key_warns_once_and_shows_dashes(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        # Pinned mid-session ET: unpinned, an Indian session swapped symbols_in into the reloaded
+        # watchlist and the run's symbols depended on the hour the suite happened to be run.
+        frozen = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo('America/New_York')).timestamp()
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / 'state'
             config = Path(directory) / 'stocks.json'
@@ -900,7 +905,7 @@ class MoversRunnerTests(unittest.TestCase):
                     config.write_text(json.dumps({'symbols': ['AAPL', 'MSFT'], 'mode': 'watchlist',
                                                   'state_dir': str(state)}))
                     import os as _os
-                    stamp = time.time() + 3600
+                    stamp = time.time() + 3600  # the real clock: the config mtime must look newer
                     _os.utime(config, (stamp, stamp))
                     return None
                 raise KeyboardInterrupt
@@ -908,6 +913,7 @@ class MoversRunnerTests(unittest.TestCase):
             with patch('token_tv.stocks.finnhub_token', side_effect=stocks.StockError('auth_required')), \
                     patch('token_tv.stocks.fetch_movers',
                           side_effect=[board, AssertionError('no movers after the reload')]) as movers, \
+                    patch('token_tv.stocks.is_us_market_open', return_value=True), \
                     patch('token_tv.stocks.time.sleep', side_effect=hot_edit_then_stop):
                 err = io.StringIO()
                 with contextlib.redirect_stderr(err):
@@ -919,6 +925,53 @@ class MoversRunnerTests(unittest.TestCase):
             for row in payload['symbols']:
                 self.assertIsNone(row['price'])  # dashes, never a fabricated zero
                 self.assertEqual(stocks.change_text(row['change'], row['percent']), '--')
+
+
+    def test_a_kept_board_never_rides_another_market_s_open_session(self):
+        """A screener failure keeps the previous board — but not the session it was fetched under.
+
+        The Indian screener has only the custom POST, which flakes, so an open NSE session kept
+        publishing the frozen US closing board as `is_open: True, session: regular`. A reading that
+        stopped arriving is old, not current: the snapshot now names the market the rows actually
+        came from, says that market is shut, and ages them from their own fetch rather than from
+        the poll that failed."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        us_noon = datetime(2026, 10, 14, 12, 0, tzinfo=ZoneInfo('America/New_York')).timestamp()
+        board = [{'symbol': 'RGC', 'price': 9.52, 'change': 1.41, 'percent': 17.39,
+                  'previous_close': None, 'at': int(us_noon)}]
+        us_session = {'exchange': 'US', 'is_open': True, 'session': 'regular', 'source': 'FINNHUB',
+                      'symbols': ['AAPL'], 'tz': 'America/New_York'}
+        nse_session = {'exchange': 'NSE', 'is_open': True, 'session': 'regular', 'source': 'YAHOO',
+                       'symbols': ['RELIANCE.NS'], 'tz': 'Asia/Kolkata'}
+        clock = {'now': us_noon}
+        slept = []
+
+        def advance_then_stop(_seconds):
+            if slept:
+                raise KeyboardInterrupt  # cycle 2 is published; end the loop
+            slept.append(True)
+            clock['now'] = us_noon + 600  # ten minutes pass before the failing NSE poll
+            return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'symbols_in': ['RELIANCE.NS'],
+                                          'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.time.time', side_effect=lambda: clock['now']), \
+                    patch('token_tv.stocks.fetch_market_status', return_value=None), \
+                    patch('token_tv.stocks.select_active_market',
+                          side_effect=[dict(us_session), dict(nse_session)]), \
+                    patch('token_tv.stocks.fetch_movers',
+                          side_effect=[board, stocks.StockError('invalid_response')]), \
+                    patch('token_tv.stocks.time.sleep', side_effect=advance_then_stop):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)
+            kept = json.loads((state / 'snapshot.json').read_text())
+        self.assertEqual(kept['symbols'], board)  # the rows are kept whole, never emptied
+        # Not NSE/open/regular: the board is the US one, and the US market is shut.
+        self.assertEqual(kept['market'], {'is_open': False, 'session': 'closed', 'exchange': 'US'})
+        self.assertEqual(kept['updated_at'], int(us_noon))  # the fetch, not the poll that failed
 
 
 if __name__ == '__main__':
