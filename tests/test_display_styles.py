@@ -535,6 +535,61 @@ class AnimatedScreenTests(unittest.TestCase):
             thread.join()
 
 
+    def test_the_clock_panel_preview_follows_what_the_publisher_puts_on_the_clock(self):
+        """The preview reads the feeder's snapshot as the publisher does, and `live=1` follows the
+        publisher's closed-market substitution.
+
+        Open, the clock panel shows the board — the same bytes the gallery thumbnail renders. Shut,
+        the publisher rests the clock on the usage screen, so the panel shows that rather than the
+        board's dash cards, which are drawn for nobody. The gallery thumbnail (no `live`) keeps
+        rendering the face itself, which is what a gallery is for."""
+        from token_tv.live import handler
+        from token_tv.usage_gif import render_usage_gif
+
+        now = int(time.time())
+        store_snapshot = {'schema': 1, 'updated_at': now, 'accounts': {}}
+
+        class PlainStore:  # as in production: a fresh dict per call, knowing nothing about stocks
+            def snapshot(self):
+                return dict(store_snapshot)
+
+        def feed(is_open):
+            return {'updated_at': now, 'source': 'YAHOO',
+                    'market': {'is_open': is_open, 'session': 'regular' if is_open else 'closed',
+                               'exchange': 'US'},
+                    'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                                 'previous_close': None, 'at': now}]}
+
+        usage = render_usage_gif(store_snapshot)
+        with tempfile.TemporaryDirectory() as folder:
+            feed_path = Path(folder) / 'stocks-snapshot.json'
+            feed_path.write_text(json.dumps(feed(True)))
+            server = ThreadingHTTPServer(('127.0.0.1', 0), handler(PlainStore(), feed_path=str(feed_path)))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            root = f'http://127.0.0.1:{server.server_port}'
+            try:
+                with urlopen(root + '/frame/0.jpg?live=1&style=stocks') as response:
+                    open_panel = response.read()
+                with urlopen(root + '/frame/0.jpg?style=stocks') as response:
+                    open_thumb = response.read()
+                self.assertEqual(open_panel[:4], b'GIF8')  # a live board breathes
+                self.assertEqual(open_panel, open_thumb)   # and the panel is the board, not usage
+                self.assertNotEqual(open_panel, usage)
+
+                feed_path.write_text(json.dumps(feed(False)))
+                with urlopen(root + '/frame/0.jpg?live=1&style=stocks') as response:
+                    self.assertEqual(response.read(), usage)  # what the clock really shows
+                with urlopen(root + '/frame/0.jpg?style=stocks') as response:
+                    shut_thumb = response.read()
+                self.assertEqual(shut_thumb[:3], b'\xff\xd8\xff')  # a shut board is still: JPEG
+                self.assertNotEqual(shut_thumb, usage)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+
 if __name__ == '__main__':
     unittest.main()
 

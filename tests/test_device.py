@@ -12,7 +12,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from token_tv import live
-from token_tv.device import (JPEG_SLOTS, BackupMismatch, PhotoDisplay, UltraDisplay,
+from token_tv.device import (JPEG_SLOTS, STOCKS_FILES, BackupMismatch, PhotoDisplay, UltraDisplay,
                              open_display)
 
 
@@ -536,6 +536,7 @@ class LiveCycleTests(unittest.TestCase):
 
         def __init__(self):
             self.uploads = []  # (name, image) in upload order
+            self.wanted = []  # the slot list the publisher asked activate to keep awake
             self.activations = 0
             self.album = [{'name': 'original.jpg', 'enabled': True}]
             self.done = threading.Event()
@@ -562,6 +563,8 @@ class LiveCycleTests(unittest.TestCase):
 
         def activate(self, original, name='tokentv.jpg', wanted=None):
             self.activations += 1
+            from token_tv.device import wanted_slots as _slots
+            self.wanted.append(list(_slots(name, wanted)))
             if self.activations == 1:
                 from token_tv.device import wanted_slots
                 target = wanted_slots(name, wanted)[1 if len(wanted_slots(name, wanted)) > 1 else 0]
@@ -637,6 +640,48 @@ class LiveCycleTests(unittest.TestCase):
                          ["tokentv.jpg", "tokentv-b.jpg", "tokentv.jpg", "tokentv-b.jpg"])
         self.assertEqual([image for _, image in clock.uploads], [frames['neon']] * 4)  # neon, not pixel
         self.assertNotIn('tokentv-usage.jpg', frames['mirrors'])
+
+    def test_a_market_shutting_reasserts_the_slot_set_at_once(self):
+        """Open, the album wants all three slots; shut, only the two the usage rest is written into.
+
+        The change is asserted on the spot rather than at the next periodic reassert: the third
+        slot stops being written when the market shuts, so leaving it awake would rotate a frozen
+        usage screen between two fresh ones for up to `reassert_cycles`."""
+        from token_tv.device import ROTATION_FILES
+
+        def feed(is_open):
+            return {'updated_at': int(self.FROZEN), 'source': 'YAHOO',
+                    'market': {'is_open': is_open, 'session': 'regular' if is_open else 'closed',
+                               'exchange': 'US'},
+                    'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                                 'previous_close': None, 'at': int(self.FROZEN) - 5}]}
+
+        with tempfile.TemporaryDirectory() as folder:
+            feed_path = Path(folder) / 'stocks-snapshot.json'
+            feed_path.write_text(json.dumps(feed(True)))
+
+            class ShuttingClock(self.FakeClock):
+                def upload(self, name, image):  # the market shuts after the first rotation set
+                    receipt = super().upload(name, image)
+                    feed_path.write_text(json.dumps(feed(False)))
+                    return receipt
+
+                def activate(self, original, name='tokentv.jpg', wanted=None):
+                    from token_tv.device import wanted_slots
+                    self.activations += 1
+                    self.wanted.append(list(wanted_slots(name, wanted)))
+                    if self.activations >= 2:
+                        self.done.set()
+                        raise SystemExit  # both slot sets seen
+
+            clock = ShuttingClock()
+            config = self._config(folder, display_style='stocks',
+                                  stocks_snapshot=str(feed_path))
+            self._run(clock, config, folder)
+        self.assertEqual(clock.wanted, [list(ROTATION_FILES), list(STOCKS_FILES)])
+        # The open cycle wrote three slots; the shut one only the two it rests on.
+        self.assertEqual([name for name, _ in clock.uploads],
+                         list(ROTATION_FILES) + list(STOCKS_FILES))
 
     def test_a_later_reassert_is_not_a_false_lost_frame(self):
         """A clock that keeps both stock slots runs its reasserts with no forced re-upload."""
@@ -720,6 +765,11 @@ class LiveCycleTests(unittest.TestCase):
                 frames['usage'] = render_usage_gif({k: v for k, v in saved.items() if k != 'stocks'})
 
             self._run(clock, config, folder, after=after)
-        # A closed market fills every GIF slot with the shimmering usage screen: the loop only
-        # runs while open.
-        self.assertEqual([image for _, image in clock.uploads], [frames['usage']] * 6)
+        # A closed market rests the clock on the shimmering usage screen: the loop only runs
+        # while open. The rest uses the two stock slots and no more — two is the fewest the
+        # firmware will re-read, so the third slot is neither written nor wanted.
+        self.assertEqual([image for _, image in clock.uploads],
+                         [frames['usage']] * len(clock.uploads))
+        self.assertEqual({name for name, _ in clock.uploads}, set(STOCKS_FILES))
+        self.assertEqual(len(clock.uploads), 2 * 2)  # two slots, two publishing cycles
+        self.assertEqual(clock.wanted, [list(STOCKS_FILES)] * clock.activations)

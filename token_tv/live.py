@@ -178,7 +178,7 @@ class StockFeedMissing(Exception):
     """POST to a stocks endpoint while the live config has no stock feed."""
 
 
-def handler(store, preferences=None, quantum=0, state_dir=None):
+def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -208,7 +208,22 @@ def handler(store, preferences=None, quantum=0, state_dir=None):
                     self.send_error(400, 'Unknown display style')
                     return
                 # The same bucketing as the published frame, so the preview matches the clock.
-                body = render_page(snapshot, int(path[7]), style, quantum)
+                # The feed is read here as the publisher reads it: `store.snapshot()` builds a fresh
+                # dict per call and knows nothing about stocks, so without this every stock face
+                # previews as dash cards even mid-session.
+                frame_snapshot = snapshot
+                feed = read_feed(feed_path) if feed_path else None
+                if feed is not None:
+                    frame_snapshot = dict(snapshot, stocks=feed)
+                # `live=1` (the clock panel, not the gallery) also follows the publisher's
+                # closed-market substitution: the stocks face rests the panel on the usage screen,
+                # so the board's dash cards are drawn for nobody and must not be shown as current.
+                if parse_qs(url.query).get('live', ['0'])[0] not in ('', '0') \
+                        and style == 'stocks' and market_rows(frame_snapshot) is None:
+                    body = render_usage_gif({key: value for key, value in frame_snapshot.items()
+                                             if key != 'stocks'})
+                else:
+                    body = render_page(frame_snapshot, int(path[7]), style, quantum)
                 content_type = "image/gif" if body[:4] == b"GIF8" else "image/jpeg"
             elif path == '/themes':
                 body = json.dumps(theme_payload()).encode()
@@ -363,6 +378,7 @@ def main():
     stopping = threading.Event()
     original = None
     active_file = None
+    active_wanted = None  # the slot set the clock was last told to keep awake
     last_upload = {}  # slot name → last uploaded sha256; the whole-slot dedupe
     last_write = None
     last_style = None
@@ -370,7 +386,7 @@ def main():
     cycles = 0
 
     def cycle(refresh=True, user=False):
-        nonlocal original, active_file, last_upload, last_write, last_style, last_data, cycles
+        nonlocal original, active_file, active_wanted, last_upload, last_write, last_style, last_data, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
@@ -389,6 +405,11 @@ def main():
                 cycles += 1
                 image, encoded = render_frame(snapshot, 0, style, quantum,
                                               LIMITS[FILES[0]][0] if style not in ANIMATED_STYLES else LIMITS[FILES[1]][0])
+                # Is there a live board to show? Decided before the slot plan, because a closed
+                # market changes *which* slots the clock should be showing, not only what goes in
+                # them: resting on the usage screen needs two rotating slots (one enabled photo
+                # freezes the panel — device.py), and a third identical copy only costs flash.
+                alternation = feed is not None and market_rows(snapshot) is not None
                 if style == 'stocks':
                     name = STOCKS_FILES[0]  # the animated stock slot that carries the primary frame
                 else:
@@ -400,16 +421,19 @@ def main():
                 # stock JPG slots for a static non-stock style (0.4.7 behaviour; the usage slot is
                 # not ours to want), just the GIF for the animated single-file ones.
                 if style == 'stocks':
-                    wanted = ROTATION_FILES
+                    wanted = ROTATION_FILES if alternation else STOCKS_FILES
                 elif name == FILES[1]:
                     wanted = (name,)
                 elif style in STOCK_STYLES:
-                    wanted = JPEG_SLOTS + (JPEG_USAGE_FILE,)
+                    wanted = (JPEG_SLOTS + (JPEG_USAGE_FILE,)) if alternation else JPEG_SLOTS
                 else:
                     wanted = JPEG_SLOTS
                 # Re-assert the theme periodically, not only when the file name changes: a reboot
-                # or a visit to the clock's own web UI drops it back to its own theme.
-                due = active_file != name or cycles % reassert_after == 0
+                # or a visit to the clock's own web UI drops it back to its own theme. A changed
+                # wanted set is due at once rather than on the next periodic reassert: when a market
+                # shuts, the third slot stops being written, and leaving it awake would rotate a
+                # frozen usage screen between two fresh ones for up to `reassert_cycles`.
+                due = active_file != name or tuple(wanted) != active_wanted or cycles % reassert_after == 0
                 lost = False
                 if due:
                     phase = "activate"
@@ -432,10 +456,11 @@ def main():
                     # (its arrows and glows breathe) into the two GIF stock slots and the shimmering
                     # usage face into the third, so the slideshow's 10-second interval shows stocks
                     # for 20 seconds, then usage for 10, then repeats with fresh frames. A closed,
-                    # missing or stale market (combo conventions) rests the clock on a continuous
-                    # shimmering usage screen by filling all three slots with the usage GIF — the
-                    # usage-only choice for the stocks face is the user's stated intent.
-                    alternation = feed is not None and market_rows(snapshot) is not None
+                    # missing or stale market (combo conventions) rests the clock on the usage
+                    # screen alone — the user's stated intent for this face. That rest uses the two
+                    # stock slots and leaves the third asleep: two is the fewest the firmware will
+                    # re-read (be2c72a, verified on hardware), and a third identical frame would
+                    # buy nothing but a third more flash writes every time a reading moves.
                     usage_gif = render_usage_gif(
                         {key: value for key, value in snapshot.items() if key != 'stocks'})
                     usage_digest = hashlib.sha256(usage_gif).hexdigest()
@@ -445,14 +470,13 @@ def main():
                                   (USAGE_FILE, usage_gif, usage_digest, {})]
                     else:
                         events = [(STOCKS_FILES[0], usage_gif, usage_digest, {}),
-                                  (STOCKS_FILES[1], usage_gif, usage_digest, {}),
-                                  (USAGE_FILE, usage_gif, usage_digest, {})]
+                                  (STOCKS_FILES[1], usage_gif, usage_digest, {})]
                 elif image[:4] == b"GIF8":  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
                 elif style in STOCK_STYLES:
                     # The combo family's static alternation (unchanged bytes): its face into the two
                     # JPG stock slots and the usage face into the third, under the same schedule.
-                    alternation = feed is not None and market_rows(snapshot) is not None
+                    # Shut, it rests on the usage face in the two slots and the third sleeps.
                     usage_image, usage_encoded = render_frame(
                         {key: value for key, value in snapshot.items() if key != 'stocks'},
                         0, 'pixel', quantum, LIMITS[FILES[0]][0])
@@ -460,8 +484,9 @@ def main():
                     slot_image, slot_encoded, slot_digest = ((image, encoded, digest) if alternation
                                                              else (usage_image, usage_encoded, usage_digest))
                     events = [(JPEG_SLOTS[0], slot_image, slot_digest, slot_encoded),
-                              (JPEG_SLOTS[1], slot_image, slot_digest, slot_encoded),
-                              (JPEG_USAGE_FILE, usage_image, usage_digest, usage_encoded)]
+                              (JPEG_SLOTS[1], slot_image, slot_digest, slot_encoded)]
+                    if alternation:
+                        events.append((JPEG_USAGE_FILE, usage_image, usage_digest, usage_encoded))
                 else:
                     # A style that draws no stock board keeps 0.4.7's behavior: the chosen face in
                     # the two stock slots, and the usage slot is left alone (not uploaded, not
@@ -487,7 +512,7 @@ def main():
                 if due:
                     phase = "activate"
                     device.activate(original, name, wanted)
-                    active_file = name
+                    active_file, active_wanted = name, tuple(wanted)
                 write_json(state_dir / "display-receipt.json",
                            {"at": int(time.time()), "style": style, "uploads": receipts,
                             "throttled": throttled, "reasserted": due, "encoded": encoded,
@@ -535,7 +560,7 @@ def main():
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum, state_dir=state_dir)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum, state_dir=state_dir, feed_path=feed_path)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

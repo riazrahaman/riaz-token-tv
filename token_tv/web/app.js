@@ -218,7 +218,7 @@ function paintClock(forceImage = false) {
  $('#clock-face').textContent = displayInfo?.applied_style ? styleName(displayInfo.applied_style) : '—';
  if (style && (forceImage || style !== lastImageStyle || Date.now() - lastImageAt > 30000)) {
   lastImageStyle = style; lastImageAt = Date.now();
-  $('#frame').src = DEMO ? displayInfo.frames?.[style] || `/frames/${encodeURIComponent(style)}.jpg` : '/frame/0.jpg?style=' + encodeURIComponent(style) + '&t=' + lastImageAt;
+  $('#frame').src = DEMO ? displayInfo.frames?.[style] || `/frames/${encodeURIComponent(style)}.jpg` : '/frame/0.jpg?live=1&style=' + encodeURIComponent(style) + '&t=' + lastImageAt;
   $('#frame').alt = styleName(style) + ' live clock preview';
  }
 }

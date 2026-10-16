@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A closed market no longer writes the same usage screen into three slots.** The stocks face rests the clock on the usage screen outside market hours, as intended — but it did so by filling all three album slots with identical bytes, so every reading that moved cost three flash writes instead of two. Two enabled photos is the fewest the firmware will re-read (a single enabled photo freezes the panel between uploads, verified on hardware in 0.4.10), so the rest now uses the two stock slots and puts the third to sleep. The combo family's static slots got the same economy.
+- **The slot set is re-asserted the moment it changes**, rather than on the next periodic reassert. When a market shuts, the third slot stops being written; leaving it awake rotated a frozen usage screen between two fresh ones for up to `reassert_cycles`.
+- **The dashboard's clock panel no longer previews a face the clock is not showing.** Its preview rendered the stocks board directly, so a closed market displayed four dim dash cards labelled *On the clock* while the clock was actually resting on the usage screen. The panel now asks for what is really published (`/frame/0.jpg?live=1`); the gallery thumbnail still renders the face itself, which is what a gallery is for.
+- **The frame preview never saw the stock feed.** `store.snapshot()` builds a fresh dict per call and knows nothing about stocks — only the publisher's own cycle merged the feeder's file in. So every stock face previewed as dim dash cards on the dashboard, mid-session included. The preview now reads the feed the way the publisher does.
+
 ## [0.5.0] — 2026-10-16
 
 ### Changed
