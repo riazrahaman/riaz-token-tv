@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-10-17
+
+### Fixed
+
+- **The calendar feeder tolerates a syncing calendar.** Right after a restart, Calendar.app's Apple Events scans can take far longer than the calm 0.5–3 s steady state (observed 25–160 s while iCloud syncs), so the feeder's hard subprocess timeout is raised from 10 to 150 seconds — still bounded, now wide enough to cover osascript's own two-minute AppleEvent timeout, which the query script itself lifts with a `with timeout` block (osascript's -1712 otherwise fires at 120 s and no subprocess ceiling could help it). A failed tick now retries after a minute rather than burying the next chance in the full five-minute window (bounded, as ever, by `MIN_INTERVAL`). A query that outlives even all of that keeps the last-good snapshot, as before. Diagnosing this was the hard part: the feeder swallowed the real error, so failures now print the osascript line to the log.
+
 ## [0.5.1] — 2026-10-17
 
 ### Added

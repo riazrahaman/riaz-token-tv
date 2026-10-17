@@ -29,7 +29,7 @@ from pathlib import Path
 from token_tv.display import pixel_text
 
 CALENDAR_NAME = 'riazrahaman'  # the calendar the scoped query reads; a per-calendar scope is proven fast
-QUERY_TIMEOUT = 10  # seconds; a scoped query answers in 0.5-3 s, so 10 is a ceiling, not a wait
+QUERY_TIMEOUT = 150  # seconds; covers osascript's own 120 s AppleEvent timeout — iCloud syncs can make even a scoped scan take 1-3 min
 HORIZON_DAYS = 45  # how far ahead the query looks; recurring instances keep it well populated
 DEFAULT_INTERVAL = 300  # the line is a next appointment, not a live feed: five minutes is plenty
 MIN_INTERVAL = 60  # a bad config can never hammer the TCC-gated osascript
@@ -47,21 +47,27 @@ on stamp(d)
 end stamp
 
 set out to ""
-tell application "Calendar"
-	tell calendar "%(name)s"
-		set now to current date
-		set horizon to now + %(horizon)d * days
-		repeat with e in (every event whose start date > now and start date < horizon and allday event is false)
-			set out to out & my stamp(start date of e) & "	" & (summary of e) & linefeed
-		end repeat
+with timeout of %(timeout)d seconds
+	tell application "Calendar"
+		tell calendar "%(name)s"
+			set now to current date
+			set horizon to now + %(horizon)d * days
+			-- Calendar's AppleScript layer rejects every multi-property bulk shape here
+			-- (-10006/-1728), so the rows come home one pair per send; the with-timeout
+			-- block is what lifts osascript's own 120 s AppleEvent cap out of the way.
+			repeat with e in (every event whose start date > now and start date < horizon and allday event is false)
+				set out to out & my stamp(start date of e) & "	" & (summary of e) & linefeed
+			end repeat
+		end tell
 	end tell
-end tell
+end timeout
 return out'''
 
 
 def build_script(name=CALENDAR_NAME):
     """The scoped calendar query. One calendar named, one window: never an unscoped `whose`."""
-    return APPLESCRIPT % {'name': str(name).replace('"', ''), 'horizon': HORIZON_DAYS}
+    return APPLESCRIPT % {'name': str(name).replace('"', ''), 'horizon': HORIZON_DAYS,
+                          'timeout': QUERY_TIMEOUT - 5}
 
 
 def parse_events(text, now=None):
@@ -105,12 +111,16 @@ def query_next(now=None, calendar=CALENDAR_NAME, timeout=QUERY_TIMEOUT):
     now = time.time() if now is None else now
     try:
         result = subprocess.run(['osascript', '-e', build_script(calendar)],
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, timeout=timeout)
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        # The run loop keeps its own polite one-time warning; the detail lands here so an
+        # operator can tell a 120 s AppleEvent timeout from a TCC refusal from a hang.
+        print(f'calendar query error: {error!r}', file=sys.stderr, flush=True)
         return None
     if result.returncode != 0 or not result.stdout:
-        return None
+        detail = (result.stderr or '').strip().splitlines()[-1:] or [f'exit {result.returncode}']
+        print(f'calendar query failed: {detail[0]}', file=sys.stderr, flush=True)
     return parse_events(result.stdout, now)
 
 
@@ -255,6 +265,8 @@ def main(argv=None):
 
     path = snapshot_path(args, config)
     interval = max(MIN_INTERVAL, int(args.interval if args.interval is not None else DEFAULT_INTERVAL))
+    retry = max(MIN_INTERVAL, min(60, interval))  # a failed tick retries in a minute: a syncing
+    # calendar is slow for minutes and calm afterwards, and the next 300 s window must not bury it
     warned = False
     try:
         while True:
@@ -266,6 +278,10 @@ def main(argv=None):
                 if not warned:
                     print(f'Calendar query failed; keeping {path} unchanged.', file=sys.stderr, flush=True)
                     warned = True
+                if args.once:
+                    break
+                time.sleep(retry)
+                continue
             else:
                 warned = False
                 write_json(path, build_snapshot(event, now))
