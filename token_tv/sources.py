@@ -48,8 +48,8 @@ def load_config(path):
     data = json.loads(Path(path).read_text())
     if set(data) - {"accounts", "device_url", "poll_seconds", "font", "display_style",
                     "countdown_seconds", "max_writes_per_hour", "reassert_cycles",
-                    "stocks_snapshot", "stocks_config", "render_seconds", "device_mac",
-                    "brightness", "night"}:
+                    "stocks_snapshot", "stocks_config", "calendar_snapshot", "render_seconds",
+                    "device_mac", "brightness", "night"}:
         raise ValueError("Unsupported configuration field")
     if data.get('display_style', 'pixel') not in STYLES:
         raise ValueError('Unknown display style')

@@ -7,8 +7,9 @@ import io
 import math
 from PIL import Image, ImageDraw
 
-from token_tv.combo import (AI_PITCH, AI_TOP, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP,
+from token_tv.combo import (AI_PITCH, AI_TOP, CALENDAR_Y, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP,
                             RULE_Y, SIZE, _ai_row, _market_row, _rule, market_rows)
+from token_tv.calendar import draw_calendar_line
 from token_tv.combo_pulse import _pulse_dot
 from token_tv.display import (overview_rows, pixel_text, render_pixel)
 from token_tv.stocks import PALETTE
@@ -18,6 +19,9 @@ FRAMES = 10
 
 NIGHT_BG = (10, 14, 28)
 STARS = [(18, 6), (72, 4), (190, 8), (228, 52), (12, 100), (228, 102), (8, 230), (120, 234), (225, 228)]
+# The calendar line's ink: the same pale slate combo_stocks reads as HEADER_INK (this module
+# cannot import combo_stocks for it — combo_stocks imports this one's sky).
+CALENDAR_INK = (150, 160, 190)
 
 
 def render_twinkle_frame(snapshot, frame):
@@ -57,6 +61,9 @@ def render_twinkle_frame(snapshot, frame):
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)
+
+    # The next-event line, static across every frame (drawn after the stars: text wins overlap).
+    draw_calendar_line(draw, snapshot, CALENDAR_Y, CALENDAR_INK)
 
     return image
 

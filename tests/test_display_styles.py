@@ -637,10 +637,6 @@ class AnimatedScreenTests(unittest.TestCase):
                 thread.join()
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ConfiguredServicesOnlyTest(unittest.TestCase):
     def test_only_services_with_accounts_get_a_row(self):
         import time
@@ -831,3 +827,94 @@ class ComboFaceTests(unittest.TestCase):
                             limit=LIMITS[FILES[0]][0])
         self.assertLessEqual(len(frame), LIMITS[FILES[0]][0])
         self.assertEqual(Image.open(io.BytesIO(frame)).size, (240, 240))
+
+
+class CalendarLineTests(unittest.TestCase):
+    """The next-event line: the combo family's bottom line, the usage rest face's fourth row."""
+
+    @staticmethod
+    def _usage(now=None):
+        return {'updated_at': now, 'accounts': {'c': {
+            'key': 'c', 'provider': 'claude', 'alias': 'CLAUDE A', 'status': 'ok',
+            'fetched_at': now, 'last_success_at': now,
+            'windows': [{'label': 'WEEK', 'used_percent': 61.0, 'resets_at': None}]}}}
+
+    @staticmethod
+    def _feed(now, is_open=True):
+        return {'updated_at': now, 'source': 'FINNHUB',
+                'market': {'is_open': is_open, 'session': 'regular'},
+                'symbols': [{'symbol': 'AAPL', 'price': 343.0, 'change': 1.0, 'percent': 0.3,
+                             'previous_close': 342.0, 'at': now}]}
+
+    @staticmethod
+    def _event(now, offset=8040, updated=None, title='Abu Dhabi Gaming Connect'):
+        from datetime import datetime
+        start = datetime.fromtimestamp(now + offset).astimezone().isoformat(timespec='seconds')
+        return {'updated_at': now if updated is None else updated, 'title': title, 'start_iso': start}
+
+    def test_the_combo_face_draws_the_next_event_line(self):
+        now = time.time()
+        open_board = {'accounts': {}, 'stocks': self._feed(now)}
+        with_line = dict(open_board, calendar=self._event(now))
+        page = render_page(with_line, style='combo')
+        self.assertNotEqual(page, render_page(open_board, style='combo'))
+        band = Image.open(io.BytesIO(page)).convert('RGB')  # the line's own bottom strip carries ink
+        self.assertTrue(any(max(px) > 120 for px in band.crop((6, 229, 234, 240)).getdata()))
+
+    def test_the_line_is_absent_rather_than_a_fabricated_dash(self):
+        now = time.time()
+        open_board = {'accounts': {}, 'stocks': self._feed(now)}
+        without = render_page(open_board, style='combo')
+        for calendar in ({'title': 'Event', 'start_iso': 'not-a-date'},          # junk
+                         {'title': 'Event', 'start_iso': '2020-01-01T10:00:00+04:00'},  # past
+                         {}):
+            self.assertEqual(render_page(dict(open_board, calendar=calendar), style='combo'),
+                             without, calendar)
+
+    def test_a_stale_event_keeps_its_line_and_admits_its_age(self):
+        now = time.time()
+        open_board = {'accounts': {}, 'stocks': self._feed(now)}
+        fresh = render_page(dict(open_board, calendar=self._event(now, updated=now)), style='combo')
+        stale = render_page(dict(open_board, calendar=self._event(now, updated=now - 601)),
+                            style='combo')
+        self.assertNotEqual(fresh, stale)  # OLD rides the same row, it never silently refreshes
+
+    def test_the_animated_combo_faces_carry_the_line_static_across_their_frames(self):
+        from token_tv.combo_pulse import render_combo_pulse
+        from token_tv.combo_patrol import render_combo_patrol
+        from token_tv.combo_twinkle import render_combo_twinkle
+        from token_tv.combo_cyber import render_combo_cyber
+        now = time.time()
+        open_board = {'accounts': {}, 'stocks': self._feed(now)}
+        with_line = dict(open_board, calendar=self._event(now))
+        for render in (render_combo_pulse, render_combo_patrol, render_combo_twinkle, render_combo_cyber):
+            carried, plain = render(with_line), render(open_board)
+            self.assertNotEqual(carried, plain, render.__module__)
+            image = Image.open(io.BytesIO(carried))
+            self.assertEqual(image.size, (240, 240))
+            self.assertTrue(image.is_animated)
+
+    def test_the_usage_rest_face_draws_the_line_on_its_fourth_row(self):
+        from token_tv.usage_gif import render_usage_gif
+        now = time.time()
+        usage = self._usage(now)
+        carried = render_usage_gif(dict(usage, calendar=self._event(now)))
+        plain = render_usage_gif(usage)
+        self.assertNotEqual(carried, plain)
+        self.assertLessEqual(len(carried), 400000)  # tokentv-usage.gif's firmware limit
+        image = Image.open(io.BytesIO(carried))
+        self.assertEqual(image.size, (240, 240))
+        self.assertEqual(image.n_frames, 4)
+        frame = image.convert('RGB')
+        self.assertTrue(any(max(px) > 120 for px in frame.crop((6, 229, 234, 240)).getdata()))
+
+    def test_a_junk_or_past_calendar_never_rewrites_the_usage_rest(self):
+        # The rest face must stay byte-stable when the calendar row has nothing honest to show,
+        # or overnight flash traffic would return one junk snapshot at a time.
+        from token_tv.usage_gif import render_usage_gif
+        now = time.time()
+        usage = self._usage(now)
+        plain = render_usage_gif(usage)
+        for calendar in ({}, {'title': 'Event', 'start_iso': 'nope'},
+                         {'title': 'Event', 'start_iso': '2020-01-01T10:00:00+04:00'}):
+            self.assertEqual(render_usage_gif(dict(usage, calendar=calendar)), plain, calendar)

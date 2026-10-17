@@ -184,6 +184,11 @@ def data_digest(snapshot):
         rows.append(((stocks.get('market') or {}).get('is_open'),
                      [(s.get('symbol'), s.get('price'), s.get('percent'))
                       for s in stocks.get('symbols') or [] if isinstance(s, dict)]))
+    calendar = snapshot.get('calendar')
+    if isinstance(calendar, dict):
+        # A new event must reach the face even when the write budget is spent: the title and the
+        # appointment are what changes (not the countdown ticking, and not a mere refetch stamp).
+        rows.append(('calendar', calendar.get('title'), calendar.get('start_iso')))
     return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 

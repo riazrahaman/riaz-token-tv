@@ -4,6 +4,7 @@ import json
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -773,3 +774,110 @@ class LiveCycleTests(unittest.TestCase):
         self.assertEqual({name for name, _ in clock.uploads}, set(STOCKS_FILES))
         self.assertEqual(len(clock.uploads), 2 * 2)  # two slots, two publishing cycles
         self.assertEqual(clock.wanted, [list(STOCKS_FILES)] * clock.activations)
+
+    def test_a_closed_market_takes_the_moon_cameo_on_its_one_in_ten_tick(self):
+        """Closed with a trusted reopen: the stock slots rest on the usage screen every tick, and
+        the moon reopen face — which used to be the whole rest — cameos in the third slot for
+        exactly one tick in ten, which the wanted-set toggle enables and then re-sleeps."""
+        from token_tv.device import USAGE_FILE, JPEG_SLOTS
+
+        feed = {'updated_at': int(self.FROZEN), 'source': 'YAHOO',
+                'market': {'is_open': False, 'session': 'closed', 'exchange': 'US',
+                           'tz': 'America/New_York',
+                           'next_open_at': int(self.FROZEN) + 26 * 3600, 'next_open_exchange': 'US'},
+                'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                             'previous_close': None, 'at': int(self.FROZEN) - 5}]}
+
+        class CameoClock(self.FakeClock):
+            def upload(self, name, image):  # like the base, but the album marker never ends the run
+                self.uploads.append((name, image))
+                self.album.append({'name': name, 'enabled': True})
+                return {'file': name, 'status': 200, 'bytes': len(image)}
+
+            def activate(self, original, name='tokentv.jpg', wanted=None):
+                from token_tv.device import wanted_slots
+                self.activations += 1
+                self.wanted.append(list(wanted_slots(name, wanted)))
+                if len(self.wanted) >= 2 and any(len(w) == 3 for w in self.wanted) \
+                        and len(self.wanted[-1]) == 2:
+                    self.done.set()
+                    raise SystemExit  # cameo seen, then slept off again
+
+        clock = CameoClock()
+        frames = {}
+        with tempfile.TemporaryDirectory() as folder:
+            feed_path = Path(folder) / 'stocks-snapshot.json'
+            feed_path.write_text(json.dumps(feed))
+            config = self._config(folder, display_style='stocks',
+                                  stocks_snapshot=str(feed_path), max_writes_per_hour=0)
+
+            def after():
+                from token_tv.combo_stocks import render_combo_stocks_closed_gif
+                from token_tv.usage_gif import render_usage_gif
+                saved = json.loads((Path(folder) / 'snapshot.json').read_text())
+                saved.pop('display', None)
+                frames['usage'] = render_usage_gif({k: v for k, v in saved.items() if k != 'stocks'})
+                frames['moon'] = render_combo_stocks_closed_gif(saved)
+
+            self._run(clock, config, folder, after=after)
+        # The rest is always the usage pair in the two stock slots — even on cameo ticks. The
+        # moon never returns to the stock slots it used to rest in.
+        self.assertEqual({name for name, _ in clock.uploads if name in STOCKS_FILES}, set(STOCKS_FILES))
+        for name, image in clock.uploads:
+            if name in STOCKS_FILES:
+                self.assertEqual(image, frames['usage'], name)  # the rest, every closed tick
+            else:
+                self.assertEqual(image, frames['moon'], name)   # the cameo, third slot only
+        # The cameo went to the third slot, on the one-in-ten schedule: wanted gains exactly the
+        # usage slot on a cameo tick and loses it on the next one — a one-slot wanted difference.
+        cameo_wanted = [STOCKS_FILES[0], STOCKS_FILES[1], USAGE_FILE]
+        self.assertTrue(any(w == cameo_wanted for w in clock.wanted), clock.wanted)
+        self.assertNotEqual(clock.wanted[-1], clock.wanted[-2])  # tick boundaries flip the wanted set
+        self.assertEqual({tuple(w) for w in clock.wanted},
+                         {tuple(STOCKS_FILES), tuple(cameo_wanted)}, clock.wanted)
+        cameo_uploads = [image for name, image in clock.uploads if name == USAGE_FILE]
+        self.assertTrue(cameo_uploads and cameo_uploads[0] == frames['moon'], clock.uploads)
+        # The cameo's wanted set equals the open-market rotation set, so what separates the rest
+        # from the alternation is the bytes: the two stock slots carry the usage face, not the
+        # board — and no JPEG slot is ever wanted or written in the stocks style.
+        self.assertEqual([name for name, _ in clock.uploads if name in JPEG_SLOTS], [])
+
+
+class MoonCameoTests(unittest.TestCase):
+    """The cameo schedule and its honesty gates, decided cycle-by-cycle in live.py."""
+
+    @staticmethod
+    def _snapshot(updated_at, **market):
+        stocks = {'updated_at': updated_at, 'source': 'YAHOO',
+                  'market': dict({'is_open': False, 'session': 'closed', 'exchange': 'US'}, **market)}
+        return {'accounts': {}, 'stocks': stocks}
+
+    def test_the_cameo_fires_on_exactly_one_tick_in_ten(self):
+        now = time.time()
+        snapshot = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        self.assertTrue(live.moon_cameo(10, snapshot, now=now))
+        self.assertTrue(live.moon_cameo(20, snapshot, now=now))
+        for cycle in range(1, 10):
+            self.assertFalse(live.moon_cameo(cycle, snapshot, now=now), cycle)
+        self.assertFalse(live.moon_cameo(11, snapshot, now=now))
+        self.assertFalse(live.moon_cameo(None, snapshot, now=now))
+        self.assertFalse(live.moon_cameo(True, snapshot, now=now))
+
+    def test_the_cameo_buys_nothing_on_untrusted_feeds(self):
+        now = time.time()
+        trusted = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        self.assertTrue(live.moon_cameo(10, trusted, now=now))
+        no_schedule = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        del no_schedule['stocks']['market']['next_open_at']
+        self.assertFalse(live.moon_cameo(10, no_schedule, now=now))        # no named reopen
+        self.assertFalse(live.moon_cameo(10, self._snapshot(now), now=now))  # no schedule keys
+        past = self._snapshot(now, next_open_at=int(now) - 5, next_open_exchange='US')
+        self.assertFalse(live.moon_cameo(10, past, now=now))               # the bell already rang
+        unknown = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='LSE')
+        self.assertFalse(live.moon_cameo(10, unknown, now=now))            # an exchange nobody opens
+        open_market = self._snapshot(now, is_open=True, next_open_at=int(now) + 7200,
+                                     next_open_exchange='US')
+        self.assertFalse(live.moon_cameo(10, open_market, now=now))        # an open board is a board
+        stale = self._snapshot(now - 601, next_open_at=int(now) + 7200, next_open_exchange='US')
+        self.assertFalse(live.moon_cameo(10, stale, now=now))              # a feed nobody freshened
+        self.assertFalse(live.moon_cameo(10, {'accounts': {}}, now=now))   # no feed at all

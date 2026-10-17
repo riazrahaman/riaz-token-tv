@@ -358,27 +358,24 @@ def next_open_schedule(now=None):
 
 
 def reopen_text(stamp, exchange, now=None):
-    """`(day, 'HH:MM', exchange)` for a reopen stamp on the reopening exchange's own clock, or None.
+    """`(day, 'HH:MM', exchange)` for a reopen stamp on this host's own clock, or None.
 
-    A 09:15 NSE open never wears a New York label: the clock is the exchange that opens,
-    and the day label — TODAY, TOMORROW, or the exchange's own weekday — is that
-    exchange's date. Unknown exchanges and past stamps say nothing, so a face can never
+    The operator reads the wall the clock hangs on, not a feed's zone: a 09:15 IST bell that
+    opens at 07:45 UAE time must say 07:45 — so the stamp renders host-local instead of in the
+    reopening exchange's timezone, and the exchange's own name rides along as the label (the
+    'MON · NSE' pair). Unknown exchanges and past stamps say nothing, so a face can never
     promise an appointment nobody published.
     """
     now = time.time() if now is None else float(now)
     code = str(exchange or '').upper()
-    zone = None
-    for candidate, zone_name, _open_hm, _close_hm in MARKET_SESSIONS:
-        if candidate == code:
-            zone = zone_name
-            break
-    if zone is None or not isinstance(stamp, (int, float)) or float(stamp) <= float(now):
+    if code not in {exchange_name for exchange_name, _zone, _open, _close in MARKET_SESSIONS}:
+        return None
+    if isinstance(stamp, bool) or not isinstance(stamp, (int, float)) or float(stamp) <= float(now):
         return None
     try:
-        from zoneinfo import ZoneInfo
-        opens = datetime.fromtimestamp(float(stamp), ZoneInfo(zone))
-        here = datetime.fromtimestamp(float(now), ZoneInfo(zone))
-    except Exception:
+        opens = datetime.fromtimestamp(float(stamp))     # host-local, no feed zone involved
+        here = datetime.fromtimestamp(float(now))
+    except (OSError, OverflowError, ValueError):
         return None
     days = (opens.date() - here.date()).days
     day = 'TODAY' if days == 0 else 'TOMORROW' if days == 1 else opens.strftime('%a').upper()
@@ -720,7 +717,12 @@ def display_symbol(symbol):
 
 
 def market_time(epoch, tz='America/New_York'):
-    """HH:MM in the exchange's clock, or UTC if the timezone database is absent."""
+    """HH:MM: an explicit zone's clock, the host's own when `tz` is None, or UTC without a database."""
+    if tz is None:
+        try:
+            return datetime.fromtimestamp(float(epoch)).strftime('%H:%M')  # the operator's wall clock
+        except (OSError, OverflowError, ValueError):
+            return datetime.fromtimestamp(0, timezone.utc).strftime('%H:%M')
     moment = None
     try:
         from zoneinfo import ZoneInfo
@@ -846,7 +848,7 @@ def snapshot_payload(rows, meta):
 # Config (its own strict loader; never ``sources.load_config``)
 # ---------------------------------------------------------------------------
 STOCK_KEYS = ('device_url', 'symbols', 'symbols_in', 'interval', 'palette', 'state_dir', 'reassert_cycles',
-              'max_writes_per_hour', 'mode', 'movers_count')
+              'max_writes_per_hour', 'mode', 'movers_count', 'calendar_snapshot')
 PALETTE_ROLES = ('background', 'text', 'rise', 'fall', 'dim')
 CREDENTIAL_WORDS = ('token', 'api_key', 'apikey', 'secret', 'password', 'credential', 'auth', 'key')
 SYMBOL_PATTERN = re.compile(r'\^?[A-Z][A-Z0-9.\-]{0,15}')
@@ -947,6 +949,11 @@ def load_stock_config(path):
         if not isinstance(state, str) or not state.strip():
             raise ValueError('state_dir must be a non-empty path')
         config['state_dir'] = state
+    if 'calendar_snapshot' in data:
+        snapshot = data['calendar_snapshot']
+        if not isinstance(snapshot, str) or not snapshot.strip():
+            raise ValueError('calendar_snapshot must be a non-empty path')
+        config['calendar_snapshot'] = snapshot
     return config
 
 

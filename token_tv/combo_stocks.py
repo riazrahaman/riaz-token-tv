@@ -129,8 +129,9 @@ def render_combo_stocks_closed(snapshot):
 
     Where the live board's closed state showed dash cards for hours on end, this face
     keeps what an overnight clock actually wants to know: the sky is quiet, and the stock
-    board returns at a named time — the reopening exchange's own clock, so a 09:15 IST
-    bell never wears a New York label. The feed says nothing honest about a reopen? The
+    board returns at a named time — on the host's own clock, so a 09:15 IST bell that opens
+    at 07:45 on the operator's wall says 07:45, with NSE's name kept as the label. The
+    feed says nothing honest about a reopen? The
     caller keeps resting on the usage screen instead; this face refuses to draw a schedule
     it does not know. The stamp stays still on purpose (no ticking countdown → no flash
     writes): the frame it draws is stable until the bell itself moves.
@@ -157,15 +158,17 @@ def render_combo_stocks_closed(snapshot):
     draw.ellipse((176, 40, 218, 82), fill=NIGHT_BG)
 
     # The schedule, one bell, dead centre: small label, big time, day, whose bell it is.
+    # The bell renders on the host's own clock — a 09:15 IST open is 05:45 on a UAE wall, and
+    # the operator reads the wall, not the exchange — while the label below keeps NSE's name.
     _centred(draw, 96, 'REOPENS', 1, HEADER_INK)
     _centred(draw, 110, schedule['opens'], 4, TEXT)
     _centred(draw, 154, schedule['day'], 2, HEADER_INK)
     _centred(draw, 180, schedule.get('next_open_exchange') or '', 1, mix(HEADER_INK, .7))
 
-    # Footer: what the board last knew, in the shut market's own clock — never refetched
-    # (the idle wakes publish no reading), so a 15:59 stamp stays 15:59 until the bell.
+    # Footer: what the board last knew, on the host's own clock either — never refetched
+    # (the idle wakes publish no reading), so a stamped time stays put until the bell.
     pixel_text(draw, (8, 227), 'LAST BOARD', 1, mix(HEADER_INK, .5))
-    tz = str(schedule.get('tz') or 'America/New_York')
+    tz = None  # host-local: the feed's zone describes its market, not this operator's clock
     stocks = (snapshot.get('stocks') or {}) if isinstance(snapshot, dict) else {}
     pixel_text(draw, (SIZE - 8, 227), market_time(stocks.get('updated_at') or 0, tz=tz), 1,
                mix(HEADER_INK, .5), 'right')
