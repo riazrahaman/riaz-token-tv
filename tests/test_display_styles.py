@@ -918,3 +918,7 @@ class CalendarLineTests(unittest.TestCase):
         for calendar in ({}, {'title': 'Event', 'start_iso': 'nope'},
                          {'title': 'Event', 'start_iso': '2020-01-01T10:00:00+04:00'}):
             self.assertEqual(render_usage_gif(dict(usage, calendar=calendar)), plain, calendar)
+
+
+if __name__ == '__main__':
+    unittest.main()

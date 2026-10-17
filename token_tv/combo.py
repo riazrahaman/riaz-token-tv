@@ -17,9 +17,6 @@ from token_tv.display import (BACKGROUND, MUTED, TEXT, account_label, gauge_colo
                               overview_rows, pixel_text, reading, render_pixel)
 from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
 from token_tv.calendar import CALENDAR_ROW, draw_calendar_line
-from token_tv.display import (BACKGROUND, MUTED, TEXT, account_label, gauge_color, horizontal_gauge,
-                              overview_rows, pixel_text, reading, render_pixel)
-from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
 
 SIZE = 240
 # A reading older than this is not worth showing as live; the market section is dropped instead.
