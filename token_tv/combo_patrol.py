@@ -7,8 +7,9 @@ import io
 import math
 from PIL import Image, ImageDraw
 
-from token_tv.combo import (AI_PITCH, AI_TOP, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP,
+from token_tv.combo import (AI_PITCH, AI_TOP, CALENDAR_Y, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP,
                             RULE_Y, SIZE, _ai_row, _market_row, market_rows)
+from token_tv.calendar import draw_calendar_line
 from token_tv.display import (BACKGROUND, overview_rows, pixel_text, render_pixel)
 from token_tv.stocks import PALETTE
 
@@ -71,6 +72,9 @@ def render_patrol_frame(snapshot, frame):
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)
+
+    # The next-event line, static across every frame so the GIF frames stay compressible.
+    draw_calendar_line(draw, snapshot, CALENDAR_Y, PALETTE['text'])
 
     return image
 

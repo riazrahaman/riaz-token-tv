@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw
 from token_tv.display import (BACKGROUND, MUTED, TEXT, account_label, gauge_color, horizontal_gauge,
                               overview_rows, pixel_text, reading, render_pixel)
 from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
+from token_tv.calendar import CALENDAR_ROW, draw_calendar_line
 
 SIZE = 240
 # A reading older than this is not worth showing as live; the market section is dropped instead.
@@ -24,6 +25,7 @@ AI_TOP, AI_PITCH = 14, 30
 RULE_Y = 104
 MARKET_LABEL_Y = 108
 MARKET_TOP, MARKET_PITCH = 122, 29
+CALENDAR_Y = CALENDAR_ROW  # the next-event line's row, shared with the usage rest face's fourth row
 
 
 def market_rows(snapshot):
@@ -99,4 +101,7 @@ def render_combo(snapshot):
     pixel_text(draw, (SIZE - 6, MARKET_LABEL_Y), str(source_label).upper(), scale=1, color=PALETTE['dim'], align='right')
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row)
+    # The next event, in its own row under the whole layout: absent when the feed has none,
+    # OLD when its snapshot went stale — never a countdown nobody published.
+    draw_calendar_line(draw, snapshot, CALENDAR_Y, PALETTE['text'])
     return image

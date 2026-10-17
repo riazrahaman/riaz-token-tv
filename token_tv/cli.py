@@ -7,6 +7,7 @@
     token-tv connect   sign an account in with its official CLI
     token-tv run       start the dashboard and drive the clock
     token-tv stocks    draw a stock watchlist and push it to the clock
+    token-tv calendar  write the next Apple Calendar event as a feeder snapshot
 """
 import argparse
 import io
@@ -408,6 +409,8 @@ def main(argv=None):
                         add_help=False)
     commands.add_parser('stocks', parents=[config], help='draw a stock watchlist and push it to the clock',
                         add_help=False)
+    commands.add_parser('calendar', parents=[config], help='write the next Apple Calendar event as a feeder snapshot',
+                        add_help=False)
     h = commands.add_parser('history', parents=[config], help='inspect reading history')
     h.add_argument('--symbol', help='stock symbol to check (e.g. NVDA, TSLA)')
     h.add_argument('--stocks', action='store_true', help='inspect stock history instead of usage')
@@ -416,7 +419,7 @@ def main(argv=None):
     h.add_argument('--until', type=int, help='end timestamp')
 
     args, extra = parser.parse_known_args(argv)
-    if args.command in ('connect', 'run', 'stocks'):
+    if args.command in ('connect', 'run', 'stocks', 'calendar'):
         reader = read_config
         if args.command == 'run':
             from token_tv import live as module
@@ -426,6 +429,15 @@ def main(argv=None):
                 extra += ['--state-dir', str(state)]
         elif args.command == 'stocks':
             from token_tv import stocks as module
+            extra = extra or []
+            state = Path(args.config).expanduser().parent / 'state-stocks'
+            if '--state-dir' not in extra:
+                extra += ['--state-dir', str(state)]
+            reader = read_stock_config
+        elif args.command == 'calendar':
+            # The calendar feeder reads the stocks feeder's config (its own allowlist): the
+            # snapshot goes beside the stocks snapshot in the same state directory.
+            from token_tv import calendar as module
             extra = extra or []
             state = Path(args.config).expanduser().parent / 'state-stocks'
             if '--state-dir' not in extra:

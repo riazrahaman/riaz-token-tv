@@ -88,8 +88,12 @@ def time_left(reset):
     return str(minutes // 60) + 'h ' + str(minutes % 60) + 'm'
 
 
-def mascot(image, provider, xy, pixel=False, size=40):
+def mascot(image, provider, xy, pixel=False, size=40, phase=0):
     path = ASSETS / (provider + '-pixel.png')
+    if phase:
+        variant = ASSETS / (provider + f'-pixel-{phase % 4}.png')
+        if variant.is_file():
+            path = variant
     if path.is_file():
         with Image.open(path) as original:
             icon = original.convert('RGBA')
@@ -180,6 +184,11 @@ def data_digest(snapshot):
         rows.append(((stocks.get('market') or {}).get('is_open'),
                      [(s.get('symbol'), s.get('price'), s.get('percent'))
                       for s in stocks.get('symbols') or [] if isinstance(s, dict)]))
+    calendar = snapshot.get('calendar')
+    if isinstance(calendar, dict):
+        # A new event must reach the face even when the write budget is spent: the title and the
+        # appointment are what changes (not the countdown ticking, and not a mere refetch stamp).
+        rows.append(('calendar', calendar.get('title'), calendar.get('start_iso')))
     return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
@@ -358,12 +367,18 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     snapshot = quantise(snapshot, quantum)
     if style == 'stocks':  # the Night Cards board: animated arrows while a market is open
         from token_tv.combo import market_rows
-        from token_tv.combo_stocks import render_combo_stocks, render_combo_stocks_gif
+        from token_tv.combo_stocks import (closed_schedule, render_combo_stocks,
+                                           render_combo_stocks_closed, render_combo_stocks_gif)
         if market_rows(snapshot) is not None:
             image = render_combo_stocks_gif(snapshot)  # the arrows and glows breathe over the frames
             return image, {'fits': not limit or len(image) <= limit}
-        # closed, missing or stale: the static dim dash board under a CLOSED header
-        data, quality, subsampling = encode_jpeg(render_combo_stocks(snapshot), limit)
+        # Scheduled close — the feed names the reopen — gets the calm night face with the next
+        # bell. A missing or stale feed keeps the dim dash board: it claims no appointment on
+        # a feed it does not trust.
+        if closed_schedule(snapshot) is not None:
+            data, quality, subsampling = encode_jpeg(render_combo_stocks_closed(snapshot), limit)
+        else:
+            data, quality, subsampling = encode_jpeg(render_combo_stocks(snapshot), limit)
         return data, {'quality': quality, 'subsampling': subsampling,
                       'fits': not limit or len(data) <= limit}
     if style == 'space':  # animated: returns GIF bytes

@@ -78,7 +78,12 @@ it implements two firmware profiles and refuses to upload an oversized file.
 calls everything above. `stocks.py` is a feeder and publisher for share watchlists with follow-the-sun
 multi-market routing: it polls US equities via Finnhub and Indian equities/indices via Yahoo Finance
 v8 chart API based on active market hours, exporting normalized snapshots for combo faces and optionally
-driving a dedicated stock clock.
+driving a dedicated stock clock. Both markets' regular hours are known (09:30–16:00 ET,
+09:15–15:30 IST, weekdays), so outside a session the feeder polls nothing: it sleeps on the
+schedule via `next_market_transition`, re-publishes the kept board on 5-minute idle wakes to
+keep the photo theme asserted, and the next open boundary is the trigger that resumes the polls.
+Holidays are ruled out by the Finnhub market status the watchlist fetches during sessions; the
+movers screener has no calendar, so a holiday board freezes and goes `OLD` instead.
 
 ### System Architecture & Code Flow
 
@@ -173,7 +178,7 @@ of a week are different facts and the percentage alone would mislead.
 It is also conditional and follow-the-sun aware. The stock feeder evaluates market operating hours:
 - **NSE/BSE (India)**: 09:15–15:30 IST (03:45–10:00 UTC) via Yahoo Finance v8 chart API (zero-config, no key).
 - **US Equities**: 09:30–16:00 ET (13:30–20:00 UTC) via Finnhub.
-- **Inter-Market Closed Periods**: Outside active sessions, the feeder marks the session closed, and `combo` dynamically drops the ticker row to display the full-size AI usage face. No screen space is wasted on frozen, static prices.
+- **Inter-Market Closed Periods**: Outside active sessions, the feeder marks the session closed — and, since the scheduled-sleep work, still names the next open (`market.next_open_at` / `next_open_exchange`) on every closed publish. The clock rests on a dedicated closed night face when that schedule is known: the Night Cards sky with a crescent moon and the reopening bell dead centre, read in the reopening exchange's own clock, byte-stable between wakes so the overnight rest costs no flash writes. A feed that fails to name a trustworthy reopen (missing or stale feed, past stamp, unknown exchange, no timezone database) keeps the earlier rest on the full-size AI usage face; the dash cards remain only as the static gallery preview for exactly those untrusted cases. No screen space is wasted on frozen, static prices.
 
 When an active market is open, the header badge indicates the active exchange (`NSE` or `US`), ticker symbols are normalized (e.g. `^NSEI` $\rightarrow$ `NIFTY`, `RELIANCE.NS` $\rightarrow$ `RELIANCE`), and price fonts automatically step down to scale 2 when price strings reach $\ge 7$ characters (common with INR 5-digit valuations like `24150.00`) to prevent pixel collision.
 

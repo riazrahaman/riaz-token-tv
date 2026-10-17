@@ -189,6 +189,14 @@ TokenTV does not, and for the normal use there is no reason to. For completeness
   sample photos and themes.
 - Restoring from the vendor `.bin` files restores a bootable clock but **not** the filesystem
   contents, because those files are bootloader plus application only.
+- The header is needed **once**. A custom firmware should carry its own update handler —
+  ArduinoOTA, or an HTTP endpoint behind a shared secret — and after that first wired flash every
+  later push is a Wi-Fi POST with the case shut. Stock `/update_ota` is the wrong vehicle for
+  image one: it is gated on the `SDP` filename prefix and a browser-supplied MD5, and the vendor's
+  partition layout is not the one an Arduino-core build produces. The measured OTA ceiling is
+  about 548 KB, since the incoming image must fit beside the running one. **Unverified on
+  hardware:** that an image within that ceiling installs cleanly. Prove it before relying on the
+  wireless path, because the fallback is the screwdriver again.
 - Frequent image writes wear the flash. TokenTV skips a re-upload when the rendered bytes are
   unchanged, but that dedupe alone is not enough: when a short window leads, the countdown and the
   used percentage both move on every poll, so every frame differs and the dedupe never fires —
@@ -205,6 +213,10 @@ TokenTV does not, and for the normal use there is no reason to. For completeness
   writes an hour, about 780 per trading day across the 6.5-hour regular session. Outside the
   session it falls back to 300-second polls on a frame that does not change, so the dedupe
   absorbs it.
+
+  That 780 is **one** session's worth. The movers board follows whichever market is open, and it
+  now covers the Indian session as well as the US one, so a weekday carries roughly twice as much
+  open-market time and the day total roughly doubles with it.
 
   `stocks.json` accepts the same `max_writes_per_hour` key, but it **defaults to 0, meaning no
   cap**. A capped ticker refreshes no faster than the cap — 6/hour is a ten-minute ticker, which

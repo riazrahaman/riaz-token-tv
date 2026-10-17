@@ -15,8 +15,9 @@ from token_tv.device import (FILES, JPEG_SLOTS, JPEG_USAGE_FILE, LIMITS, ROTATIO
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import (ANIMATED_STYLES, STOCK_STYLES, STYLES, data_digest, render_frame,
                               render_page, watch_payload)
-from token_tv.combo import market_rows
-from token_tv.combo_stocks import render_combo_stocks_gif
+from token_tv.combo import market_rows, STALE_AFTER
+from token_tv.combo_stocks import (closed_schedule, render_combo_stocks_closed_gif,
+                                   render_combo_stocks_gif)
 from token_tv.usage_gif import render_usage_gif
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
@@ -55,6 +56,41 @@ def read_feed(path):
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def read_calendar(path):
+    """The calendar feeder's snapshot, or None.
+
+    Same contract as `read_feed`, plus a shape gate: a next-event line is drawn only from a
+    snapshot that carries a string title and start stamp, so half-written or foreign files
+    simply mean no calendar row, never a fabricated appointment."""
+    data = read_feed(path)
+    if data is None or not isinstance(data.get('title'), str) or not isinstance(data.get('start_iso'), str):
+        return None
+    return data
+
+
+# The moon reopen face's cameo schedule: enabled for one publish tick in ten — one ~30 s
+# render tick on the default cadence, so a 5-minute cameo — and asleep the rest of the time.
+MOON_CAMEO_PERIOD = 10
+
+
+def moon_cameo(cycles, snapshot, now=None):
+    """True when the closed-market moon face may take the usage slot this publish tick.
+
+    Two gates decide: the schedule (one tick in ten on the cycle counter) and honesty — the
+    moon face draws only what the stocks feed itself can prove, so a missing or stale feed,
+    a reopen stamp already past, or an exchange the schedule does not know all mean a plain
+    usage rest with no cameo."""
+    now = time.time() if now is None else now
+    if not isinstance(cycles, int) or cycles % MOON_CAMEO_PERIOD:
+        return False
+    if closed_schedule(snapshot) is None:  # past stamp, unknown exchange, missing or open market
+        return False
+    updated = (snapshot.get('stocks') or {}).get('updated_at')
+    if isinstance(updated, bool) or not isinstance(updated, (int, float)) or (now - updated) > STALE_AFTER:
+        return False
+    return True
 
 
 def write_json(path, data):
@@ -178,7 +214,7 @@ class StockFeedMissing(Exception):
     """POST to a stocks endpoint while the live config has no stock feed."""
 
 
-def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None):
+def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None, calendar_path=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -215,13 +251,19 @@ def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None):
                 feed = read_feed(feed_path) if feed_path else None
                 if feed is not None:
                     frame_snapshot = dict(snapshot, stocks=feed)
+                calendar_feed = read_calendar(calendar_path) if calendar_path else None
+                if calendar_feed is not None:
+                    frame_snapshot = dict(frame_snapshot, calendar=calendar_feed)
                 # `live=1` (the clock panel, not the gallery) also follows the publisher's
-                # closed-market substitution: the stocks face rests the panel on the usage screen,
-                # so the board's dash cards are drawn for nobody and must not be shown as current.
+                # closed-market substitution: now the stocks face rests on the usage screen —
+                # the moon reopen face cameos on the schedule, which a single preview request
+                # cannot claim — so the panel renders what the clock really rests on, with the
+                # calendar line on its fourth row.
                 if parse_qs(url.query).get('live', ['0'])[0] not in ('', '0') \
                         and style == 'stocks' and market_rows(frame_snapshot) is None:
-                    body = render_usage_gif({key: value for key, value in frame_snapshot.items()
-                                             if key != 'stocks'})
+                    body = render_usage_gif(
+                        {key: value for key, value in frame_snapshot.items()
+                         if key != 'stocks'})
                 else:
                     body = render_page(frame_snapshot, int(path[7]), style, quantum)
                 content_type = "image/gif" if body[:4] == b"GIF8" else "image/jpeg"
@@ -374,6 +416,8 @@ def main():
     # The combo face reads the stock feeder's snapshot; prices move faster than poll_seconds, so a
     # short render tick re-draws without re-reading any provider.
     feed_path = config.get("stocks_snapshot")
+    # The calendar feeder writes its own snapshot; the publisher only reads it.
+    calendar_path = config.get("calendar_snapshot")
     render_seconds = max(0, int(config.get("render_seconds", 30 if feed_path else 0)))
     stopping = threading.Event()
     original = None
@@ -393,6 +437,9 @@ def main():
         feed = read_feed(feed_path)
         if feed is not None:
             snapshot['stocks'] = feed
+        calendar_feed = read_calendar(calendar_path)
+        if calendar_feed is not None:
+            snapshot['calendar'] = calendar_feed
         style = preferences.snapshot()['style']
         if not args.once and device:
             receipts = []
@@ -416,12 +463,21 @@ def main():
                     name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
                 digest = hashlib.sha256(image).hexdigest()
                 # The wanted rotation slots, known before any reassert check: the two GIF stock
-                # slots plus the usage screen for the animated alternation, the two stock JPG
+                # slots plus the usage screen for the animated alternation (and for a closed
+                # market's cameo tick), the two stock JPG
                 # slots plus their usage frame for the combo family's static alternation, the two
                 # stock JPG slots for a static non-stock style (0.4.7 behaviour; the usage slot is
                 # not ours to want), just the GIF for the animated single-file ones.
                 if style == 'stocks':
-                    wanted = ROTATION_FILES if alternation else STOCKS_FILES
+                    # The moon reopen face's cameo is decided here, beside the slot plan it changes:
+                    # closed and on its one-in-ten tick, the third slot joins the wanted set.
+                    cameo = not alternation and moon_cameo(cycles, snapshot, now)
+                    if alternation:
+                        wanted = ROTATION_FILES
+                    elif cameo:
+                        wanted = STOCKS_FILES + (USAGE_FILE,)
+                    else:
+                        wanted = STOCKS_FILES
                 elif name == FILES[1]:
                     wanted = (name,)
                 elif style in STOCK_STYLES:
@@ -456,8 +512,11 @@ def main():
                     # (its arrows and glows breathe) into the two GIF stock slots and the shimmering
                     # usage face into the third, so the slideshow's 10-second interval shows stocks
                     # for 20 seconds, then usage for 10, then repeats with fresh frames. A closed,
-                    # missing or stale market (combo conventions) rests the clock on the usage
-                    # screen alone — the user's stated intent for this face. That rest uses the two
+                    # missing or stale market (combo conventions) rests the clock: the two stock
+                    # slots rest on the usage screen (with the calendar line on its fourth row) in
+                    # the byte-identical-pair pattern that predates the moon face, and the moon
+                    # reopen face — which briefly was the whole rest — returns only as a cameo in
+                    # the third slot, one publish tick in ten. Either way the rest uses the two
                     # stock slots and leaves the third asleep: two is the fewest the firmware will
                     # re-read (be2c72a, verified on hardware), and a third identical frame would
                     # buy nothing but a third more flash writes every time a reading moves.
@@ -469,8 +528,19 @@ def main():
                                   (STOCKS_FILES[1], image, digest, encoded),
                                   (USAGE_FILE, usage_gif, usage_digest, {})]
                     else:
+                        # Closed market: the two stock slots rest on the usage screen — the
+                        # byte-identical-pair pattern (the pre-3abf289 rest) — and the calendar
+                        # line rides its fourth row. The moon reopen face, which used to rest in
+                        # these slots whole, now comes back as a cameo in the third slot: wanted
+                        # and written only on this tick (cycles % 10), toggled straight back to
+                        # sleep next tick by the wanted-set change.
                         events = [(STOCKS_FILES[0], usage_gif, usage_digest, {}),
                                   (STOCKS_FILES[1], usage_gif, usage_digest, {})]
+                        if cameo:
+                            closed_gif = render_combo_stocks_closed_gif(snapshot)
+                            if closed_gif is not None:  # moon_cameo already proved this is not None
+                                closed_digest = hashlib.sha256(closed_gif).hexdigest()
+                                events.append((USAGE_FILE, closed_gif, closed_digest, {}))
                 elif image[:4] == b"GIF8":  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
                 elif style in STOCK_STYLES:
@@ -560,7 +630,7 @@ def main():
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum, state_dir=state_dir, feed_path=feed_path)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, quantum, state_dir=state_dir, feed_path=feed_path, calendar_path=calendar_path)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

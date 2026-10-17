@@ -9,7 +9,9 @@ import time
 
 from PIL import Image, ImageDraw
 
-from token_tv.combo import AI_PITCH, AI_TOP, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP, RULE_Y, SIZE, _rule, market_rows
+from token_tv.combo import (AI_PITCH, AI_TOP, CALENDAR_Y, MARKET_LABEL_Y, MARKET_PITCH, MARKET_TOP,
+                            RULE_Y, SIZE, _rule, market_rows)
+from token_tv.calendar import draw_calendar_line
 from token_tv.display import (BACKGROUND, MUTED, TEXT, TRACK, account_label, gauge_color,
                               overview_rows, pixel_text, reading, render_pixel)
 from token_tv.stocks import PALETTE, change_ink, display_symbol, price_text
@@ -130,6 +132,9 @@ def render_pulse_frame(snapshot, frame):
 
     for index, row in enumerate(rows):
         _market_row(draw, MARKET_TOP + index * MARKET_PITCH, row, frame)
+
+    # The next-event line rides under the layout on every frame, byte-identical on each.
+    draw_calendar_line(draw, snapshot, CALENDAR_Y, PALETTE['text'])
 
     return image
 
