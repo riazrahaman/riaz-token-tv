@@ -18,7 +18,7 @@ The clock's factory firmware divides its visual capability into two distinct ope
   <img src="docs/assets/two-channels-illustration.png" width="800" alt="The Two Factory Channels: Photo Mode (TokenTV) vs Clock Mode (Firmware)" />
 </p>
 
-- **Channel 1 (Photo Mode — what TokenTV uses)**: The host computer renders a full-screen, high-res 240×240 image or multi-frame animated GIF with AI quotas, follow-the-sun watchlist telemetry (US & Indian markets), pixel mascots, and glowing gauges, uploading it via HTTP.
+- **Channel 1 (Photo Mode — what TokenTV uses)**: The host computer renders a full-screen, high-res 240×240 image or multi-frame animated GIF with AI quotas, follow-the-sun watchlist telemetry (US & Indian markets), pixel mascots, glowing gauges, and Apple Calendar's next appointment as a second line on the market faces (the closed-market rest carries it too, and a reopened-market moon face cameos once every five minutes in host-local time), uploading it via HTTP.
 - **Channel 2 (Clock / Weather Mode)**: Built-in NTP digital clock and OpenWeatherMap temperature with a small 80×80 animated GIF sticker slot in the corner (the factory floating astronaut).
 - **The Hidden Custom GIF Slot**: The factory astronaut in Channel 2 can be replaced with custom 80×80 GIFs.
 - **The ~40 KB Memory Wall**: The clock's ESP8266 chip has only ~40–50 KB of usable RAM (a full 240×240 16-bit framebuffer requires 115 KB). Because it cannot composite layers, it can only run **Channel 1** OR **Channel 2**.

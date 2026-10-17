@@ -85,6 +85,15 @@ keep the photo theme asserted, and the next open boundary is the trigger that re
 Holidays are ruled out by the Finnhub market status the watchlist fetches during sessions; the
 movers screener has no calendar, so a holiday board freezes and goes `OLD` instead.
 
+A third feeder, `token-tv calendar`, reads Apple Calendar through osascript — scoped to one
+calendar (`riazrahaman`), timed events only, all-day skipped — and writes `{updated_at, title,
+start_iso}` to its own snapshot; the `calendar_snapshot` key joins both config allowlists
+(`sources.load_config` and `STOCK_KEYS`), the publisher merges it under `snapshot['calendar']`,
+and the combo faces and the closed-market rest draw the next event with a quantised countdown
+(`in 2h14m`). A failed or slow query keeps the last-good snapshot; the event digest folds only
+`(title, start_iso)`, so a changed appointment reaches the clock even inside the write budget,
+while the moon cameo's aliveness gate reads the stocks feeder's `published_at` wake stamp.
+
 ### System Architecture & Code Flow
 
 ```text
