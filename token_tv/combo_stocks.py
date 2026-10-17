@@ -6,8 +6,10 @@ percent is the biggest text on each card, with a dim glow under it and a solid a
 symbol drops to scale 2. The row's magnitude bar keeps the 5%-fill convention, tinted to
 the card's sign. Rows arrive through `snapshot['stocks']` exactly as for `combo` — gainers
 first, then losers in movers mode. A closed, missing or stale feed draws dim dash cards
-under a CLOSED header, never a fabricated 0.00, and claims no exchange. Nothing here
-contacts a provider or a clock.
+under a CLOSED header, never a fabricated 0.00, and claims no exchange. When the feeder
+knows the schedule — it names the next open on a shut market — a dedicated closed night
+face renders instead: a crescent moon over the reopening bell's time, drawn from the feed
+alone. Nothing here contacts a provider or a clock.
 """
 import io
 from PIL import Image, ImageDraw
@@ -15,7 +17,7 @@ from PIL import Image, ImageDraw
 from token_tv.combo import SIZE, market_rows
 from token_tv.display import TEXT, pixel_text
 from token_tv.combo_twinkle import NIGHT_BG, STARS
-from token_tv.stocks import PALETTE, display_symbol, magnitude, price_text
+from token_tv.stocks import PALETTE, display_symbol, magnitude, market_time, price_text, reopen_text
 
 # Combo Cyber's board inks, so gain/loss reads the same across every stock face.
 RISE = (8, 247, 66)
@@ -99,6 +101,77 @@ def _card(draw, y, row, amplitude=None):
     _bar(draw, row_ink, 14, y + 47, SIZE - 14, percent)
 
 
+def _centred(draw, y, text, scale, colour):
+    pixel_text(draw, ((SIZE - (len(str(text)) * 6 - 1) * scale) // 2, y), text, scale, colour)
+
+
+def closed_schedule(snapshot):
+    """The market dict for a scheduled close with a still-future named reopen, or None.
+
+    Honesty gates, in order: the feed must exist and say the market is shut (an open board
+    that is merely stale is a frozen feed, not a quiet market); the reopen must carry a
+    future stamp on a known exchange; and the clock math must exist. Consumers rest on the
+    usage screen or the dash cards when this is None rather than promising a nobody-published
+    open, so the closed face only ever names a bell the feeder itself computed.
+    """
+    stocks = snapshot.get('stocks') if isinstance(snapshot, dict) else None
+    market = (stocks or {}).get('market') if isinstance(stocks, dict) else None
+    if not isinstance(market, dict) or market.get('is_open') is not False:
+        return None
+    text = reopen_text(market.get('next_open_at'), market.get('next_open_exchange'))
+    if text is None:
+        return None
+    return dict(market, day=text[0], opens=text[1])
+
+
+def render_combo_stocks_closed(snapshot):
+    """The closed night face: a crescent moon over the next bell, no board and no dashes.
+
+    Where the live board's closed state showed dash cards for hours on end, this face
+    keeps what an overnight clock actually wants to know: the sky is quiet, and the stock
+    board returns at a named time — the reopening exchange's own clock, so a 09:15 IST
+    bell never wears a New York label. The feed says nothing honest about a reopen? The
+    caller keeps resting on the usage screen instead; this face refuses to draw a schedule
+    it does not know. The stamp stays still on purpose (no ticking countdown → no flash
+    writes): the frame it draws is stable until the bell itself moves.
+    """
+    schedule = closed_schedule(snapshot)
+    if schedule is None:
+        return None
+    image = Image.new('RGB', (SIZE, SIZE), NIGHT_BG)
+    draw = ImageDraw.Draw(image)
+
+    # Star margins: the same nine fixed twinkles plus the two the mockup sheet added.
+    for i, (sx, sy) in enumerate(STARS + [(150, 12), (100, 238)]):
+        draw.point((sx, sy), fill=mix(PRICE_INK, (.6 + (i * 37) % 40 / 100)))
+    # The quiet header: dot and MARKET CLOSED as the live board has them, the shut market
+    # top-right — whose board the feed is still carrying (LAST BOARD in the footer).
+    draw.ellipse((6, 5, 10, 9), fill=mix(HEADER_INK, .35), outline=NIGHT_BG)
+    pixel_text(draw, (16, 4), 'MARKET CLOSED', 1, mix(HEADER_INK, .5))
+    closed_exchange = str(schedule.get('exchange') or '').upper()
+    if closed_exchange:
+        pixel_text(draw, (SIZE - 6, 4), closed_exchange, 1, mix(HEADER_INK, .5), 'right')
+
+    # A waxing crescent: a pale disc with the sky easing a bite from its upper right.
+    draw.ellipse((162, 48, 208, 94), fill=mix(PRICE_INK, .55))
+    draw.ellipse((176, 40, 218, 82), fill=NIGHT_BG)
+
+    # The schedule, one bell, dead centre: small label, big time, day, whose bell it is.
+    _centred(draw, 96, 'REOPENS', 1, HEADER_INK)
+    _centred(draw, 110, schedule['opens'], 4, TEXT)
+    _centred(draw, 154, schedule['day'], 2, HEADER_INK)
+    _centred(draw, 180, schedule.get('next_open_exchange') or '', 1, mix(HEADER_INK, .7))
+
+    # Footer: what the board last knew, in the shut market's own clock — never refetched
+    # (the idle wakes publish no reading), so a 15:59 stamp stays 15:59 until the bell.
+    pixel_text(draw, (8, 227), 'LAST BOARD', 1, mix(HEADER_INK, .5))
+    tz = str(schedule.get('tz') or 'America/New_York')
+    stocks = (snapshot.get('stocks') or {}) if isinstance(snapshot, dict) else {}
+    pixel_text(draw, (SIZE - 8, 227), market_time(stocks.get('updated_at') or 0, tz=tz), 1,
+               mix(HEADER_INK, .5), 'right')
+    return image
+
+
 def render_combo_stocks(snapshot, amplitude=None):
     """The Night Cards board: header dot, star margins, then four rounded market cards.
 
@@ -160,6 +233,18 @@ def _gif_bytes(frames, ms=PHASE_MS):
     merged[0].save(buffer, format='GIF', save_all=True, append_images=merged[1:],
                    duration=durations, loop=0, disposal=1, optimize=False)
     return buffer.getvalue()
+
+
+def render_combo_stocks_closed_gif(snapshot):
+    """The closed night face as GIF bytes for the stock slots: one still, calm frame.
+
+    The slots are the firmware's GIF files, so the face travels the same encoding as the
+    live board — a single quantised frame — and stays byte-stable between wakes, which the
+    publisher's dedupe turns into near-zero flash traffic overnight."""
+    frame = render_combo_stocks_closed(snapshot)
+    if frame is None:
+        return None
+    return _gif_bytes([frame])
 
 
 def render_stocks_frame(snapshot, frame):

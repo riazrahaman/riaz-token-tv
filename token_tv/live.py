@@ -16,7 +16,8 @@ from token_tv.catalog import payload as theme_payload
 from token_tv.display import (ANIMATED_STYLES, STOCK_STYLES, STYLES, data_digest, render_frame,
                               render_page, watch_payload)
 from token_tv.combo import market_rows
-from token_tv.combo_stocks import render_combo_stocks_gif
+from token_tv.combo_stocks import (closed_schedule, render_combo_stocks_closed_gif,
+                                   render_combo_stocks_gif)
 from token_tv.usage_gif import render_usage_gif
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
@@ -216,12 +217,16 @@ def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None):
                 if feed is not None:
                     frame_snapshot = dict(snapshot, stocks=feed)
                 # `live=1` (the clock panel, not the gallery) also follows the publisher's
-                # closed-market substitution: the stocks face rests the panel on the usage screen,
-                # so the board's dash cards are drawn for nobody and must not be shown as current.
+                # closed-market substitution: now the stocks face rests on its own closed
+                # night face when the feed names the reopen, and on the usage screen when it
+                # does not — the dash cards are still drawn for nobody.
                 if parse_qs(url.query).get('live', ['0'])[0] not in ('', '0') \
                         and style == 'stocks' and market_rows(frame_snapshot) is None:
-                    body = render_usage_gif({key: value for key, value in frame_snapshot.items()
-                                             if key != 'stocks'})
+                    closed_gif = (render_combo_stocks_closed_gif(frame_snapshot)
+                                  if closed_schedule(frame_snapshot) is not None else None)
+                    body = closed_gif or render_usage_gif(
+                        {key: value for key, value in frame_snapshot.items()
+                         if key != 'stocks'})
                 else:
                     body = render_page(frame_snapshot, int(path[7]), style, quantum)
                 content_type = "image/gif" if body[:4] == b"GIF8" else "image/jpeg"
@@ -456,11 +461,14 @@ def main():
                     # (its arrows and glows breathe) into the two GIF stock slots and the shimmering
                     # usage face into the third, so the slideshow's 10-second interval shows stocks
                     # for 20 seconds, then usage for 10, then repeats with fresh frames. A closed,
-                    # missing or stale market (combo conventions) rests the clock on the usage
-                    # screen alone — the user's stated intent for this face. That rest uses the two
-                    # stock slots and leaves the third asleep: two is the fewest the firmware will
-                    # re-read (be2c72a, verified on hardware), and a third identical frame would
-                    # buy nothing but a third more flash writes every time a reading moves.
+                    # missing or stale market (combo conventions) rests the clock — the usage screen
+                    # was the user's stated rest, and stays the fallback for a feed that fails to
+                    # name its own reopen; when the feeder does name the next bell, the rest is the
+                    # dedicated closed night face instead (one still GIF, byte-stable between wakes:
+                    # dedupe keeps overnight flash traffic at zero). Either rest uses the two stock
+                    # slots and leaves the third asleep: two is the fewest the firmware will re-read
+                    # (be2c72a, verified on hardware), and a third identical frame would buy nothing
+                    # but a third more flash writes every time a reading moves.
                     usage_gif = render_usage_gif(
                         {key: value for key, value in snapshot.items() if key != 'stocks'})
                     usage_digest = hashlib.sha256(usage_gif).hexdigest()
@@ -469,8 +477,14 @@ def main():
                                   (STOCKS_FILES[1], image, digest, encoded),
                                   (USAGE_FILE, usage_gif, usage_digest, {})]
                     else:
-                        events = [(STOCKS_FILES[0], usage_gif, usage_digest, {}),
-                                  (STOCKS_FILES[1], usage_gif, usage_digest, {})]
+                        closed_gif = render_combo_stocks_closed_gif(snapshot)
+                        if closed_gif is not None:
+                            closed_digest = hashlib.sha256(closed_gif).hexdigest()
+                            events = [(STOCKS_FILES[0], closed_gif, closed_digest, {}),
+                                      (STOCKS_FILES[1], closed_gif, closed_digest, {})]
+                        else:
+                            events = [(STOCKS_FILES[0], usage_gif, usage_digest, {}),
+                                      (STOCKS_FILES[1], usage_gif, usage_digest, {})]
                 elif image[:4] == b"GIF8":  # the animated GIF keeps its single hard-set identity
                     events = [(name, image, digest, encoded)]
                 elif style in STOCK_STYLES:

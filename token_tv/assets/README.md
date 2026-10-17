@@ -1,19 +1,25 @@
 # Pixel mascots
 
-User-provided references were adapted with the image_gen tool to transparent pixel mascots. The supplied references are treated as Claude (orange Clawd), Ollama (a white llama head), and Antigravity (a Gemini twin-star sparkle); this mapping is a project design assumption.
+Brand-true 20×20 pixel logos drawn programmatically (Pillow, one pixel per cell) for the LCD renderer; the mascot() renderer scales them 1:1 then doubles to 40 px, so every cell in these files is a single square pixel on the clock — no resampling artifacts.
 
-Selected generated outputs were cropped to their visible bounds and resized with nearest-neighbor sampling to 32×32 PNGs for the LCD renderer. Claude uses the second generated variant, which removes the first variant’s glow. Antigravity is drawn to the same grid as one white four-point sparkle with a smaller Google-blue companion star, so it needs no light backing tile. Ollama is drawn programmatically to the same grid as a white llama head with a long neck, two ears and a dark outline.
-
-| Asset | Generation |
+| Asset | Design |
 |---|---|
-| claude-pixel.png | exec-23c46822-b44a-4aa3-87b5-577912a8f79d.png |
-| ollama-pixel.png | drawn to the 32×32 mascot spec (white llama head, dark outline) |
-| antigravity-pixel.png | drawn to the 32×32 mascot spec (white + Google-blue twin sparkle) |
+| claude-pixel.png | Eight-ray sunburst (the Anthropic/Claude mark) — 2 px cardinal rays that reach the frame edge with flared tips, 6-cell diagonals, 2×2 hub. Shaded NW-light (#EEA06E) / base (#D97757) / SE-deep (#A35237). |
+| ollama-pixel.png | Llama head profile — two ears with a notch, full-width fluffy face with muzzle, thin neck descending to the bottom tint (ear notch shading and lower rim in #C9CDD3, black eye pixel). |
+| antigravity-pixel.png | Sparkle pair — dominant white four-point star (centre-left, #F5F7FA with #9AA7B6 lower-right rim and a light-blue #8AB4F8 lower tip) plus a deep-blue #1A73E8 companion diamond at the top right. |
 
-## Generation instructions
+Bounded to exactly 20×20 with edge-touching content, so mascot()'s box-crop → scale path performs no interpolation. (Earlier versions were image_gen- or hand-drawn 32×32 sprites that lost pixels when the renderer shrank them to 20.)
 
-The image_gen requests preserve the reference silhouette, use a logical 32×32 pixel grid, hard edges, transparent background, a few original colors, and no text or extra elements.
+## Animation phases
 
-Final Claude prompt:
+The usage GIF's gauge shimmer walks four frames; the mascots ride along. `mascot(..., phase=k)` loads `<provider>-pixel-k.png` (base sprite when k=0 or the file is missing), so each provider also ships `-pixel-1.png` … `-pixel-3.png` — same 20×20 full-bleed bbox, small per-frame deltas derived from the base:
 
-> Make this exact orange pixel crab into a crisp flat game UI sprite. Use only ONE opaque solid peach-orange color (#D9845E) and opaque black rectangular eyes. Identical stepped silhouette, two side arms and four short square legs. This is a flat 32 by 32 logical pixel sprite, enlarged with nearest-neighbor square pixels. Transparent empty canvas. Absolutely NO glow, NO light, NO smoke, NO shadows, NO texture, NO gradients, NO highlights, NO blur, NO scene or background, NO white outline. Center the icon with a little transparent margin. Preserve the original simple pixel geometry. Pure solid opaque fills and hard right-angle edges. Output just the sprite.
+| Provider | Phase 1 | Phase 2 | Phase 3 |
+|---|---|---|---|
+| claude-pixel-N | the light/deep shading quarter-turns clockwise | …another quarter | …another (full orbit per 1.2 s cycle) |
+| ollama-pixel-N | wool flecks lighten on the neck | eye closes (blink) | flecks lighten again |
+| antigravity-pixel-N | star's left edge pinches in, tips dim, diamond's outer ring drops | rims glint, diamond ring tints light blue | right edge pinches in, top tip dims, ring wobbles back |
+
+Every phase keeps the exact base bounding box (a pinched box would re-introduce interpolation), verified in the generator.
+
+To redraw: the generator matrices are pixel grids of palette letters ('.' = transparent); keep the full-bleed 20×20 bounding box so the 1:1 scale guarantee holds, and keep per-phase deltas inside it.

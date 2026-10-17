@@ -113,13 +113,35 @@ class QuoteTests(unittest.TestCase):
         self.assertEqual(stocks.magnitude(5.0), 1.0)
         self.assertEqual(stocks.magnitude(-9.0), 1.0)
 
-    def test_market_poll_interval_is_thirty_open_and_three_hundred_closed(self):
-        self.assertEqual(stocks.OPEN_INTERVAL, 30)
-        self.assertEqual(stocks.CLOSED_INTERVAL, 300)
-        for open_status in ({'isOpen': True}, {'is_open': True}):
-            self.assertEqual(stocks.market_poll_interval(open_status), 30, open_status)
-        for closed_status in ({'isOpen': False}, {'is_open': False}, None, {}):
-            self.assertEqual(stocks.market_poll_interval(closed_status), 300, closed_status)
+    def test_next_market_transition_counts_down_to_the_nearest_boundary(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        et = ZoneInfo('America/New_York')
+        ist = ZoneInfo('Asia/Kolkata')
+        # Mid-session ET Wednesday: the closing bell is the next boundary.
+        t = datetime(2026, 10, 14, 12, 0, tzinfo=et).timestamp()
+        seconds, exchange, opening = stocks.next_market_transition(t)
+        self.assertEqual((exchange, opening), ('US', False))
+        self.assertLessEqual(seconds, 4 * 3600 + 1)
+        # Just before the US open: the countdown lands on the wall clock, not on a poll.
+        t = datetime(2026, 10, 14, 9, 29, 0, tzinfo=et).timestamp()
+        seconds, exchange, opening = stocks.next_market_transition(t)
+        self.assertEqual((exchange, opening, seconds), ('US', True, 61))
+        # Between the US close and midnight ET, India's open comes first (23:45 ET).
+        t = datetime(2026, 10, 14, 17, 0, tzinfo=et).timestamp()
+        seconds, exchange, opening = stocks.next_market_transition(t)
+        self.assertEqual((exchange, opening), ('NSE', True))
+        self.assertLess(seconds, 7 * 3600)
+        # Friday after both closes: the next event is Monday's NSE open.
+        t = datetime(2026, 10, 16, 17, 0, tzinfo=et).timestamp()
+        seconds, exchange, opening = stocks.next_market_transition(t)
+        self.assertEqual((exchange, opening), ('NSE', True))
+        self.assertGreater(seconds, 24 * 3600)
+        # Weekends hold nothing: Saturday noon IST waits for Monday 09:15 IST.
+        t = datetime(2026, 10, 17, 12, 0, tzinfo=ist).timestamp()
+        seconds, exchange, opening = stocks.next_market_transition(t)
+        self.assertEqual((exchange, opening), ('NSE', True))
+        self.assertGreater(seconds, 45 * 3600)
 
     def test_status_parsing_keeps_only_bools_and_strings(self):
         class Response:
@@ -978,8 +1000,11 @@ class MoversRunnerTests(unittest.TestCase):
                 self.assertEqual(stocks.main(['--config', str(config)]), 0)
             kept = json.loads((state / 'snapshot.json').read_text())
         self.assertEqual(kept['symbols'], board)  # the rows are kept whole, never emptied
-        # Not NSE/open/regular: the board is the US one, and the US market is shut.
-        self.assertEqual(kept['market'], {'is_open': False, 'session': 'closed', 'exchange': 'US'})
+        # Not NSE/open/regular: the board is the US one, and the US market is shut. The feed
+        # carries whose clock the face should read, but no reopen: the failing cycle never
+        # resolved where the next bell is (a close of an open session is not it).
+        self.assertEqual(kept['market'], {'is_open': False, 'session': 'closed', 'exchange': 'US',
+                                          'tz': 'Asia/Kolkata'})
         self.assertEqual(kept['updated_at'], int(us_noon))  # the fetch, not the poll that failed
 
 
@@ -1025,6 +1050,139 @@ class MoversRunnerTests(unittest.TestCase):
         self.assertEqual(payload['symbols'], [])
         self.assertEqual(payload['market']['is_open'], False)
         self.assertEqual(payload['market']['session'], 'closed')
+
+    def test_a_closed_market_fetches_once_then_waits_for_the_open_trigger(self):
+        """The schedule starts the polling; the closed market never polls for more.
+
+        The feeder used to ask the screener for a board it could not change every five
+        minutes all night. Now the cold start catches up once, the idle wakes publish the
+        kept board untouched, and the next open boundary on the schedule is what turns
+        the polls back on — 61 seconds after 09:29, not five minutes after."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        et = ZoneInfo('America/New_York')
+        clock = {'now': datetime(2026, 10, 14, 9, 29, 0, tzinfo=et).timestamp()}
+        board = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                  'previous_close': None, 'at': int(clock['now'])}]
+        calls = []
+
+        def movers(_exchange, _count):
+            calls.append(clock['now'])
+            return board
+
+        sleeps = []
+
+        def advance(seconds):
+            sleeps.append(seconds)
+            clock['now'] += seconds
+            if len(sleeps) > 1:  # two cycles prove the catch-up and the trigger
+                raise KeyboardInterrupt
+            return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.fetch_market_status',
+                       side_effect=AssertionError('no Finnhub in movers mode')), \
+                    patch('token_tv.stocks.time.time', side_effect=lambda: clock['now']), \
+                    patch('token_tv.stocks.time.sleep', side_effect=advance), \
+                    patch('token_tv.stocks.fetch_movers', side_effect=movers), \
+                    patch('token_tv.stocks.collect', side_effect=AssertionError('movers never collects')):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)
+        self.assertEqual(len(calls), 2)  # the catch-up, then the 09:30 trigger
+        self.assertEqual(sleeps[0], 61)  # the countdown to the open, not a status poll
+        self.assertEqual(sleeps[1], 30)  # back on the open-market interval
+
+    def test_an_overnight_market_makes_no_requests_between_the_idle_wakes(self):
+        """A closed market sleeps on 300-second picture-keeping wakes and fetches nothing."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        et = ZoneInfo('America/New_York')
+        clock = {'now': datetime(2026, 10, 14, 20, 0, tzinfo=et).timestamp()}
+        board = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                  'previous_close': None, 'at': int(clock['now'])}]
+        calls = []
+
+        def movers(_exchange, _count):
+            calls.append(clock['now'])
+            return board
+
+        sleeps = []
+
+        def advance(seconds):
+            sleeps.append(seconds)
+            clock['now'] += seconds
+            if len(sleeps) > 2:
+                raise KeyboardInterrupt
+            return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'movers', 'state_dir': str(state)}))
+            with patch('token_tv.stocks.fetch_market_status',
+                       side_effect=AssertionError('a closed market asks for no status')), \
+                    patch('token_tv.stocks.time.time', side_effect=lambda: clock['now']), \
+                    patch('token_tv.stocks.time.sleep', side_effect=advance), \
+                    patch('token_tv.stocks.fetch_movers', side_effect=movers) as movers_mock, \
+                    patch('token_tv.stocks.collect', side_effect=AssertionError('movers never collects')):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)
+            payload = json.loads((state / 'snapshot.json').read_text())
+        self.assertEqual(movers_mock.call_count, 1)  # the cold catch-up only
+        self.assertEqual(sleeps, [300, 300, 300])  # picture-keeping wakes, not market polls
+        self.assertEqual(payload['symbols'], board)  # the kept board carries the night
+        self.assertEqual(payload['market']['is_open'], False)
+        self.assertEqual(payload['market']['session'], 'closed')
+        self.assertEqual(payload['market']['exchange'], 'US')
+        # The idle publish names the reopen, so the clock's closed face can show the bell:
+        # Wednesday 20:00 ET → the earliest bell is NSE's Thursday 09:15 IST (Wednesday 23:45 ET).
+        self.assertEqual(payload['market']['next_open_exchange'], 'NSE')
+        self.assertGreater(payload['market']['next_open_at'], int(clock['now']))
+        opens = datetime.fromtimestamp(payload['market']['next_open_at'], ZoneInfo('Asia/Kolkata'))
+        self.assertEqual((opens.weekday(), (opens.hour, opens.minute)), (3, (9, 15)))  # Thursday 09:15 IST
+
+    def test_a_closed_watchlist_rests_on_its_last_complete_board(self):
+        """The same appointment clock serves the watchlist: one read, then silence till open."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        et = ZoneInfo('America/New_York')
+        clock = {'now': datetime(2026, 10, 14, 20, 0, tzinfo=et).timestamp()}
+        rows = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                 'previous_close': None, 'at': int(clock['now'])}]
+        collects, sleeps = [], []
+
+        def advance(seconds):
+            sleeps.append(seconds)
+            clock['now'] += seconds
+            if len(sleeps) > 1:
+                raise KeyboardInterrupt
+            return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'watchlist',
+                                          'state_dir': str(state)}))
+            with patch('token_tv.stocks.finnhub_token', return_value=TOKEN), \
+                    patch('token_tv.stocks.fetch_market_status', return_value=None), \
+                    patch('token_tv.stocks.time.time', side_effect=lambda: clock['now']), \
+                    patch('token_tv.stocks.time.sleep', side_effect=advance), \
+                    patch('token_tv.stocks.collect', side_effect=lambda *_args,
+                          _source=None, **_kw: (collects.append(clock['now']) or (rows, 0))):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)
+            payload = json.loads((state / 'snapshot.json').read_text())  # the second cycle's write
+        self.assertEqual(len(collects), 1)  # the cold catch-up only; the closed wakes ask nothing
+        self.assertEqual(sleeps, [300, 300])
+        self.assertEqual(payload['symbols'], rows)
+        # The scheduled close always names its reopen: the soonest bell after Wednesday night
+        # is NSE's, and the feed carries the shut market's clock for the LAST BOARD stamp.
+        self.assertEqual(payload['market']['is_open'], False)
+        self.assertEqual(payload['market']['session'], 'closed')
+        self.assertEqual(payload['market']['exchange'], 'US')
+        self.assertEqual(payload['market']['tz'], 'America/New_York')
+        self.assertEqual(payload['market']['next_open_exchange'], 'NSE')
+        self.assertGreater(payload['market']['next_open_at'], int(clock['now']))
 
 
 if __name__ == '__main__':

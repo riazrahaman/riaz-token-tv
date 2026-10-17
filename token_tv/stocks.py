@@ -8,7 +8,8 @@ This module is self-contained: it reuses ``token_tv.device`` for the clock and m
 → backup → upload → activate flow of ``token_tv.live``.
 
 Follow-the-sun mode automatically switches between US tickers and Indian tickers based on which
-market is currently open.
+market is currently open. Both markets' regular hours are known, so outside a session the feeder
+fetches nothing at all: it sleeps on the schedule and the next open boundary starts it polling.
 
     token-tv stocks --config stocks.json
 """
@@ -22,7 +23,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
@@ -55,7 +56,7 @@ MAX_SYMBOLS = 4    # the face is laid out for four rows; see render_image
 MIN_INTERVAL = 15     # a hard floor: a bad config can never hammer the clock or the API
 MAX_INTERVAL = 3600
 OPEN_INTERVAL = 30    # seconds between refreshes while the market is open
-CLOSED_INTERVAL = 300  # seconds between market-status checks while it is closed
+CLOSED_INTERVAL = 300  # seconds between idle wakes while it is closed (no fetch, picture only)
 STALE_AFTER = 900     # a live quote older than this is marked OLD
 MAGNITUDE_FULL = 5.0  # |change %| that fills the row's magnitude bar
 SIZE = 240
@@ -292,9 +293,96 @@ def _status_open(status):
     return False
 
 
-def market_poll_interval(status):
-    """Seconds between polls: 30 while the market is open, 300 while it is closed."""
-    return OPEN_INTERVAL if _status_open(status) else CLOSED_INTERVAL
+MARKET_SESSIONS = (
+    # (exchange, tz name, (open hour, minute), (close hour, minute)); regular weekday sessions.
+    ('US', 'America/New_York', (9, 30), (16, 0)),
+    ('NSE', 'Asia/Kolkata', (9, 15), (15, 30)),
+)
+
+
+def next_market_transition(now=None):
+    """Countdown to the next open or close boundary of either market, and which event it is.
+
+    Returns `(seconds, exchange, opening)`: the seconds until the earliest regular weekday
+    boundary (09:30/16:00 ET, 09:15/15:30 IST) after `now`, so the feeder can sleep on
+    appointments instead of polling a market that is asleep. DST comes from the timezone
+    database; holidays do not travel with the wall clock, so a holiday the trigger wakes
+    for is caught by the first poll — the Finnhub status in watchlist mode, or a board
+    that never changes in movers mode — and never presented as a live session.
+
+    Without a timezone database the answer is the plain interval fallback, and the
+    per-cycle open checks keep the feeder correct the same way they already are.
+    """
+    now = time.time() if now is None else now
+    now = float(now)
+    soonest = None
+    try:
+        from zoneinfo import ZoneInfo
+        for exchange, zone, (oh, om), (ch, cm) in MARKET_SESSIONS:
+            moment = datetime.fromtimestamp(now, ZoneInfo(zone))
+            for offset in range(4):  # today plus three days always holds the next weekday
+                day = moment + timedelta(days=offset)
+                if day.weekday() >= 5:
+                    continue
+                base = datetime(day.year, day.month, day.day, tzinfo=moment.tzinfo)
+                for hour, minute, opening in ((oh, om, True), (ch, cm, False)):
+                    stamp = base.replace(hour=hour, minute=minute).timestamp()
+                    if stamp <= now:
+                        continue
+                    if soonest is None or stamp < soonest[0]:
+                        soonest = (stamp, exchange, opening)
+    except Exception:
+        soonest = None
+    if soonest is None:
+        return CLOSED_INTERVAL, 'US', True
+    return max(0, int(soonest[0] - now) + 1), soonest[1], soonest[2]
+
+
+def next_open_schedule(now=None):
+    """The next scheduled open as `(epoch, exchange)`, or None when no honest bell exists.
+
+    Returns None without a timezone database (the fallback interval frames no real
+    appointment) and when the earliest boundary is a close — that bell belongs to a
+    session, which no idle wake is showing. This is what the closed face reads to say
+    when the stock board returns.
+    """
+    now = time.time() if now is None else float(now)
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo('America/New_York')
+        ZoneInfo('Asia/Kolkata')
+    except Exception:
+        return None
+    seconds, exchange, opening = next_market_transition(now)
+    return (float(now) + seconds, exchange) if opening else None
+
+
+def reopen_text(stamp, exchange, now=None):
+    """`(day, 'HH:MM', exchange)` for a reopen stamp on the reopening exchange's own clock, or None.
+
+    A 09:15 NSE open never wears a New York label: the clock is the exchange that opens,
+    and the day label — TODAY, TOMORROW, or the exchange's own weekday — is that
+    exchange's date. Unknown exchanges and past stamps say nothing, so a face can never
+    promise an appointment nobody published.
+    """
+    now = time.time() if now is None else float(now)
+    code = str(exchange or '').upper()
+    zone = None
+    for candidate, zone_name, _open_hm, _close_hm in MARKET_SESSIONS:
+        if candidate == code:
+            zone = zone_name
+            break
+    if zone is None or not isinstance(stamp, (int, float)) or float(stamp) <= float(now):
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        opens = datetime.fromtimestamp(float(stamp), ZoneInfo(zone))
+        here = datetime.fromtimestamp(float(now), ZoneInfo(zone))
+    except Exception:
+        return None
+    days = (opens.date() - here.date()).days
+    day = 'TODAY' if days == 0 else 'TOMORROW' if days == 1 else opens.strftime('%a').upper()
+    return (day, opens.strftime('%H:%M'), code)
 
 
 def collect(symbols, token, source='FINNHUB'):
@@ -738,10 +826,19 @@ def snapshot_payload(rows, meta):
     # `rows_at` is when these rows were actually fetched, which is not the poll time when a
     # screener failed and the previous board was kept. The consumers age the board against this,
     # so a board that stopped arriving goes stale instead of looking refreshed every poll.
+    market = {'is_open': meta.get('is_open'), 'session': meta.get('session'),
+              'exchange': meta.get('exchange', 'US')}
+    if meta.get('tz'):
+        market['tz'] = meta['tz']  # whose clock a closed face reads its LAST BOARD stamp with
+    # A scheduled close names its reopen so the closed face can show the next bell; a live
+    # session carries no next-open keys at all, so consumers gate on their presence.
+    if meta.get('is_open') is False and isinstance(meta.get('next_open_at'), (int, float)):
+        market['next_open_at'] = int(meta['next_open_at'])
+        if meta.get('next_open_ex'):
+            market['next_open_exchange'] = str(meta['next_open_ex']).upper()
     return {'updated_at': int(meta.get('rows_at') or meta.get('now') or 0),
             'source': meta.get('source', 'FINNHUB'),
-            'market': {'is_open': meta.get('is_open'), 'session': meta.get('session'),
-                       'exchange': meta.get('exchange', 'US')},
+            'market': market,
             'symbols': [dict(row) for row in rows]}
 
 
@@ -1061,6 +1158,9 @@ def main(argv=None):
     last_movers = []  # the previous board, kept whole when a screener poll fails
     last_movers_at = None  # when that kept board was fetched, so its age stays honest
     last_movers_exchange = None  # and which market it belongs to
+    last_rows = None  # the watchlist's kept board, kept the same way as the movers board
+    last_rows_at = None
+    last_rows_exchange = None
     warned_no_token = False
     try:
         while True:
@@ -1080,51 +1180,87 @@ def main(argv=None):
                               f'macOS Keychain (security add-generic-password -s {KEYCHAIN_SERVICE} -w); '
                               'rows show dashes until a key appears.', file=sys.stderr, flush=True)
                         warned_no_token = True
-            try:
-                status = fetch_market_status(token) if token is not None else None
-            except StockError:
-                # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
-                pass
-            active = select_active_market(config, token, now=now, us_status=status)
-            rows_at = now
-            if mode == 'movers':
-                active['source'] = 'YAHOO'  # the screener serves both markets, via Yahoo
+            # The appointment clock. Open and close times are known, so while no regular
+            # session is on (and this is not the single-frame --once run) the feeder fetches
+            # nothing: it keeps the last board, re-publishes it so the theme stays asserted,
+            # and the next open boundary in the schedule is what starts the polling again.
+            any_open = (is_us_market_open(now)
+                        or (bool(config.get('symbols_in', DEFAULT_SYMBOLS_IN))
+                            and is_indian_market_open(now)))
+            idle = not any_open and not args.once
+            if idle:
+                # A kept board only rests under its own market's name.
+                active = select_active_market(config, token, now=now)
+                if mode == 'movers':
+                    held, held_at, held_exchange = last_movers, last_movers_at, last_movers_exchange
+                else:
+                    held, held_at, held_exchange = last_rows, last_rows_at, last_rows_exchange
+                if held and held_exchange == active['exchange']:
+                    status, quote_failures = {}, 0
+                    if mode == 'movers':
+                        active['source'] = 'YAHOO'  # the board the feeder keeps came from the screener
+                    rows, rows_at = held, held_at or now
+                else:
+                    idle = False  # no board for this market yet: one catch-up fetch, then rest
+            if not idle:
                 try:
-                    rows = fetch_movers(active['exchange'], config.get('movers_count', MOVERS_COUNT))
-                    last_movers, last_movers_at = rows, now
-                    last_movers_exchange = active['exchange']
-                    quote_failures = 0
+                    status = fetch_market_status(token) if token is not None else None
                 except StockError:
-                    # The screener failed twice: keep the previous board, but not the session it
-                    # was fetched under. A board kept from another exchange is not this market's
-                    # trading: calling it open rode a frozen US close through an open NSE session,
-                    # labelled REGULAR, for as long as the Indian screener kept failing. It is
-                    # reported as what it is — that exchange's closed board — so a consumer rests
-                    # on usage rather than presenting dead prices as live.
-                    rows = last_movers
-                    rows_at = last_movers_at
-                    quote_failures = 1
-                    if last_movers_exchange and last_movers_exchange != active['exchange']:
-                        active = dict(active, exchange=last_movers_exchange,
-                                      is_open=False, session='closed')
-                if not rows:
-                    # Nothing has arrived yet — a restart inside a session whose screener is down
-                    # has no board at all. An empty board is not a live market: say shut, so the
-                    # dashboard reads "closed" rather than an open session reporting no rows.
-                    active = dict(active, is_open=False, session='closed')
-            elif token is None:
-                rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
-                quote_failures = len(rows)
-            else:
-                rows, quote_failures = collect(active['symbols'], token, source=active['source'])
+                    # Keep the last known status; the frame must not flip to CLOSED on one hiccup.
+                    pass
+                active = select_active_market(config, token, now=now, us_status=status)
+                rows_at = now
+                if mode == 'movers':
+                    active['source'] = 'YAHOO'  # the screener serves both markets, via Yahoo
+                    try:
+                        rows = fetch_movers(active['exchange'], config.get('movers_count', MOVERS_COUNT))
+                        last_movers, last_movers_at = rows, now
+                        last_movers_exchange = active['exchange']
+                        quote_failures = 0
+                    except StockError:
+                        # The screener failed twice: keep the previous board, but not the session it
+                        # was fetched under. A board kept from another exchange is not this market's
+                        # trading: calling it open rode a frozen US close through an open NSE session,
+                        # labelled REGULAR, for as long as the Indian screener kept failing. It is
+                        # reported as what it is — that exchange's closed board — so a consumer rests
+                        # on usage rather than presenting dead prices as live.
+                        rows = last_movers
+                        rows_at = last_movers_at
+                        quote_failures = 1
+                        if last_movers_exchange and last_movers_exchange != active['exchange']:
+                            active = dict(active, exchange=last_movers_exchange,
+                                          is_open=False, session='closed')
+                    if not rows:
+                        # Nothing has arrived yet — a restart inside a session whose screener is
+                        # down has no board at all. An empty board is not a live market: say shut,
+                        # so the dashboard reads "closed" rather than an open session reporting no
+                        # rows.
+                        active = dict(active, is_open=False, session='closed')
+                elif token is None:
+                    rows = [quote_row(symbol, {}) for symbol in active['symbols']]  # dashes, never zeros
+                    quote_failures = len(rows)
+                else:
+                    rows, quote_failures = collect(active['symbols'], token, source=active['source'])
+                    if rows and not quote_failures:
+                        # A complete read is what the idle wakes will keep showing overnight.
+                        last_rows, last_rows_at, last_rows_exchange = rows, now, active['exchange']
             is_open = active['is_open']
             meta = {'is_open': is_open, 'session': active['session'], 'source': active['source'],
                     'exchange': active['exchange'], 'tz': active['tz'],
                     'now': now, 'rows_at': rows_at, 'palette': config.get('palette')}
+            if not is_open:
+                # Both closed wakes and catch-up publishes while shut name the reopen, so the
+                # dashboard's closed face can show the next bell the feed trusts the schedule for.
+                scheduled = next_open_schedule(now)
+                if scheduled:
+                    meta['next_open_at'], meta['next_open_ex'] = int(scheduled[0]), scheduled[1]
             image = render_watchlist(rows, meta, style=DEFAULT_STYLE, limit=LIMITS[FILES[0]][0])
             payload = snapshot_payload(rows, meta)
             write_json(state_dir / 'snapshot.json', payload)
-            append_history(state_dir / 'history.jsonl', payload)
+            if not idle:
+                # An idle wake publishes no new reading: the board is kept, not re-fetched, so
+                # the history records the market's own activity, not the picture's upkeep.
+                append_history(state_dir / 'history.jsonl', payload)
             if device:
                 try:
                     original, active_file, last_upload, uploaded = publish(
@@ -1144,11 +1280,19 @@ def main(argv=None):
                 print(f'No clock configured; wrote {state_dir / FILES[0]}', flush=True)
             if args.once:
                 break
-            wait = interval if is_open else market_poll_interval({'is_open': is_open})
-            failures = failures + 1 if (quote_failures or (token is not None and not status)) else 0
-            if failures:
-                wait = min(max(wait, interval * (2 ** min(failures, 3))), 600)
-            time.sleep(max(MIN_INTERVAL, wait))
+            # The appointments, not the market status, pace the sleep: an open market refreshes
+            # every `interval` but never sleeps past its closing bell; a closed one wakes at the
+            # next open boundary or to keep the picture warm, whichever comes first.
+            next_at, _next_exchange, _next_opening = next_market_transition(now)
+            if is_open:
+                wait = min(interval, next_at)
+            else:
+                wait = min(next_at, CLOSED_INTERVAL)
+            if not idle:
+                failures = failures + 1 if (quote_failures or (token is not None and not status)) else 0
+                if failures:
+                    wait = min(max(wait, interval * (2 ** min(failures, 3))), 600)
+            time.sleep(max(0, wait))
     except KeyboardInterrupt:
         print()
     return 0

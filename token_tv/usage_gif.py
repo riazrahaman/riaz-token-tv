@@ -1,10 +1,12 @@
-"""The usage face's animated variant: the provider gauges shimmer, everything else is still.
+"""The usage face's animated variant: the provider gauges shimmer and the mascots twinkle.
 
 The user asked for animation on the usage screen's progress bars. `render_pixel`'s layout is
 reproduced line for line (this face is the same parallel-universe pattern as the rest), with the
 one call into `combo_pulse`'s specular-shimmer gauge — the light wave sweeps the filled segments
-each frame while the labels, numbers, mascots and countdown text stay put, so the GIF's frames
-stay almost identical and the encoding stays small. Nothing here contacts a provider or a clock.
+each frame while the labels, numbers and countdown text stay put. The mascots ride the same four
+frames: each provider has `-pixel-1..3` phase sprites next to its base (Claude's shading orbits,
+Ollama blinks, Antigravity breathes) so the GIF carries a second, slower kind of life without
+more bytes than the shimmer alone. Nothing here contacts a provider or a clock.
 """
 import io
 import math
@@ -36,7 +38,7 @@ def render_usage_frame(snapshot, frame):
         if index:
             for x in range(14, 227, 4):
                 draw.point((x, y - 6), fill=RULE)
-        mascot(image, row['provider'], (14, y + 10), pixel=True)
+        mascot(image, row['provider'], (14, y + 10), pixel=True, phase=frame % 4)
         label = row['alias']
         if not label.startswith(row['provider'].upper() + ' '):
             label = row['provider'].upper() + ' A'
@@ -58,6 +60,6 @@ def render_usage_frame(snapshot, frame):
 
 
 def render_usage_gif(snapshot):
-    """The usage face as a GIF: the provider gauges shimmer, everything else is still."""
+    """The usage face as a GIF: the gauges shimmer and the mascots twinkle in step."""
     frames = [render_usage_frame(snapshot, f) for f in range(USAGE_FRAMES)]
     return _gif_bytes(frames, ms=SHIMMER_MS)

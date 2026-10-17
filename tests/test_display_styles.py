@@ -331,6 +331,53 @@ class StocksOnlyFaceTests(unittest.TestCase):
                                      style='stocks'),
                          render_page({'accounts': {}}, style='stocks'))
 
+    def test_a_scheduled_close_draws_the_reopens_night_face(self):
+        """A closed market that names its own reopen gets the calm night face, not dash cards."""
+        from token_tv import combo_stocks
+        scheduled = dict(self._feed(is_open=False),
+                         market={'is_open': False, 'session': 'closed', 'exchange': 'US',
+                                 'tz': 'America/New_York',
+                                 'next_open_at': int(time.time()) + 26 * 3600,
+                                 'next_open_exchange': 'US'})
+        dash = render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')
+        night = render_page({'accounts': {}, 'stocks': scheduled}, style='stocks')
+        self.assertNotEqual(night, dash)  # the schedule buys a different face, not more dashes
+        image = Image.open(io.BytesIO(night)).convert('RGB')
+        self.assertNotIn((8, 247, 66), {c for _, c in image.getcolors(240 * 240)})  # no board, no arrows
+        sky = {c for _, c in image.getcolors(240 * 240)}
+        self.assertTrue(any(all(abs(a - b) <= 6 for a, b in zip(c, (10, 14, 28))) for c in sky),
+                        'night sky missing')
+        # The big bright open time sits dead centre; the dash face's same band stays dim.
+        band = image.crop((60, 110, 180, 146))
+        self.assertTrue(all(max(px) < 60 for px in Image.open(io.BytesIO(dash)).convert('RGB')
+                            .crop((60, 110, 180, 146)).getdata()))
+        self.assertTrue(any(px[0] > 180 for px in band.getdata()))
+
+    def test_the_closed_night_face_refuses_an_untrusted_schedule(self):
+        """A stale promise or an open board with schedule keys never buys the night face."""
+        past = dict(self._feed(is_open=False),
+                    market={'is_open': False, 'session': 'closed', 'exchange': 'NSE',
+                            'tz': 'Asia/Kolkata', 'next_open_at': 1, 'next_open_exchange': 'US'})
+        fresh_dash = render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')
+        self.assertEqual(render_page({'accounts': {}, 'stocks': past}, style='stocks'), fresh_dash)
+        open_with_schedule = dict(self._feed(), market=dict(
+            self._feed()['market'], next_open_at=int(time.time()) + 3600, next_open_exchange='US'))
+        self.assertEqual(render_page({'accounts': {}, 'stocks': open_with_schedule}, style='stocks'),
+                         render_page({'accounts': {}, 'stocks': self._feed()}, style='stocks'))
+
+    def test_the_closed_night_face_is_byte_stable_and_gif_sized_for_the_stock_slots(self):
+        from token_tv import device
+        from token_tv.combo_stocks import render_combo_stocks_closed_gif
+        scheduled = {'accounts': {}, 'stocks': dict(
+            self._feed(is_open=False),
+            market={'is_open': False, 'session': 'closed', 'exchange': 'US',
+                    'tz': 'America/New_York',
+                    'next_open_at': int(time.time()) + 26 * 3600, 'next_open_exchange': 'US'})}
+        gif = render_combo_stocks_closed_gif(scheduled)
+        self.assertTrue(gif[:4] == b'GIF8')
+        self.assertLessEqual(len(gif), device.LIMITS['tokentv-b.gif'][0])
+        self.assertEqual(render_combo_stocks_closed_gif(scheduled), gif)  # dedupe rests on this
+
     def test_night_cards_are_tinted_by_their_sign_on_the_night_sky(self):
         from token_tv import combo_stocks
         from token_tv.display import render_page
