@@ -120,3 +120,8 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`TokenTV page listening on 0.0.0.0:${PORT}`);
 });
+
+// Exit 0 on Railway's stop signal so redeploy handovers aren't logged as crashes.
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, () => server.close(() => process.exit(0)));
+}
