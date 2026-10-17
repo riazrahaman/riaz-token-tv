@@ -838,7 +838,13 @@ def snapshot_payload(rows, meta):
         market['next_open_at'] = int(meta['next_open_at'])
         if meta.get('next_open_ex'):
             market['next_open_exchange'] = str(meta['next_open_ex']).upper()
+    # `published_at` is the feeder's aliveness stamp: every payload build is a wake — idle
+    # closed wakes included — so a consumer can tell a deliberately retained weekend board
+    # (feeder alive, fresh published_at) from a dead feeder (both stamps ages). It moves on
+    # every wake and is deliberately nobody's reading: no face prints it and the write
+    # budget's digest must never fold it.
     return {'updated_at': int(meta.get('rows_at') or meta.get('now') or 0),
+            'published_at': int(meta.get('now') or 0),
             'source': meta.get('source', 'FINNHUB'),
             'market': market,
             'symbols': [dict(row) for row in rows]}

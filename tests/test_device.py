@@ -847,14 +847,19 @@ class MoonCameoTests(unittest.TestCase):
     """The cameo schedule and its honesty gates, decided cycle-by-cycle in live.py."""
 
     @staticmethod
-    def _snapshot(updated_at, **market):
+    def _snapshot(updated_at, published_at=None, **market):
+        """A closed-market feed. `published_at=None` keeps the key absent, which is exactly
+        what an older feeder's payload looks like; a non-None value must land on the wire."""
         stocks = {'updated_at': updated_at, 'source': 'YAHOO',
                   'market': dict({'is_open': False, 'session': 'closed', 'exchange': 'US'}, **market)}
+        if published_at is not None:
+            stocks['published_at'] = published_at
         return {'accounts': {}, 'stocks': stocks}
 
     def test_the_cameo_fires_on_exactly_one_tick_in_ten(self):
         now = time.time()
-        snapshot = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        snapshot = self._snapshot(now, published_at=int(now), next_open_at=int(now) + 7200,
+                                  next_open_exchange='US')
         self.assertTrue(live.moon_cameo(10, snapshot, now=now))
         self.assertTrue(live.moon_cameo(20, snapshot, now=now))
         for cycle in range(1, 10):
@@ -865,19 +870,52 @@ class MoonCameoTests(unittest.TestCase):
 
     def test_the_cameo_buys_nothing_on_untrusted_feeds(self):
         now = time.time()
-        trusted = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        trusted = self._snapshot(now, published_at=int(now), next_open_at=int(now) + 7200,
+                                 next_open_exchange='US')
         self.assertTrue(live.moon_cameo(10, trusted, now=now))
-        no_schedule = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        no_schedule = self._snapshot(now, published_at=int(now), next_open_at=int(now) + 7200,
+                                     next_open_exchange='US')
         del no_schedule['stocks']['market']['next_open_at']
         self.assertFalse(live.moon_cameo(10, no_schedule, now=now))        # no named reopen
         self.assertFalse(live.moon_cameo(10, self._snapshot(now), now=now))  # no schedule keys
-        past = self._snapshot(now, next_open_at=int(now) - 5, next_open_exchange='US')
+        past = self._snapshot(now, published_at=int(now), next_open_at=int(now) - 5,
+                              next_open_exchange='US')
         self.assertFalse(live.moon_cameo(10, past, now=now))               # the bell already rang
-        unknown = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='LSE')
+        unknown = self._snapshot(now, published_at=int(now), next_open_at=int(now) + 7200,
+                                 next_open_exchange='LSE')
         self.assertFalse(live.moon_cameo(10, unknown, now=now))            # an exchange nobody opens
-        open_market = self._snapshot(now, is_open=True, next_open_at=int(now) + 7200,
-                                     next_open_exchange='US')
+        open_market = self._snapshot(now, published_at=int(now), is_open=True,
+                                     next_open_at=int(now) + 7200, next_open_exchange='US')
         self.assertFalse(live.moon_cameo(10, open_market, now=now))        # an open board is a board
-        stale = self._snapshot(now - 601, next_open_at=int(now) + 7200, next_open_exchange='US')
-        self.assertFalse(live.moon_cameo(10, stale, now=now))              # a feed nobody freshened
+        stale = self._snapshot(now - 601, published_at=int(now) - 601, next_open_at=int(now) + 7200,
+                               next_open_exchange='US')
+        self.assertFalse(live.moon_cameo(10, stale, now=now))              # both stamps old: a dead feeder
         self.assertFalse(live.moon_cameo(10, {'accounts': {}}, now=now))   # no feed at all
+
+    def test_the_cameo_reads_the_wake_stamp_not_the_reading_on_idle_closed_wakes(self):
+        """The weekend case: the feeder wakes on schedule, keeps the frozen board, and the
+        payload's reading stamp (`updated_at`) is the last real fetch — hours old. A dead
+        cameo gate would have switched the moon off for the whole weekend."""
+        now = time.time()
+        weekend = self._snapshot(now - 3600, published_at=int(now), next_open_at=int(now) + 7200,
+                                 next_open_exchange='US')
+        self.assertTrue(live.moon_cameo(10, weekend, now=now))             # feeder alive, board retained
+
+    def test_an_older_payload_without_published_at_falls_back_to_the_reading_stamp(self):
+        now = time.time()
+        older = self._snapshot(now, next_open_at=int(now) + 7200, next_open_exchange='US')
+        self.assertNotIn('published_at', older['stocks'])                  # the old payload shape
+        self.assertTrue(live.moon_cameo(10, older, now=now))               # backward compatible
+        stale_older = self._snapshot(now - 601, next_open_at=int(now) + 7200, next_open_exchange='US')
+        self.assertFalse(live.moon_cameo(10, stale_older, now=now))        # and still honest about age
+
+    def test_a_garbage_or_boolean_wake_stamp_buys_no_cameo(self):
+        now = time.time()
+        for published_at in ('yesterday', True, [now], {}, b'now'):
+            snapshot = self._snapshot(now, published_at=published_at, next_open_at=int(now) + 7200,
+                                      next_open_exchange='US')
+            self.assertFalse(live.moon_cameo(10, snapshot, now=now), published_at)
+        # An explicit None is the absent key: the reading stamp decides, and it is fresh.
+        self.assertTrue(live.moon_cameo(10, self._snapshot(now, published_at=None,
+                                                           next_open_at=int(now) + 7200,
+                                                           next_open_exchange='US'), now=now))

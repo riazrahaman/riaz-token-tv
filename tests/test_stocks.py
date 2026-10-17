@@ -1184,6 +1184,53 @@ class MoversRunnerTests(unittest.TestCase):
         self.assertEqual(payload['market']['next_open_exchange'], 'NSE')
         self.assertGreater(payload['market']['next_open_at'], int(clock['now']))
 
+    def test_the_payload_carries_the_wake_stamp_on_live_publishes_and_idle_wakes(self):
+        """`published_at` is the feeder's aliveness: every payload build is a wake, an idle
+        closed wake included — while `updated_at` stays the reading's stamp. Two wakes with
+        the same frozen board therefore differ in `published_at` and agree on `updated_at`
+        (which is precisely why the cameo gate reads the wake stamp, not the reading)."""
+        rows = [{'symbol': 'AAPL', 'price': 340.0, 'change': 4.0, 'percent': 4.0,
+                 'previous_close': None, 'at': 100}]
+        written = []
+
+        def capture(path, payload):
+            if str(path).endswith('snapshot.json'):
+                written.append(payload)
+
+        clock = {'now': 1_000_000.0}
+        sleeps = []
+
+        def advance(seconds):
+            sleeps.append(seconds)
+            clock['now'] += seconds
+            if len(sleeps) >= 2:
+                raise KeyboardInterrupt  # two publishing cycles: a catch-up fetch, then an idle wake
+            return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'stocks.json'
+            config.write_text(json.dumps({'symbols': ['AAPL'], 'mode': 'watchlist',
+                                          'state_dir': str(directory)}))
+            with patch('token_tv.stocks.finnhub_token', return_value=TOKEN), \
+                    patch('token_tv.stocks.fetch_market_status', return_value=None), \
+                    patch('token_tv.stocks.collect',
+                          side_effect=lambda *_args, **_kw: (rows, 0)), \
+                    patch('token_tv.stocks.write_json', side_effect=capture), \
+                    patch('token_tv.stocks.time.time', side_effect=lambda: clock['now']), \
+                    patch('token_tv.stocks.time.sleep', side_effect=advance):
+                self.assertEqual(stocks.main(['--config', str(config)]), 0)
+            catchup, idle_wake = written[0], written[1]
+        # The reading stamp keeps fetch semantics: the cold catch-up's fetch, and the kept
+        # board's original fetch after the idle wake re-stamps only its own aliveness.
+        self.assertEqual([catchup['updated_at'], idle_wake['updated_at']],
+                         [1_000_000, 1_000_000])
+        self.assertEqual(idle_wake['symbols'], rows)  # the board is kept, not re-fetched
+        # Aliveness: the wake stamp moves even when the reading does not.
+        self.assertEqual(catchup['published_at'], 1_000_000)
+        self.assertEqual(idle_wake['published_at'], 1_000_000 + sleeps[0])
+        self.assertNotEqual(idle_wake['published_at'], idle_wake['updated_at'])  # the weekend split
+        self.assertNotIn(TOKEN, json.dumps(idle_wake))  # credential-free, in the new key too
+
 
 if __name__ == '__main__':
     unittest.main()

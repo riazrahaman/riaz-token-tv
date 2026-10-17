@@ -79,16 +79,24 @@ def moon_cameo(cycles, snapshot, now=None):
     """True when the closed-market moon face may take the usage slot this publish tick.
 
     Two gates decide: the schedule (one tick in ten on the cycle counter) and honesty — the
-    moon face draws only what the stocks feed itself can prove, so a missing or stale feed,
-    a reopen stamp already past, or an exchange the schedule does not know all mean a plain
-    usage rest with no cameo."""
+    moon face draws only what the stocks feed itself can prove, so a dead feeder (neither
+    stamp fresh), a reopen stamp already past, or an exchange the schedule does not know all
+    mean a plain usage rest with no cameo."""
     now = time.time() if now is None else now
     if not isinstance(cycles, int) or cycles % MOON_CAMEO_PERIOD:
         return False
     if closed_schedule(snapshot) is None:  # past stamp, unknown exchange, missing or open market
         return False
-    updated = (snapshot.get('stocks') or {}).get('updated_at')
-    if isinstance(updated, bool) or not isinstance(updated, (int, float)) or (now - updated) > STALE_AFTER:
+    stocks = snapshot.get('stocks') or {}
+    # Feeder aliveness comes from the feeder's own wake stamp: an idle closed wake rewrites
+    # the payload but keeps `updated_at` at the board's last real fetch (a whole weekend
+    # behind), so the wake stamp is what "the feeder is alive" means. A payload without it
+    # — an older feed — falls back to the reading stamp. Garbage is neither: no cameo
+    # rather than trusting a stamp nobody published.
+    published = stocks.get('published_at')
+    if published is None:
+        published = stocks.get('updated_at')
+    if isinstance(published, bool) or not isinstance(published, (int, float)) or (now - published) > STALE_AFTER:
         return False
     return True
 
