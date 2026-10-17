@@ -1,5 +1,6 @@
 import email
 import email.policy
+import hashlib
 import json
 import socket
 import tempfile
@@ -13,8 +14,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from token_tv import live
-from token_tv.device import (JPEG_SLOTS, STOCKS_FILES, BackupMismatch, PhotoDisplay, UltraDisplay,
-                             open_display)
+from token_tv.device import (JPEG_SLOTS, STOCKS_FILES, USAGE_FILE, BackupMismatch, PhotoDisplay,
+                             UltraDisplay, open_display)
 
 
 class DisplayTests(unittest.TestCase):
@@ -576,7 +577,7 @@ class LiveCycleTests(unittest.TestCase):
 
     FROZEN = 1791900000.0
 
-    def _run(self, clock, config, folder, after=None):
+    def _run(self, clock, config, folder, after=None, now=None):
         from token_tv import live
         from token_tv.sources import SourceError
 
@@ -605,7 +606,7 @@ class LiveCycleTests(unittest.TestCase):
                 patch('token_tv.live.ThreadingHTTPServer', StubServer), \
                 patch('token_tv.live.threading.Event', QuickWait), \
                 patch('token_tv.live.time.monotonic', side_effect=lambda: next(ticks)), \
-                patch('token_tv.live.time.time', return_value=self.FROZEN), \
+                patch('token_tv.live.time.time', return_value=self.FROZEN, side_effect=now), \
                 patch('token_tv.sources.claude_token', side_effect=SourceError('auth_required')), \
                 patch('sys.argv', ['token-tv', '--config', str(config), '--state-dir', folder]):
             live.main()
@@ -841,6 +842,233 @@ class LiveCycleTests(unittest.TestCase):
         # from the alternation is the bytes: the two stock slots carry the usage face, not the
         # board — and no JPEG slot is ever wanted or written in the stocks style.
         self.assertEqual([name for name, _ in clock.uploads if name in JPEG_SLOTS], [])
+
+    def _cameo_feed(self, reopen_hours=26):
+        """A closed-market feed with a fresh wake stamp and a named, still-future reopen —
+        everything the cameo's honesty gates ask for, in the shape the round-2 fix left them."""
+        return {'updated_at': int(self.FROZEN), 'published_at': int(self.FROZEN),
+                'source': 'YAHOO',
+                'market': {'is_open': False, 'session': 'closed', 'exchange': 'US',
+                           'tz': 'America/New_York',
+                           'next_open_at': int(self.FROZEN) + reopen_hours * 3600,
+                           'next_open_exchange': 'US'},
+                'symbols': [{'symbol': 'APPN', 'price': 42.52, 'change': 4.07, 'percent': 10.59,
+                             'previous_close': None, 'at': int(self.FROZEN) - 5}]}
+
+    def _cameo_ledger_clock(self, step):
+        """A fake clock whose `activate` is also the wall clock: every reassert advances the
+        publisher's `time.time` by `step` seconds, sculpting the cameo ledger's timeline from
+        outside. Slots are pre-enabled, so the fake album can never invent a lost frame and
+        `force` a budget bypass — the cameos here must ride their ledger, not a rescue."""
+        frozen = self.FROZEN
+
+        class LedgerClock(self.FakeClock):
+            def __init__(self):
+                super().__init__()
+                self.album = [{'name': 'original.jpg', 'enabled': True}] + [
+                    {'name': slot, 'enabled': True} for slot in (*STOCKS_FILES, USAGE_FILE)]
+                self.t = frozen
+
+            def upload(self, name, image):
+                self.uploads.append((name, image, self.t))  # `t` plays the wall clock's part
+                self.album = [dict(f) for f in self.album if f['name'] != name] + \
+                             [{'name': name, 'enabled': True}]
+                return {'file': name, 'status': 200, 'bytes': len(image)}
+
+            def capture(self):
+                # The exit lives here, not in `activate`: cycle 70's moon must finish its
+                # receipt before the run stops (the receipt is written after `activate`).
+                if len([1 for uploaded, _, _ in self.uploads if uploaded == USAGE_FILE]) >= 3:
+                    self.done.set()
+                    raise SystemExit  # the third bell change has published and receipted
+                return super().capture()
+
+            def activate(self, original, name='tokentv.jpg', wanted=None):
+                from token_tv.device import wanted_slots
+                self.activations += 1
+                self.wanted.append(list(wanted_slots(name, wanted)))
+                self.t += step
+
+        return LedgerClock()
+
+    def test_the_cameo_moon_uploads_when_the_reading_budget_cannot(self):
+        """The starvation, reproduced exactly as live showed it: the reading budget's window
+        was opened by cycle 1's pair upload and a byte-stable closed board means nothing else
+        ever passes `may_write` — on 0.5.3 the moon stood throttled on every cameo tick. Its
+        own ledger delivers the first frame on that tick regardless."""
+        from token_tv import live
+        from token_tv.combo_stocks import render_combo_stocks_closed_gif
+
+        frozen = self.FROZEN
+
+        class StarvedClock(self.FakeClock):
+            def __init__(self):
+                super().__init__()
+                self.album = [{'name': 'original.jpg', 'enabled': True}] + [
+                    {'name': slot, 'enabled': True} for slot in (*STOCKS_FILES, USAGE_FILE)]
+                self.t = frozen  # frozen on purpose: the budget window can only stay shut
+
+            def upload(self, name, image):
+                self.uploads.append((name, image, self.t))
+                self.album = [dict(f) for f in self.album if f['name'] != name] + \
+                             [{'name': name, 'enabled': True}]
+                return {'file': name, 'status': 200, 'bytes': len(image)}
+
+            def activate(self, original, name='tokentv.jpg', wanted=None):
+                from token_tv.device import wanted_slots
+                self.activations += 1
+                self.wanted.append(list(wanted_slots(name, wanted)))
+                if len(self.wanted) >= 6:  # c1, c3, c6, c9, the cameo on, and its toggle back off
+                    self.done.set()
+                    raise SystemExit  # the first cameo tick has published (or not)
+
+        clock = StarvedClock()
+        receipts = []
+        moon_frames = {}
+        real_write_json = live.write_json
+        boards = lambda *_args, **_kwargs: (b"JPEG8-board-stub", {"fits": True})
+        usage_calls = []
+
+        def drifting_usage(_snapshot):  # the mirrors, as in live: each tick's bytes move
+            usage_calls.append(1)
+            return b'USAGE-GIF-%03d' % len(usage_calls)
+
+        with tempfile.TemporaryDirectory() as folder:
+            feed_path = Path(folder) / 'stocks-snapshot.json'
+            feed_path.write_text(json.dumps(self._cameo_feed()))
+            config = self._config(folder, display_style='stocks',
+                                  stocks_snapshot=str(feed_path), max_writes_per_hour=6)
+
+            def collect(path, data):
+                real_write_json(path, data)
+                if 'receipt' in str(path):
+                    receipts.append(data)
+
+            with patch.object(live, 'render_frame', boards), \
+                    patch.object(live, 'render_usage_gif', drifting_usage), \
+                    patch.object(live, 'write_json', collect):
+                def after():  # renders inside the run's frozen clock: the bell must be future
+                    moon_frames['moon'] = render_combo_stocks_closed_gif(
+                        {'accounts': {}, 'stocks': self._cameo_feed()})
+
+                self._run(clock, config, folder, after=after)
+
+        moon = moon_frames['moon']
+        pair_bytes = b'USAGE-GIF-001'  # cycle 1's mirror bytes; later ticks stay throttled
+        # Three uploads in the whole frozen run, in this order: cycle 1's forced pair (the
+        # budget's window opens there and never slides — the wall clock cannot move), then the
+        # moon's first frame on its one-in-ten tick, delivered by its own ledger while the
+        # drifting pair mirrors sat budget-throttled cycle after cycle. Under the shared
+        # budget that third upload was unreachable: that tick's `may_write` is False for good.
+        self.assertEqual([(name, image, t) for name, image, t in clock.uploads],
+                         [(STOCKS_FILES[0], pair_bytes, self.FROZEN),
+                          (STOCKS_FILES[1], pair_bytes, self.FROZEN),
+                          (USAGE_FILE, moon, self.FROZEN)])
+        # The receipts carry the moon upload — and nothing but the moon that tick: the pair
+        # mirrors stayed throttled, so both ledgers show their independence in one receipt.
+        moon_receipts = [r for r in receipts if any(u.get('file') == USAGE_FILE for u in r.get('uploads', []))]
+        self.assertEqual(len(moon_receipts), 1)
+        self.assertEqual([u['sha256'] for u in moon_receipts[0]['uploads']],
+                         [hashlib.sha256(moon).hexdigest()])
+        self.assertEqual(moon_receipts[0]['uploads'][0]['bytes'], len(moon))
+        self.assertTrue(moon_receipts[0]['throttled'])
+        # Everywhere else nothing publishes: singletons pair upload, else empty and throttled.
+        pair_bearing = [r for r in receipts if any(u.get('file') in STOCKS_FILES for u in r.get('uploads', []))]
+        self.assertEqual(len(pair_bearing), 1)
+        self.assertEqual([u['file'] for u in pair_bearing[0]['uploads']], list(STOCKS_FILES))
+        # The cameo's wanted-set toggle is what enabled the slot (3 slots) and sleeps it again.
+        cameo_wanted = [STOCKS_FILES[0], STOCKS_FILES[1], USAGE_FILE]
+        self.assertIn(cameo_wanted, clock.wanted)
+        self.assertEqual(clock.wanted[-1], list(STOCKS_FILES))
+
+    def test_the_cameo_ledger_moves_independently_of_the_reading_budget(self):
+        """The ledger, all six ways, on a sculpted wall clock (each reassert is 25 s):
+        a fresh-moon cameo inside its ~300 s spacing waits — once with the budget window
+        closed and once with it open, so the spacing alone decides; it flies at ~300 s even
+        when a pair upload is only 150–200 s old and the budget window is shut; a pair upload
+        never resets its ledger; its own upload never spends or refreshes the reading budget;
+        receipts carry each frame; and unchanged bytes dedupe to nothing."""
+        from token_tv import live
+        from token_tv.combo_stocks import render_combo_stocks_closed_gif
+
+        frozen = self.FROZEN
+        clock = self._cameo_ledger_clock(step=25)
+        receipts = []
+        frames = {}
+        real_write_json = live.write_json
+        boards = lambda *_args, **_kwargs: (b"JPEG8-board-stub", {"fits": True})
+        with tempfile.TemporaryDirectory() as folder:
+            feed_path = Path(folder) / 'stocks-snapshot.json'
+            feed_path.write_text(json.dumps(self._cameo_feed()))
+            config = self._config(folder, display_style='stocks',
+                                  stocks_snapshot=str(feed_path), max_writes_per_hour=6, reassert_cycles=3)
+            feed_hours = [26]
+            usage_calls = []
+
+            def drifting_usage(_snapshot):  # the mirrors, as in live: each tick's bytes move
+                usage_calls.append(1)
+                if len(usage_calls) == 11:  # tomorrow's bell moves: new moon bytes for the probes
+                    feed_hours[0] = 28
+                elif len(usage_calls) == 52:  # and again, past the pair upload, for isolation
+                    feed_hours[0] = 30
+                feed = self._cameo_feed(reopen_hours=feed_hours[0])
+                feed['published_at'] = int(clock.t)  # the feeder's wake stamp, ever fresh
+                feed_path.write_text(json.dumps(feed))
+                return b'USAGE-GIF-%03d' % len(usage_calls)
+
+            def collect(path, data):
+                real_write_json(path, data)
+                if 'receipt' in str(path):
+                    receipts.append(data)
+
+            with patch.object(live, 'render_frame', boards), \
+                    patch.object(live, 'render_usage_gif', drifting_usage), \
+                    patch.object(live, 'write_json', collect):
+                def after():  # renders inside the run's sculpted clock: the bell must be future
+                    for hours in (26, 28, 30):
+                        frames[hours] = render_combo_stocks_closed_gif(
+                            {'accounts': {}, 'stocks': self._cameo_feed(reopen_hours=hours)})
+
+                self._run(clock, config, folder, after=after, now=lambda: clock.t)
+
+        self.assertEqual(len({bytes for bytes in frames.values()}), 3)  # each bell move is real
+
+        # The moon uploads exactly thrice, on its ledger: the first frame (last_cameo_write
+        # fresh), then the second bell at ~300 s after it (350 s, past two spaced deferrals),
+        # then the third — despite a pair upload sitting only 200 s earlier in the ledger's
+        # recent past, the pair's write having reset nothing of the cameo's. Every ride is
+        # while the reading budget's window is shut (the pairs sat throttled the same ticks).
+        moons = [(image, t) for name, image, t in clock.uploads if name == USAGE_FILE]
+        self.assertEqual(moons, [(frames[26], frozen + 100),
+                                 (frames[28], frozen + 450),
+                                 (frames[30], frozen + 800)])
+        # Nothing in between: the second bell waited inside its spacing even with the budget's
+        # window slid open again (+675 − 0 ≥ 600 — open), the third flew at +800 with the
+        # window shut again. And a fresh moon that dedupes away (the +575 s cameo re-rendering
+        # the second bell's unchanged bytes) uploads nothing at all.
+        self.assertEqual(len(clock.uploads), len(moons) + 4)  # only the pairs above join them
+        pairs = {}
+        for name, image, t in clock.uploads:
+            if name in STOCKS_FILES:
+                pairs.setdefault(t, []).append((name, image))
+        self.assertEqual(list(pairs), [frozen, frozen + 600])
+        self.assertEqual(sorted(pairs[frozen]), sorted([(STOCKS_FILES[0], b'USAGE-GIF-001'),
+                                                        (STOCKS_FILES[1], b'USAGE-GIF-001')]))
+        # The second pair ride is the budget check on the moon's ledger: the moon had uploaded
+        # 150 s earlier, and a moon write that had learned `last_write` would have throttled
+        # the pairs here (600 − 450 < 600). It did not — the reading budget never saw the moon.
+        self.assertEqual(sorted(pairs[frozen + 600]),
+                         sorted([(STOCKS_FILES[0], b'USAGE-GIF-051'),
+                                 (STOCKS_FILES[1], b'USAGE-GIF-051')]))
+        # Receipts carry each moon frame; each is borne next to a throttled pair tick (the
+        # byte-moving mirrors were budget-throttled that same cycle), and the frame that had
+        # already uploaded dedupes — it appears in exactly one receipt.
+        moon_receipts = [r for r in receipts
+                         if any(u.get('file') == USAGE_FILE for u in r.get('uploads', []))]
+        self.assertEqual([r['uploads'][0]['sha256'] for r in moon_receipts],
+                         [hashlib.sha256(frames[hours]).hexdigest() for hours in (26, 28, 30)])
+        self.assertTrue(all(r['throttled'] for r in moon_receipts))
+        self.assertEqual(len(moon_receipts), 3)  # exactly one receipt per bell change
 
 
 class MoonCameoTests(unittest.TestCase):

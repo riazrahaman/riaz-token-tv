@@ -73,6 +73,14 @@ def read_calendar(path):
 # The moon reopen face's cameo schedule: enabled for one publish tick in ten — one ~30 s
 # render tick on the default cadence, so a 5-minute cameo — and asleep the rest of the time.
 MOON_CAMEO_PERIOD = 10
+# The cameo's own write ledger. Its uploads ride `last_cameo_write` 300 s apart, independent of
+# the reading budget: one ~2.25 KB frame every ~5 minutes is trivial flash, and the budget exists
+# to spare flash, not to starve a scheduled face. On the shared ledger the starvation was live:
+# the pair mirrors' ordinary byte-moving uploads keep resetting `last_write` inside the budget's
+# 600 s window, which swallows the very cameo tick the schedule promised — and the byte stability
+# that dedupes later cameos means only this first frame is ever at stake; steady-state cameo cost
+# is zero.
+MOON_CAMEO_SPACING = 300
 
 
 def moon_cameo(cycles, snapshot, now=None):
@@ -433,12 +441,16 @@ def main():
     active_wanted = None  # the slot set the clock was last told to keep awake
     last_upload = {}  # slot name → last uploaded sha256; the whole-slot dedupe
     last_write = None
+    # The cameo moon's private spacing ledger, beside the budget's `last_write`: only a moon
+    # upload earns from it, and only a moon upload spends it (see MOON_CAMEO_SPACING above).
+    last_cameo_write = None
     last_style = None
     last_data = None
     cycles = 0
 
     def cycle(refresh=True, user=False):
-        nonlocal original, active_file, active_wanted, last_upload, last_write, last_style, last_data, cycles
+        nonlocal original, active_file, active_wanted, last_upload, last_write, last_cameo_write, \
+            last_style, last_data, cycles
         if refresh:
             store.refresh()
         snapshot = store.snapshot()
@@ -465,6 +477,7 @@ def main():
                 # them: resting on the usage screen needs two rotating slots (one enabled photo
                 # freezes the panel — device.py), and a third identical copy only costs flash.
                 alternation = feed is not None and market_rows(snapshot) is not None
+                cameo = False  # the cameo tick is a stocks-style notion; other styles never cameo
                 if style == 'stocks':
                     name = STOCKS_FILES[0]  # the animated stock slot that carries the primary frame
                 else:
@@ -572,6 +585,28 @@ def main():
                     events = [(JPEG_SLOTS[0], image, digest, encoded),
                               (JPEG_SLOTS[1], image, digest, encoded)]
                 pending = [event for event in events if event[2] != (last_upload or {}).get(event[0])]
+                # Lift the cameo moon out of the normal batch so neither ledger sees a write it
+                # did not make (MOON_CAMEO_SPACING, above): on the shared budget the pair mirrors'
+                # byte-moving uploads starved the cameo's first frame for good.
+                cameo_events = [event for event in pending if cameo and event[0] == USAGE_FILE]
+                pending = [event for event in pending if not (cameo and event[0] == USAGE_FILE)]
+                if cameo_events:
+                    # The cameo ledger alone decides — `may_write` and `last_write` are neither
+                    # consulted nor touched, so the moon's frame neither starves behind the
+                    # reading budget nor consumes its window (a pair upload cannot learn of it,
+                    # and cannot reset it either).
+                    if last_cameo_write is None or (now - last_cameo_write) >= MOON_CAMEO_SPACING:
+                        # Mirror first, as in the normal batch: a failed upload leaves a mirror
+                        # ahead of the clock, which the receipt's error record shows.
+                        for slot, frame, _, _ in cameo_events:
+                            (state_dir / slot).write_bytes(frame)
+                        cameo_uploads = device.upload_rotation(
+                            [(slot, frame) for slot, frame, _, _ in cameo_events])
+                        for event, uploaded in zip(cameo_events, cameo_uploads):
+                            receipts.append(dict(uploaded, sha256=event[2], **event[3]))
+                        last_cameo_write = now
+                        last_upload = (last_upload or {}).copy()
+                        last_upload.update({slot: dig for slot, _, dig, _ in cameo_events})
                 if pending:  # only the slots whose bytes changed are rewritten
                     if forced or may_write(last_write, now, budget):
                         # The local mirrors are written as the publish event starts, just before the
