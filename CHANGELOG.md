@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-10-17
+
 ### Fixed
 
 - **The moon cameo endures the weekend.** The closed-market cameos read the stocks snapshot's reading stamp (`updated_at`) for feeder aliveness, but an idle closed wake re-writes the payload with `updated_at` still at the board's last real fetch — so about ten minutes into any closed day, the staleness gate (600 s) went dark for good and the moon face stopped appearing exactly when there was time to appreciate it. The feeder now stamps every payload it builds — idle wakes included — with its own wake time, `published_at`: the reading stamp keeps its fetch semantics, and the cameo's gate (and anything else that must distinguish "feeder alive, board retained" from "feeder dead") reads the wake stamp, falling back to `updated_at` for older feeds. The digest that guards the write budget folds neither stamp, so re-stamping the payload still buys no flash writes.
