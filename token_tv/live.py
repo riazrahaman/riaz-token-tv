@@ -472,6 +472,9 @@ def main():
                 cycles += 1
                 image, encoded = render_frame(snapshot, 0, style, quantum,
                                               LIMITS[FILES[0]][0] if style not in ANIMATED_STYLES else LIMITS[FILES[1]][0])
+                if style == 'pixel':
+                    image = render_usage_gif(snapshot)
+                    encoded = {}
                 # Is there a live board to show? Decided before the slot plan, because a closed
                 # market changes *which* slots the clock should be showing, not only what goes in
                 # them: resting on the usage screen needs two rotating slots (one enabled photo

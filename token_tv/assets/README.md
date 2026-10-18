@@ -5,8 +5,8 @@ Brand-true 20×20 pixel logos drawn programmatically (Pillow, one pixel per cell
 | Asset | Design |
 |---|---|
 | claude-pixel.png | Eight-ray sunburst (the Anthropic/Claude mark) — 2 px cardinal rays that reach the frame edge with flared tips, 6-cell diagonals, 2×2 hub. Shaded NW-light (#EEA06E) / base (#D97757) / SE-deep (#A35237). |
-| ollama-pixel.png | Llama head profile — two ears with a notch, full-width fluffy face with muzzle, thin neck descending to the bottom tint (ear notch shading and lower rim in #C9CDD3, black eye pixel). |
-| antigravity-pixel.png | Sparkle pair — dominant white four-point star (centre-left, #F5F7FA with #9AA7B6 lower-right rim and a light-blue #8AB4F8 lower tip) plus a deep-blue #1A73E8 companion diamond at the top right. |
+| ollama-pixel.png | Front-facing stylized llama line-art head (the Ollama dark-mode mark) — upright ears with inner notches, fluffy cloud cheeks, circular eye pupils, and rounded snout with Y-shaped nose. |
+| antigravity-pixel.png | Google Antigravity rainbow portal arch — Google Green to Yellow, Orange, and Red across the arch apex, supported on Google Blue (#4285F4) pillar legs. |
 
 Bounded to exactly 20×20 with edge-touching content, so mascot()'s box-crop → scale path performs no interpolation. (Earlier versions were image_gen- or hand-drawn 32×32 sprites that lost pixels when the renderer shrank them to 20.)
 
@@ -17,8 +17,8 @@ The usage GIF's gauge shimmer walks four frames; the mascots ride along. `mascot
 | Provider | Phase 1 | Phase 2 | Phase 3 |
 |---|---|---|---|
 | claude-pixel-N | the light/deep shading quarter-turns clockwise | …another quarter | …another (full orbit per 1.2 s cycle) |
-| ollama-pixel-N | wool flecks lighten on the neck | eye closes (blink) | flecks lighten again |
-| antigravity-pixel-N | star's left edge pinches in, tips dim, diamond's outer ring drops | rims glint, diamond ring tints light blue | right edge pinches in, top tip dims, ring wobbles back |
+| ollama-pixel-N | ears glint and wool shimmers | eye closes in a cute blink | shimmer rolls down and settles back to base |
+| antigravity-pixel-N | wave flows across the rainbow arch | peak yellow/orange glint at apex | wave rolls down the blue legs, settling back |
 
 Every phase keeps the exact base bounding box (a pinched box would re-introduce interpolation), verified in the generator.
 

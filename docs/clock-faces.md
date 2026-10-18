@@ -109,3 +109,12 @@ It is not a live ranking. Older installs show "update TokenTV" instead of downlo
 
 **Game Boy** uses four green LCD shades and ten-cell gauges.
 Choose it under **Gallery → Game Boy → Apply to clock**. OLD and missing readings remain explicit.
+
+## Pixel face (Dual-line layout & 4-phase animation)
+
+The default **Pixel** face provides comprehensive quota telemetry by displaying two telemetry lines per AI provider:
+- **Line 1 (Session Quota)**: Displays the short 5-hour rolling session quota percentage, `5H` tag, reset countdown (`in XhYm`), and a 5px segmented gauge.
+- **Line 2 (Weekly Quota)**: Displays the weekly quota percentage, `WK` tag, reset countdown, and a 5px segmented gauge.
+- **Mascot Animations**: 4-phase animated sprites (blinking/breathing eye and wool movement for Ollama in pure monochrome `#FFFFFF`, radiant sunburst for Claude, flowing rainbow arch for Antigravity).
+- **Physical Clock Display**: Rendered as a multi-frame GIF via `usage_gif.py` with mediancut quantization so animations and gauge shimmers cycle live on the physical clock without freezing on a static frame.
+

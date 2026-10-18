@@ -320,32 +320,75 @@ def pixel_text(draw, xy, text, scale=1, color=TEXT, align='left'):
                     draw.rectangle((px, py, px + scale - 1, py + scale - 1), fill=color)
 
 
-def render_pixel(snapshot):
-    image = Image.new('RGB', (240, 240), BACKGROUND)
-    draw = ImageDraw.Draw(image)
+def render_usage_rows(image, draw, snapshot, shimmer=None, phase=0):
+    if shimmer is not None:
+        from token_tv.combo_pulse import _animated_horizontal_gauge
     rows = overview_rows(snapshot)
     for index, row in enumerate(rows):
-        y = 8 + index * 78 + row_shift(len(rows), 78)
+        y = 4 + index * 78 + row_shift(len(rows), 78)
         if index:
             for x in range(14, 227, 4):
-                draw.point((x, y - 6), fill=RULE)
-        mascot(image, row['provider'], (14, y + 10), pixel=True)
+                draw.point((x, y - 4), fill=RULE)
+
+        mascot(image, row['provider'], (6, y + 13), pixel=True, phase=phase)
+
         label = row['alias']
         if not label.startswith(row['provider'].upper() + ' '):
             label = row['provider'].upper() + ' A'
-        pixel_text(draw, (68, y + 3), label)
-        value = primary_window(row)
-        used = max(0, min(100, value['used_percent'])) if value else None
-        old = row['status'] != 'ok'
-        number = '--' if used is None else str(round(used)) + '%'
-        pixel_text(draw, (68, y + 21), number, scale=3, color=TEXT)
-        if value:
-            period = quota_period(value)
-            pixel_text(draw, (226, y + 3), period + (' OLD' if old else ' USED'), color=MUTED, align='right')
-            pixel_text(draw, (226, y + 25), time_left(value.get('resets_at')).replace(' ', ''), scale=2, color=MUTED, align='right')
+        pixel_text(draw, (62, y + 2), label, scale=1, color=TEXT)
+
+        windows = row.get('windows') or []
+        session = next((w for w in windows if w.get('label') == '5H'), None) or (windows[0] if windows else None)
+        weekly = next((w for w in windows if w.get('label') == 'WEEK'), None) or (windows[0] if windows else None)
+
+        if session:
+            used = max(0, min(100, session['used_percent'])) if session.get('used_percent') is not None else None
+            s_num = '--' if used is None else f'{round(used):2d}%'
+            stag = '5H' if session.get('label') == '5H' or not weekly or weekly.get('label') == 'WEEK' else quota_period(session)
+            s_reset = time_left(session.get('resets_at')).replace(' ', '')
         else:
-            pixel_text(draw, (226, y + 25), STATUS.get(row['status'], 'NO DATA'), color=MUTED, align='right')
-        horizontal_gauge(draw, (68, y + 52), used)
+            used = None
+            s_num = '--'
+            stag = STATUS.get(row.get('status'), 'NO DATA')
+            s_reset = '--'
+
+        if weekly:
+            wused = max(0, min(100, weekly['used_percent'])) if weekly.get('used_percent') is not None else None
+            w_num = '--' if wused is None else f'{round(wused):2d}%'
+            wtag = 'WK' if weekly.get('label') == 'WEEK' else quota_period(weekly)
+            w_reset = time_left(weekly.get('resets_at')).replace(' ', '')
+        else:
+            wused = None
+            w_num = '--'
+            wtag = '--' if session else ''
+            w_reset = '--'
+
+        if row.get('status') == 'stale':
+            wtag = 'OLD'
+
+        # Line 1: Session
+        pixel_text(draw, (58, y + 17), s_num, scale=2, color=TEXT)
+        pixel_text(draw, (104, y + 16), stag, scale=1, color=MUTED)
+        pixel_text(draw, (104, y + 25), s_reset, scale=1, color=MUTED)
+        if shimmer is not None:
+            _animated_horizontal_gauge(draw, (148, y + 21), used, shimmer, step=9, width=7, height=5)
+        else:
+            horizontal_gauge(draw, (148, y + 21), used, step=9, width=7, height=5)
+
+        # Line 2: Weekly
+        pixel_text(draw, (58, y + 45), w_num, scale=2, color=TEXT)
+        pixel_text(draw, (104, y + 44), wtag, scale=1, color=MUTED)
+        pixel_text(draw, (104, y + 53), w_reset, scale=1, color=MUTED)
+        if shimmer is not None:
+            _animated_horizontal_gauge(draw, (148, y + 49), wused, (shimmer + 3) % 10, step=9, width=7, height=5)
+        else:
+            horizontal_gauge(draw, (148, y + 49), wused, step=9, width=7, height=5)
+
+
+def render_pixel(snapshot):
+    image = Image.new('RGB', (240, 240), BACKGROUND)
+    draw = ImageDraw.Draw(image)
+    render_usage_rows(image, draw, snapshot)
     return image
 
 

@@ -221,10 +221,17 @@ def _gif_bytes(frames, ms=PHASE_MS):
         colors = frame.getcolors(maxcolors=frame.width * frame.height)
         if colors:
             colours.update(colour for _, colour in colors)
-    reference = Image.new('P', (1, 1))
-    palette = sorted(colours)[:256]
-    reference.putpalette(([v for colour in palette for v in colour] + [0] * 768)[:768])
-    indexed = [frame.quantize(palette=reference, dither=Image.Dither.NONE) for frame in frames]
+    if len(colours) <= 256:
+        reference = Image.new('P', (1, 1))
+        palette = sorted(colours)
+        reference.putpalette(([v for colour in palette for v in colour] + [0] * 768)[:768])
+        indexed = [frame.quantize(palette=reference, dither=Image.Dither.NONE) for frame in frames]
+    else:
+        composite = Image.new('RGB', (frames[0].width, frames[0].height * len(frames)))
+        for i, frame in enumerate(frames):
+            composite.paste(frame, (0, i * frames[0].height))
+        palette_ref = composite.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
+        indexed = [frame.quantize(palette=palette_ref, dither=Image.Dither.NONE) for frame in frames]
     merged, durations = [], []
     for frame in indexed:
         if merged and frame.tobytes() == merged[-1].tobytes():
