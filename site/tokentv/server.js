@@ -122,6 +122,14 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 
 // Exit 0 on Railway's stop signal so redeploy handovers aren't logged as crashes.
+// Closes idle keep-alive sockets immediately and sets a 1s fallback so lingering connections
+// never hold the process past Railway's container shutdown window.
 for (const sig of ["SIGTERM", "SIGINT"]) {
-  process.on(sig, () => server.close(() => process.exit(0)));
+  process.on(sig, () => {
+    setTimeout(() => process.exit(0), 1000).unref();
+    if (typeof server.closeIdleConnections === "function") {
+      server.closeIdleConnections();
+    }
+    server.close(() => process.exit(0));
+  });
 }
