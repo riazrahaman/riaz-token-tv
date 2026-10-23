@@ -312,10 +312,11 @@ def render_countdown_gif(now=None, countdown_secs=8, proverb_secs=4):
     return _gif_bytes(frames, ms=500)
 
 
-def publish_countdown(device_url="http://192.168.1.157", now=None):
+def publish_countdown(device_url="http://192.168.1.157", now=None, gif_data=None):
     """Render and publish the countdown animated GIF to an SD_PRO clock."""
     dt = now or datetime.now()
-    gif_data = render_countdown_gif(dt)
+    if gif_data is None:
+        gif_data = render_countdown_gif(dt)
     client = PhotoDisplay(device_url)
 
     upload_res = client.upload("tokentv.gif", gif_data)
@@ -341,7 +342,7 @@ def main(argv=None):
     import time
 
     parser = argparse.ArgumentParser(description="Countdown and Hourly Wisdom Clock")
-    parser.add_argument("--device-url", default="http://192.168.1.157", help="clock URL (default: %(default)s)")
+    parser.add_argument("--device-url", default="http://192.168.1.157", help="clock URL(s), comma-separated (default: %(default)s)")
     parser.add_argument("--interval", type=int, default=60, help="publish interval in seconds (default: %(default)s)")
     parser.add_argument("--once", action="store_true", help="publish once and exit")
     parser.add_argument("--out", help="save rendered GIF to file instead of publishing")
@@ -353,12 +354,18 @@ def main(argv=None):
         print(f"Wrote {len(gif)} bytes to {args.out}")
         return 0
 
-    print(f"TokenTV Countdown starting: target {TARGET_DATE}, device {args.device_url}", flush=True)
+    device_urls = [u.strip() for u in args.device_url.split(",") if u.strip()]
+    print(f"TokenTV Countdown starting: target {TARGET_DATE}, devices {device_urls}", flush=True)
     try:
         while True:
             now = datetime.now()
-            res = publish_countdown(args.device_url, now=now)
-            print(f"[{now.strftime('%H:%M:%S')}] {res['days_remaining']} days remaining · {res['bytes']}B -> {args.device_url}", flush=True)
+            gif_data = render_countdown_gif(now)
+            for url in device_urls:
+                try:
+                    res = publish_countdown(url, now=now, gif_data=gif_data)
+                    print(f"[{now.strftime('%H:%M:%S')}] {res['days_remaining']} days remaining · {res['bytes']}B -> {url}", flush=True)
+                except Exception as exc:
+                    print(f"[{now.strftime('%H:%M:%S')}] upload to {url} failed: {exc}", flush=True)
             if args.once:
                 break
             # Sleep until next minute boundary (e.g. at 00s)
