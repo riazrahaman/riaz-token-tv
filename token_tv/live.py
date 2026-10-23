@@ -15,6 +15,7 @@ from token_tv.device import (FILES, JPEG_SLOTS, JPEG_USAGE_FILE, LIMITS, ROTATIO
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import (ANIMATED_STYLES, STOCK_STYLES, STYLES, data_digest, render_frame,
                               render_page, watch_payload)
+from token_tv.widgets import widgets_payload
 from token_tv.combo import market_rows, STALE_AFTER
 from token_tv.combo_stocks import (closed_schedule, render_combo_stocks_closed_gif,
                                    render_combo_stocks_gif)
@@ -289,6 +290,8 @@ def handler(store, preferences=None, quantum=0, state_dir=None, feed_path=None, 
                 body = json.dumps(display).encode()
             elif path == "/watch.json":
                 body = json.dumps(watch_payload(snapshot), ensure_ascii=False, separators=(",", ":")).encode()
+            elif path in ("/widgets.json", "/api/widgets"):
+                body = json.dumps(widgets_payload(snapshot), ensure_ascii=False, separators=(",", ":")).encode()
             elif path == "/health":
                 body = json.dumps({"status": "ok", "updated_at": snapshot["updated_at"]}).encode()
             else:

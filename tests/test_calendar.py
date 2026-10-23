@@ -276,10 +276,11 @@ class TimezoneTests(unittest.TestCase):
             'updated_at': int(self.nse_bell) - 7200,
             'market': {'is_open': False, 'session': 'closed', 'exchange': 'US',
                        'next_open_at': int(self.nse_bell), 'next_open_exchange': 'NSE'}}}
-        with FakeTimeZone('Asia/Dubai'):
-            here = render_combo_stocks_closed(scheduled)
-        with FakeTimeZone('UTC'):
-            elsewhere = render_combo_stocks_closed(scheduled)
+        with patch('time.time', return_value=self.now):
+            with FakeTimeZone('Asia/Dubai'):
+                here = render_combo_stocks_closed(scheduled)
+            with FakeTimeZone('UTC'):
+                elsewhere = render_combo_stocks_closed(scheduled)
         footer = (150, 222, 236, 240)  # the LAST BOARD stamp's band
         self.assertNotEqual(here.crop(footer).tobytes(), elsewhere.crop(footer).tobytes())
         self.assertEqual(Image.open(io.BytesIO(display.encode_jpeg(here)[0])).size, (240, 240))

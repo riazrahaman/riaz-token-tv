@@ -8,6 +8,7 @@
     token-tv run       start the dashboard and drive the clock
     token-tv stocks    draw a stock watchlist and push it to the clock
     token-tv calendar  write the next Apple Calendar event as a feeder snapshot
+    token-tv countdown display countdown and hourly wisdom on a clock
 """
 import argparse
 import io
@@ -411,6 +412,7 @@ def main(argv=None):
                         add_help=False)
     commands.add_parser('calendar', parents=[config], help='write the next Apple Calendar event as a feeder snapshot',
                         add_help=False)
+    commands.add_parser('countdown', help='display countdown and hourly wisdom on a clock', add_help=False)
     h = commands.add_parser('history', parents=[config], help='inspect reading history')
     h.add_argument('--symbol', help='stock symbol to check (e.g. NVDA, TSLA)')
     h.add_argument('--stocks', action='store_true', help='inspect stock history instead of usage')
@@ -419,7 +421,10 @@ def main(argv=None):
     h.add_argument('--until', type=int, help='end timestamp')
 
     args, extra = parser.parse_known_args(argv)
-    if args.command in ('connect', 'run', 'stocks', 'calendar'):
+    if args.command in ('connect', 'run', 'stocks', 'calendar', 'countdown'):
+        if args.command == 'countdown':
+            from token_tv import countdown as module
+            return module.main(extra or [])
         reader = read_config
         if args.command == 'run':
             from token_tv import live as module

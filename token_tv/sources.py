@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from token_tv.usage import (normalize_claude, normalize_ollama, normalize_antigravity,
-                            ollama_allowance, timestamp, window)
+                            normalize_chatgpt, ollama_allowance, timestamp, window)
 from token_tv.display import STYLES
 
 AUTH_WORDS = ("auth", "login", "sign in", "token")
@@ -37,7 +37,8 @@ def scoped_env(provider, root):
                 "XAI_API_KEY", "CLAUDECODE"):
         env.pop(key, None)
     variable = {"claude": "CLAUDE_CONFIG_DIR",
-                "antigravity": "ANTIGRAVITY_EXECUTABLE_DATA_DIR"}[provider]
+                "antigravity": "ANTIGRAVITY_EXECUTABLE_DATA_DIR",
+                "chatgpt": "OPENAI_CONFIG_DIR"}[provider]
     env[variable] = str(root)
     if provider == "claude":
         env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = str(root)
@@ -59,14 +60,14 @@ def load_config(path):
     for account in data.get("accounts", []):
         if set(account) - allowed:
             raise ValueError("Only credential-free account metadata is allowed")
-        if account.get("provider") not in ("claude", "ollama", "antigravity"):
+        if account.get("provider") not in ("claude", "ollama", "antigravity", "chatgpt"):
             raise ValueError("Unknown provider")
         key = account.get("key", "")
         if not re.fullmatch(r"[a-z0-9_-]{1,48}", key) or key in seen:
             raise ValueError("Account keys must be unique")
         if not isinstance(account.get("alias"), str) or not 1 <= len(account["alias"]) <= 32:
             raise ValueError("Account alias is required")
-        if not account.get("email") and account.get("provider") not in ("ollama", "antigravity"):
+        if not account.get("email") and account.get("provider") not in ("ollama", "antigravity", "chatgpt"):
             raise ValueError("Expected account identity is required")
         if "ollama_allowance_usd" in account:
             if account.get("provider") != "ollama":
@@ -250,6 +251,35 @@ def antigravity_payload(account):
     return payload
 
 
+def chatgpt_token():
+    token = os.environ.get("OPENAI_API_KEY") or os.environ.get("CHATGPT_API_KEY")
+    if token and token.strip():
+        return token.strip()
+    if sys.platform == "darwin":
+        for svc in ("token-tv-chatgpt", "token-tv-openai", "ChatGPT-credentials"):
+            result = subprocess.run(["security", "find-generic-password", "-s", svc, "-w"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+    return None
+
+
+def chatgpt_payload(account):
+    """Fetch ChatGPT / OpenAI quota or read local source_home usage payload."""
+    if account.get("source_home"):
+        path = Path(account["source_home"]).expanduser() / "usage.json"
+        if path.is_file():
+            try:
+                return json.loads(path.read_text())
+            except ValueError:
+                pass
+    token = chatgpt_token()
+    if not token:
+        raise SourceError("auth_required")
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+    return json_get("https://api.openai.com/v1/organization/usage", headers)
+
+
 def logged_in_email(provider, home):
     """The email of the account already signed in to this CLI home, or None. Prints nothing secret."""
     root = Path(home).expanduser()
@@ -337,6 +367,9 @@ def fetch_account(account):
             # rather than inventing a mismatch, and still show the usage numbers.
             allowance = ollama_allowance(data.get("plan"), account.get("ollama_allowance_usd"))
             row["windows"] = normalize_ollama(data.get("usage"), allowance, data.get("created_at"))
+        elif account["provider"] == "chatgpt":
+            row["windows"] = normalize_chatgpt(chatgpt_payload(account))
+            row["identity_verified"] = bool(account.get("email"))
         else:
             # Antigravity's CLI reports no email, so this source is always unverified.
             row["windows"] = normalize_antigravity(antigravity_payload(account))

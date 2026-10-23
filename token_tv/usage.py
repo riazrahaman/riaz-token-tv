@@ -179,3 +179,42 @@ def normalize_antigravity(data):
         if item:
             result.append(item)
     return result
+
+
+def normalize_chatgpt(data):
+    """Read ChatGPT / OpenAI quota data for session and weekly/budget windows."""
+    if not isinstance(data, dict):
+        return []
+    result = []
+
+    # 1. Session window (e.g. 3H or 5H message limit or hourly spend)
+    session_val = data.get("session") or data.get("three_hour") or data.get("five_hour") or data.get("hourly")
+    if isinstance(session_val, dict):
+        duration = session_val.get("duration_minutes") or (180 if "three" in str(session_val) else 300)
+        label = session_val.get("label") or ("3H" if duration == 180 else "5H")
+        percent = session_val.get("utilization") or session_val.get("used_percent")
+        if percent is None and "used" in session_val and "limit" in session_val and session_val["limit"] > 0:
+            percent = (session_val["used"] / session_val["limit"]) * 100.0
+        item = window(label, percent, session_val.get("resets_at"), duration)
+        if item:
+            result.append(item)
+    elif "used_messages" in data and "max_messages" in data and data["max_messages"] > 0:
+        percent = (data["used_messages"] / data["max_messages"]) * 100.0
+        item = window("3H", percent, data.get("resets_at"), 180)
+        if item:
+            result.append(item)
+
+    # 2. Weekly window (e.g. 7-day quota or weekly spend limit)
+    weekly_val = data.get("weekly") or data.get("seven_day") or data.get("monthly")
+    if isinstance(weekly_val, dict):
+        duration = weekly_val.get("duration_minutes") or 10080
+        label = weekly_val.get("label") or "WEEK"
+        percent = weekly_val.get("utilization") or weekly_val.get("used_percent")
+        if percent is None and "used" in weekly_val and "limit" in weekly_val and weekly_val["limit"] > 0:
+            percent = (weekly_val["used"] / weekly_val["limit"]) * 100.0
+        item = window(label, percent, weekly_val.get("resets_at"), duration)
+        if item:
+            result.append(item)
+
+    return result
+

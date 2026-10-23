@@ -91,6 +91,18 @@ and the combo faces and the closed-market rest draw the next event with a quanti
 `(title, start_iso)`, so a changed appointment reaches the clock even inside the write budget,
 while the moon cameo's aliveness gate reads the stocks feeder's `published_at` wake stamp.
 
+A dedicated clock face and publisher, `token-tv countdown` (`countdown.py`), drives a standalone
+desk clock with a focus countdown to February 1, 2028 and an hourly rotating curation of wisdom
+proverbs. Built with a pure `#000000` true-black layout, fixed digit cells in Manrope ExtraBold
+to prevent proportional glyph shift, a 1 Hz blinking colon ghosting to `#1c1c1c`, and exact 97-color
+palette flattening so the background never gets dithered away by GIF quantization.
+
+For mobile widgets (Android Glance and iOS WidgetKit), `widgets.py` formats the store snapshot into
+a structured payload served at `/widgets.json` and `/api/widgets`, breaking each account into
+session and weekly windows with reset times and progress percentages. Provider support in `sources.py`
+and `usage.py` covers Claude, ChatGPT (OpenAI API / Keychain / local `usage.json`), Ollama Cloud,
+and Antigravity.
+
 ### System Architecture & Code Flow
 
 ```text

@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-23
+
+### Added
+
+- **2028 Countdown & Hourly Wisdom Clock face** (`token-tv countdown`):
+  - Added dedicated countdown clock targeting February 1, 2028 alternating with an hourly rotating curation of focus, discipline, and perseverance wisdom proverbs (`token_tv/countdown.py`).
+  - True pure `#000000` black face with a single hairline separator rule and zero distracting cards or badges.
+  - Time header rendered in Manrope ExtraBold 58px within fixed digit cells to eliminate horizontal jitter across variable-width glyphs, featuring a 1 Hz blinking colon ghosting to `#1c1c1c`.
+  - Date banner displaying letterspaced day of week in amber and grey day/month (`FRI · 23 OCT`) without redundant year noise.
+  - Monumental 104px optically centered amber countdown numeral with adaptive font scaling ladder for 4-digit counts.
+  - Dynamic proverb typography that re-wraps and scales text (21–22px) to ensure every quote fits the hero band cleanly.
+  - Fixed 97-color palette flattening prior to GIF encoding so Pillow's median-cut compression never dithers pure black `#000000` into dark gray on ST7789 IPS panels.
+  - CLI subcommand `token-tv countdown [--device-url URL] [--interval SECS] [--once] [--out FILE]`.
+
+- **ChatGPT / OpenAI Usage Normalization & Source**:
+  - Support for `chatgpt` provider in `token_tv/sources.py` and `token_tv/usage.py`.
+  - Authenticates via environment variables (`OPENAI_API_KEY`, `CHATGPT_API_KEY`), macOS Keychain (`token-tv-chatgpt`, `token-tv-openai`, `ChatGPT-credentials`), or local `usage.json`.
+  - Normalizes session (3H/5H) and weekly usage windows into standard telemetry.
+
+- **Mobile Widgets API Endpoint** (`/widgets.json` and `/api/widgets`):
+  - Structured, lightweight JSON payload in `token_tv/widgets.py` exposing session and weekly window usage percentages, countdowns, and provider statuses for Android Jetpack Glance and iOS WidgetKit integrations.
+
+### Fixed
+
+- **Calendar test timestamp fixture** (`tests/test_calendar.py`): Wrapped `test_the_closed_face_footer_is_host_local` with `patch('time.time')` to avoid test expiration when the real wall clock passes the hardcoded NSE bell time.
+
 ## [0.5.3] — 2026-10-17
 
 ### Fixed

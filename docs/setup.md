@@ -12,6 +12,7 @@ token-tv demo                                     # every clock face with sample
 token-tv setup                                    # asks for emails (up to 3 per provider) and the clock IP
 token-tv doctor --live                            # asks each provider now; says what is missing and the fix
 token-tv run                                      # dashboard at http://127.0.0.1:8787, drives the clock
+token-tv countdown --device-url <url>             # 2028 focus countdown & hourly wisdom clock face
 ```
 
 `uvx --from git+https://github.com/riazrahaman/riaz-token-tv token-tv demo` runs it without installing.
