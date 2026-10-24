@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-24
+
+### Added
+
+- **Unified True-Black Face for White Clock (`token_tv/combo_stocks.py`)**:
+  - Unified the stock movers board and overnight closed-market face on the white clock (`192.168.1.156`) with the true-black `#000000` Manrope design language established by the countdown clock.
+  - Replaced high-contrast tinted cards with clean hairline row dividers, fixed row pitch, and sign-colored percentage pills.
+  - Dedicated Manrope font loader in `combo_stocks.py` with fixed palette quantization and frame flattening, ensuring `#000000` true black survives GIF median-cut compression without color drift.
+  - High-contrast overnight rest face optimized for low brightness settings (e.g. night brightness level 19).
+
+- **Multi-Clock Countdown Broadcasting (`token_tv/countdown.py`)**:
+  - `token-tv countdown --device-url` supports comma-separated URLs (e.g. `--device-url http://192.168.1.157,http://192.168.1.154`).
+  - Pre-composites the animated GIF once in memory and broadcasts across all configured desk displays in parallel, with per-device failure isolation.
+  - Host LaunchAgent daemon `com.tokentv.countdown` updated to drive both clocks (`.157` and `.154`) simultaneously every minute.
+
+- **Production Deployment Configuration (`railway.json`)**:
+  - Added repository-root and `site/tokentv/` Railpack deployment configurations with direct `startCommand: "node server.js"`. Bypasses npm subshells so process signals reach Node directly as PID 1.
+  - Hardened graceful shutdown in `site/tokentv/server.js` with `server.closeIdleConnections()` and a 1s exit fallback, permanently eliminating false-positive "Deploy Crashed" alerts during Railway container handovers.
+
+- **Editorial README Overhaul**:
+  - Redesigned `README.md` following the visual structure of `agent-kanban-board`, including centered badges, full architecture layout tree, numbered quickstart guide, memory wall technical diagrams, and complete provider/endpoint reference tables.
+
+### Fixed
+
+- **Stock Ticker Dict Formatting Bug (`token_tv/combo_stocks.py`)**:
+  - `render_combo_stocks` previously passed the entire row dict to `display_symbol` rather than `row['symbol']`, causing tickers to render with leading dictionary syntax (e.g. `{'SYMB`). Fixed and covered by `test_each_row_prints_its_sanitised_ticker`.
+
 ## [0.6.0] — 2026-10-23
 
 ### Added
