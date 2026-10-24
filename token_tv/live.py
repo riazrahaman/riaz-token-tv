@@ -535,7 +535,7 @@ def main():
                 data_changed = changed != last_data
                 forced = user or lost or style != last_style or data_changed
                 if style == 'stocks':
-                    # The alternation the user asked for, now animated: the Night Cards face's GIF
+                    # The alternation the user asked for, now animated: the stock board's GIF
                     # (its arrows and glows breathe) into the two GIF stock slots and the shimmering
                     # usage face into the third, so the slideshow's 10-second interval shows stocks
                     # for 20 seconds, then usage for 10, then repeats with fresh frames. A closed,

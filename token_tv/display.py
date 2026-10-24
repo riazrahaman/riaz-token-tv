@@ -408,7 +408,7 @@ def render_frame(snapshot, page=0, style='pixel', quantum=0, limit=0):
     if style not in STYLES:
         raise ValueError('Unknown display style')
     snapshot = quantise(snapshot, quantum)
-    if style == 'stocks':  # the Night Cards board: animated arrows while a market is open
+    if style == 'stocks':  # the movers board: animated arrows while a market is open
         from token_tv.combo import market_rows
         from token_tv.combo_stocks import (closed_schedule, render_combo_stocks,
                                            render_combo_stocks_closed, render_combo_stocks_gif)

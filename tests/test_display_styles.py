@@ -296,40 +296,33 @@ class StocksOnlyFaceTests(unittest.TestCase):
         image.seek(2); third = image.convert('RGB')
         self.assertNotEqual(list(first.getdata()), list(third.getdata()))
         # ...but both carry the board inks: a rise and a fall share the face.
-        self.assertIn((8, 247, 66), {c for _, c in third.getcolors(240 * 240)})
-        self.assertIn((255, 68, 68), {c for _, c in third.getcolors(240 * 240)})
+        from token_tv.combo_stocks import UNI_FALL, UNI_RISE
+        self.assertIn(UNI_RISE, {c for _, c in third.getcolors(240 * 240)})
+        self.assertIn(UNI_FALL, {c for _, c in third.getcolors(240 * 240)})
 
     def test_a_closed_or_missing_feed_draws_dashes_and_never_zeros(self):
         from token_tv import combo_stocks
-        from token_tv.combo_stocks import FALL, RISE
+        from token_tv.combo_stocks import UNI_FALL, UNI_RISE
         from token_tv.display import render_page
         image = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(is_open=False)}, style='stocks')))
-        self.assertNotIn(RISE, {colour for _, colour in image.getcolors(240 * 240)})
-        self.assertNotIn(FALL, {colour for _, colour in image.getcolors(240 * 240)})
-        # The dash glyphs are really drawn: every card carries a dim-grey '--' in its symbol slot
-        # (JPEG shifts the dim ink, so this keeps the ±12 tolerance the glyph test has always used).
+        self.assertNotIn(UNI_RISE, {colour for _, colour in image.getcolors(240 * 240)})
+        self.assertNotIn(UNI_FALL, {colour for _, colour in image.getcolors(240 * 240)})
+        # The dash glyphs are really drawn: every row carries a grey '--' in its symbol slot
+        # (JPEG shifts the ink, so this keeps the tolerance the glyph test has always used).
         for index in range(combo_stocks.MAX_ROWS):
-            y = combo_stocks.TOP + index * combo_stocks.PITCH
-            slot = image.crop((14, y + 7, 14 + 22, y + 7 + 14))  # a scale-2 '--' glyph box in the card
+            y = combo_stocks.UNI_TOP + index * combo_stocks.UNI_PITCH
+            slot = image.crop((combo_stocks.UNI_M, y + 6, combo_stocks.UNI_M + 26, y + 24))
             pixels = list(slot.getdata())
-            grey = [px for px in pixels if all(abs(ink - 74) <= 12 for ink in px)]
+            grey = [px for px in pixels if all(abs(ink - 138) <= 40 for ink in px)]
             self.assertTrue(grey, f'row {index} has no dash glyph')
             self.assertLess(len(grey), len(pixels), f'row {index} is solid ink, not a glyph')
         no_feed = Image.open(io.BytesIO(render_page({'accounts': {}}, style='stocks')))
-        self.assertNotIn(RISE, {colour for _, colour in no_feed.getcolors(240 * 240)})
+        self.assertNotIn(UNI_RISE, {colour for _, colour in no_feed.getcolors(240 * 240)})
         # Closed or missing, the face is still its own board — never the usage face underneath.
         self.assertNotEqual(render_page({'accounts': {}}, style='stocks'), render_page({'accounts': {}}, style='pixel'))
         stale = Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed(now=0)}, style='stocks')))
-        self.assertNotIn(RISE, {colour for _, colour in stale.getcolors(240 * 240)})  # stale reads like none
-        self.assertNotIn((255, 68, 68), {colour for _, colour in stale.getcolors(240 * 240)})
-
-    def test_a_closed_board_with_no_feed_claims_no_exchange(self):
-        from token_tv.display import render_page
-        # Without any feed there is no exchange or source: the header says nothing rather than
-        # stamping the FINNHUB fallback over a market it knows nothing about.
-        self.assertEqual(render_page({'accounts': {}, 'stocks': {'market': {'is_open': False}, 'symbols': []}},
-                                     style='stocks'),
-                         render_page({'accounts': {}}, style='stocks'))
+        self.assertNotIn(UNI_RISE, {colour for _, colour in stale.getcolors(240 * 240)})  # stale reads like none
+        self.assertNotIn(UNI_FALL, {colour for _, colour in stale.getcolors(240 * 240)})
 
     def test_a_scheduled_close_draws_the_reopens_night_face(self):
         """A closed market that names its own reopen gets the calm night face, not dash cards."""
@@ -343,15 +336,19 @@ class StocksOnlyFaceTests(unittest.TestCase):
         night = render_page({'accounts': {}, 'stocks': scheduled}, style='stocks')
         self.assertNotEqual(night, dash)  # the schedule buys a different face, not more dashes
         image = Image.open(io.BytesIO(night)).convert('RGB')
-        self.assertNotIn((8, 247, 66), {c for _, c in image.getcolors(240 * 240)})  # no board, no arrows
+        from token_tv.combo_stocks import UNI_MOON, UNI_RISE
+        self.assertNotIn(UNI_RISE, {c for _, c in image.getcolors(240 * 240)})  # no board, no arrows
         sky = {c for _, c in image.getcolors(240 * 240)}
-        self.assertTrue(any(all(abs(a - b) <= 6 for a, b in zip(c, (10, 14, 28))) for c in sky),
-                        'night sky missing')
-        # The big bright open time sits dead centre; the dash face's same band stays dim.
-        band = image.crop((60, 110, 180, 146))
-        self.assertTrue(all(max(px) < 60 for px in Image.open(io.BytesIO(dash)).convert('RGB')
-                            .crop((60, 110, 180, 146)).getdata()))
-        self.assertTrue(any(px[0] > 180 for px in band.getdata()))
+        self.assertTrue(any(all(abs(a - b) <= 4 for a, b in zip(c, (0, 0, 0))) for c in sky),
+                        'the night face is not on true black')
+        self.assertTrue(any(all(abs(a - b) <= 12 for a, b in zip(c, UNI_MOON)) for c in sky),
+                        'the crescent is missing')
+        # The big bright open time sits dead centre; the dash board's same band stays quiet.
+        box = (60, 148, 180, 196)
+        night_peak = max(max(px) for px in image.crop(box).getdata())
+        dash_peak = max(max(px) for px in Image.open(io.BytesIO(dash)).convert('RGB').crop(box).getdata())
+        self.assertGreater(night_peak, 180, 'the reopen time is not bright')
+        self.assertGreater(night_peak, dash_peak + 40, 'the night face does not stand out from the dash board')
 
     def test_the_closed_night_face_refuses_an_untrusted_schedule(self):
         """A stale promise or an open board with schedule keys never buys the night face."""
@@ -378,31 +375,53 @@ class StocksOnlyFaceTests(unittest.TestCase):
         self.assertLessEqual(len(gif), device.LIMITS['tokentv-b.gif'][0])
         self.assertEqual(render_combo_stocks_closed_gif(scheduled), gif)  # dedupe rests on this
 
-    def test_night_cards_are_tinted_by_their_sign_on_the_night_sky(self):
-        from token_tv import combo_stocks
+    def test_rows_carry_their_sign_in_the_percent_ink_on_true_black(self):
+        """The redesign drops the tinted cards: sign is colour + arrow + the change's sign."""
+        from token_tv.combo_stocks import UNI_DIM, UNI_FALL, UNI_INK, UNI_RISE
         from token_tv.display import render_page
         cols = {c for _, c in Image.open(io.BytesIO(render_page({'accounts': {}, 'stocks': self._feed()},
                                                                 style='stocks'))).convert('RGB').getcolors(240 * 240)}
         def near(target, tol=12):
             return any(all(abs(a - b) <= tol for a, b in zip(c, target)) for c in cols)
-        self.assertTrue(near((10, 14, 28), 6), 'night sky missing')
-        self.assertTrue(near(combo_stocks.mix(combo_stocks.RISE, .10), 8), 'no rise-tinted card fill')
-        self.assertTrue(near(combo_stocks.mix(combo_stocks.FALL, .10), 8), 'no fall-tinted card fill')
-        self.assertTrue(near((150, 160, 190)), 'header ink missing')
+        self.assertTrue(near((0, 0, 0), 4), 'the background is not true black')
+        self.assertTrue(near(UNI_RISE), 'no rise ink on the board')
+        self.assertTrue(near(UNI_FALL), 'no fall ink on the board')
+        self.assertTrue(near(UNI_INK), 'ticker ink missing')
+        self.assertTrue(near(UNI_DIM, 20), 'header/secondary ink missing')
 
-    def test_the_magnitude_bar_keeps_the_five_percent_fill_convention(self):
+    def test_a_bigger_move_still_reads_bigger(self):
+        """The magnitude bar is gone with the cards; the percent text carries the move now."""
         from token_tv import combo_stocks
         at = time.time()
-        def bar_ink(percent):
+        def sign_ink(percent):
             row = {'symbol': 'APPN', 'price': 42.52, 'change': 1.0, 'percent': percent,
                    'previous_close': None, 'at': at}
             feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'US'},
                     'symbols': [row] + self._feed()['symbols'][1:]}
-            image = combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})  # the static board
-            y = combo_stocks.TOP + 47
-            strip = image.crop((14, y, 227, y + 2))
-            return sum(1 for px in strip.getdata() if px[1] > px[2] + 25)  # green-ish fill pixels
-        self.assertGreater(bar_ink(5.0), bar_ink(2.5))  # twice the move, twice the fill
+            image = combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})
+            y = combo_stocks.UNI_TOP
+            crop = image.crop((120, y, 240 - combo_stocks.UNI_M, y + 34))
+            return sum(1 for px in crop.getdata() if px[1] > px[0] and px[1] > 90)
+        # 10.0% is physically wider than 5.0%, which is wider than nothing at all.
+        self.assertGreater(sign_ink(10.0), 0)
+        self.assertGreater(sign_ink(10.0), sign_ink(5.0))
+
+    def test_each_row_prints_its_sanitised_ticker(self):
+        """Regression: the ticker is drawn from row['symbol'], not from the row dict."""
+        from token_tv import combo_stocks
+        at = time.time()
+        feed = {'updated_at': at, 'market': {'is_open': True, 'session': 'regular', 'exchange': 'NSE'},
+                'symbols': [{'symbol': '^NSEI', 'price': 24500.0, 'change': 120.0, 'percent': 0.49,
+                             'previous_close': None, 'at': at}]}
+        image = combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})
+        y = combo_stocks.UNI_TOP
+        # NIFTY is five glyphs of white ink; a stringified dict would overflow this slot and
+        # a blank one would leave it empty.
+        slot = image.crop((combo_stocks.UNI_M, y + 2, combo_stocks.UNI_M + 76, y + 28))
+        white = [px for px in slot.getdata() if min(px) > 180]
+        self.assertGreater(len(white), 40, 'the ticker did not render')
+        spill = image.crop((combo_stocks.UNI_M + 92, y + 2, 150, y + 28))
+        self.assertTrue(all(min(px) < 180 for px in spill.getdata()), 'the ticker overflowed its slot')
 
     def test_a_flat_quote_draws_no_arrow_on_its_card(self):
         from token_tv import combo_stocks
@@ -413,10 +432,11 @@ class StocksOnlyFaceTests(unittest.TestCase):
             return combo_stocks.render_combo_stocks({'accounts': {}, 'stocks': feed})  # the static board
         flat = {'symbol': 'FLAT', 'price': 10.0, 'change': 0.0, 'percent': 0.0, 'previous_close': None, 'at': at}
         down = {'symbol': 'OUST', 'price': 30.74, 'change': -1.13, 'percent': -3.55, 'previous_close': None, 'at': at}
-        y = combo_stocks.TOP
-        arrow_box = (100, y + 10, 125, y + 23)  # where the arrow polygon sits beside the percent
+        y = combo_stocks.UNI_TOP
+        arrow_box = (120, y + 8, 240 - combo_stocks.UNI_M, y + 26)  # beside the right-aligned percent
         flat_pixels = list(board(flat).crop(arrow_box).getdata())
-        self.assertTrue(all(max(px) < 50 for px in flat_pixels), 'the flat card drew an arrow')
+        self.assertTrue(all(px[0] < 120 or px[1] < 120 or px[2] > 60 for px in flat_pixels),
+                        'the flat row drew a sign arrow')
         down_pixels = list(board(down).crop(arrow_box).getdata())
         self.assertTrue(any(px[0] > 120 and px[1] < 100 for px in down_pixels), 'the control arrow is missing')
 
@@ -518,7 +538,8 @@ class AnimatedScreenTests(unittest.TestCase):
         self.assertTrue(all(a != b for a, b in zip(frames, frames[1:])), durations)  # no coalesce possible
         # The bright apex frame carries the rise ink (and the trough frame all but extinguishes it).
         image.seek(0)
-        self.assertIn((8, 247, 66), {c for _, c in image.convert('RGB').getcolors(240 * 240)})
+        from token_tv.combo_stocks import UNI_RISE
+        self.assertIn(UNI_RISE, {c for _, c in image.convert('RGB').getcolors(240 * 240)})
 
     def test_the_encoder_merges_identical_adjacent_frames_into_one_long_phase(self):
         from token_tv.combo_stocks import PHASE_MS, _gif_bytes

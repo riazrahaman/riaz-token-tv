@@ -1,18 +1,32 @@
-"""One 240×240 face carrying only the Night Cards stock board: no usage rows.
+"""One 240×240 face carrying only the stock board: no usage rows.
 
-The user asked for stocks alone and picked the Night Cards direction: a dark-navy sky
-(twinkle's NIGHT_BG and star margins) under four rounded cards, one per market row. The
-percent is the biggest text on each card, with a dim glow under it and a solid arrow; the
-symbol drops to scale 2. The row's magnitude bar keeps the 5%-fill convention, tinted to
-the card's sign. Rows arrive through `snapshot['stocks']` exactly as for `combo` — gainers
-first, then losers in movers mode. A closed, missing or stale feed draws dim dash cards
-under a CLOSED header, never a fabricated 0.00, and claims no exchange. When the feeder
-knows the schedule — it names the next open on a shut market — a dedicated closed night
-face renders instead: a crescent moon over the reopening bell's time, drawn from the feed
-alone. Nothing here contacts a provider or a clock.
+The board and the overnight face follow the countdown clock's language — true black,
+Manrope, hairline rules, one accent — so the two clocks read as one system. Four market
+rows, ticker and price left, percent and change right. The sign is stated once in colour,
+once in the arrow and once in the change's sign, which keeps it readable without colour
+vision; the earlier Night Cards board stated it four times over (border, fill tint,
+underline and arrow) and spent the space on ornament instead of the numbers.
+
+Rows arrive through `snapshot['stocks']` exactly as for `combo` — gainers first, then
+losers in movers mode. A closed, missing or stale feed draws dim dash rows under a CLOSED
+header, never a fabricated 0.00, and claims no exchange. When the feeder knows the
+schedule — it names the next open on a shut market — a dedicated closed night face renders
+instead: a crescent moon over the reopening bell's time, drawn from the feed alone, and
+high-contrast because the panel dims to brightness 19 overnight.
+
+The AI usage screen deliberately keeps its own pixel-and-mascot identity and is not
+unified with these; `usage_gif` and `display.render_usage_rows` own it.
+
+Nothing here contacts a provider or a clock.
+
+The pre-redesign Night Cards helpers (`_card`, `_dash_card`, `_centred`, `ink`, `arrow`,
+`_arrow_and_percent`, `mix`) are retained but no longer called by any face.
 """
+import functools
 import io
-from PIL import Image, ImageDraw
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 from token_tv.combo import SIZE, market_rows
 from token_tv.display import TEXT, pixel_text
@@ -124,85 +138,199 @@ def closed_schedule(snapshot):
     return dict(market, day=text[0], opens=text[1])
 
 
-def render_combo_stocks_closed(snapshot):
-    """The closed night face: a crescent moon over the next bell, no board and no dashes.
+# ── Unified faces ────────────────────────────────────────────────────────────────
+# The movers board and the night face share the countdown clock's language: true black,
+# Manrope, hairline rules, one accent. The usage screen deliberately keeps its own
+# pixel/mascot identity, so this module carries both and does not try to unify them.
 
-    Where the live board's closed state showed dash cards for hours on end, this face
-    keeps what an overnight clock actually wants to know: the sky is quiet, and the stock
-    board returns at a named time — on the host's own clock, so a 09:15 IST bell that opens
-    at 07:45 on the operator's wall says 07:45, with NSE's name kept as the label. The
-    feed says nothing honest about a reopen? The
-    caller keeps resting on the usage screen instead; this face refuses to draw a schedule
-    it does not know. The stamp stays still on purpose (no ticking countdown → no flash
-    writes): the frame it draws is stable until the bell itself moves.
+UNI_BG = (0, 0, 0)
+UNI_INK = (255, 255, 255)
+UNI_DIM = (138, 138, 138)
+UNI_FAINT = (36, 36, 36)
+UNI_RULE = (28, 28, 28)
+UNI_RISE = (46, 229, 123)
+UNI_FALL = (255, 77, 77)
+UNI_MOON = (232, 232, 240)
+UNI_INKS = (UNI_INK, UNI_DIM, UNI_FAINT, UNI_RULE, UNI_RISE, UNI_FALL, UNI_MOON)
+UNI_M = 14  # the shared left/right margin
+UNI_TOP, UNI_PITCH = 40, 46  # the movers rows' grid
+
+
+@functools.lru_cache(maxsize=None)
+def _manrope(size, weight=800):
+    """Manrope at an explicit weight.
+
+    Loaded here rather than imported from `countdown`, which imports `_gif_bytes` from this
+    module: going the other way would close the cycle. Manrope's default axis is 200
+    (ExtraLight), so the weight is always set or the face renders spindly.
+    """
+    try:
+        loaded = ImageFont.truetype(str(Path(__file__).parent / 'web' / 'manrope.ttf'), size)
+    except OSError:
+        return ImageFont.load_default()
+    try:
+        loaded.set_variation_by_axes([weight])
+    except (OSError, ValueError, AttributeError):
+        pass
+    return loaded
+
+
+@functools.lru_cache(maxsize=1)
+def _uni_palette():
+    """Black plus one ramp per ink, <=256 entries.
+
+    `_gif_bytes` falls back to median-cut above 256 colours, and median-cut averages its
+    boxes — which drifts the background off true black. Flattening to this fixed palette
+    first keeps the exact-palette branch, so #000000 survives encoding.
+    """
+    steps = (255 - 1) // len(UNI_INKS)
+    entries = [UNI_BG]
+    for colour in UNI_INKS:
+        entries.extend(tuple(round(c * s / steps) for c in colour) for s in range(1, steps + 1))
+    reference = Image.new('P', (1, 1))
+    reference.putpalette(([v for c in entries for v in c] + [0] * 768)[:768])
+    return reference
+
+
+def _uni_flatten(image):
+    return image.quantize(palette=_uni_palette(), dither=Image.Dither.NONE).convert('RGB')
+
+
+def _dim(colour, k):
+    """`colour` mixed toward black; every result sits on that colour's own ramp."""
+    return tuple(round(c * max(0.0, min(1.0, k))) for c in colour)
+
+
+def _uni_tracked(draw, x, baseline, text, font, fill, tracking=1.6):
+    for ch in text:
+        draw.text((x, baseline), ch, fill=fill, font=font, anchor='ls')
+        x += draw.textlength(ch, font=font) + tracking
+    return x
+
+
+def _uni_width(draw, text, font, tracking=1.6):
+    return sum(draw.textlength(c, font=font) for c in text) + tracking * max(0, len(text) - 1)
+
+
+def _uni_arrow(draw, cx, cy, up, colour, amplitude=None, size=5):
+    """A solid triangle that breathes with `amplitude` (brightness, not position, so the
+    row never shifts between frames)."""
+    s = size
+    fill = colour if amplitude is None else _dim(colour, 0.5 + 0.5 * amplitude)
+    pts = [(cx, cy - s), (cx - s, cy + s * 0.7), (cx + s, cy + s * 0.7)] if up else \
+          [(cx, cy + s), (cx - s, cy - s * 0.7), (cx + s, cy - s * 0.7)]
+    draw.polygon(pts, fill=fill)
+
+
+def render_combo_stocks_closed(snapshot):
+    """The closed night face: a crescent over the next bell, on true black.
+
+    Brightness drops to 19 overnight, so this face carries no hairlines and no ghost tones —
+    only marks that survive a dim panel. `None` when the feed names no honest reopen: the
+    caller rests on the usage screen rather than promising a bell nobody published.
     """
     schedule = closed_schedule(snapshot)
     if schedule is None:
         return None
-    image = Image.new('RGB', (SIZE, SIZE), NIGHT_BG)
+    image = Image.new('RGB', (SIZE, SIZE), UNI_BG)
     draw = ImageDraw.Draw(image)
 
-    # Star margins: the same nine fixed twinkles plus the two the mockup sheet added.
-    for i, (sx, sy) in enumerate(STARS + [(150, 12), (100, 238)]):
-        draw.point((sx, sy), fill=mix(PRICE_INK, (.6 + (i * 37) % 40 / 100)))
-    # The quiet header: dot and MARKET CLOSED as the live board has them, the shut market
-    # top-right — whose board the feed is still carrying (LAST BOARD in the footer).
-    draw.ellipse((6, 5, 10, 9), fill=mix(HEADER_INK, .35), outline=NIGHT_BG)
-    pixel_text(draw, (16, 4), 'MARKET CLOSED', 1, mix(HEADER_INK, .5))
-    closed_exchange = str(schedule.get('exchange') or '').upper()
-    if closed_exchange:
-        pixel_text(draw, (SIZE - 6, 4), closed_exchange, 1, mix(HEADER_INK, .5), 'right')
+    # A crescent: a bright disc with an offset disc of background punched out of it.
+    cx, cy, r = 120, 74, 30
+    draw.ellipse((cx - r, cy - r, cx + r, cy + r), fill=UNI_MOON)
+    draw.ellipse((cx - r + 13, cy - r - 5, cx + r + 13, cy + r - 5), fill=UNI_BG)
 
-    # A waxing crescent: a pale disc with the sky easing a bite from its upper right.
-    draw.ellipse((162, 48, 208, 94), fill=mix(PRICE_INK, .55))
-    draw.ellipse((176, 40, 218, 82), fill=NIGHT_BG)
+    label_font = _manrope(12, 800)
+    _uni_tracked(draw, 120 - _uni_width(draw, 'REOPENS', label_font) / 2, 140,
+                 'REOPENS', label_font, UNI_DIM)
+    draw.text((120, 172), str(schedule.get('opens') or '--'), fill=UNI_INK,
+              font=_manrope(54, 800), anchor='mm')
+    tail = schedule.get('next_open_exchange') or schedule.get('exchange') or ''
+    line = f"{schedule.get('day') or ''}  \u00b7  {tail}".strip(' \u00b7')
+    tail_font = _manrope(13, 700)
+    _uni_tracked(draw, 120 - _uni_width(draw, line, tail_font) / 2, 206, line, tail_font, UNI_DIM)
 
-    # The schedule, one bell, dead centre: small label, big time, day, whose bell it is.
-    # The bell renders on the host's own clock — a 09:15 IST open is 05:45 on a UAE wall, and
-    # the operator reads the wall, not the exchange — while the label below keeps NSE's name.
-    _centred(draw, 96, 'REOPENS', 1, HEADER_INK)
-    _centred(draw, 110, schedule['opens'], 4, TEXT)
-    _centred(draw, 154, schedule['day'], 2, HEADER_INK)
-    _centred(draw, 180, schedule.get('next_open_exchange') or '', 1, mix(HEADER_INK, .7))
-
-    # Footer: what the board last knew, on the host's own clock either — never refetched
-    # (the idle wakes publish no reading), so a stamped time stays put until the bell.
-    pixel_text(draw, (8, 227), 'LAST BOARD', 1, mix(HEADER_INK, .5))
-    tz = None  # host-local: the feed's zone describes its market, not this operator's clock
+    # Footer: what the board last knew, on the host's own clock — never refetched, so a
+    # stamped time stays put until the bell.
+    foot = _manrope(11, 700)
     stocks = (snapshot.get('stocks') or {}) if isinstance(snapshot, dict) else {}
-    pixel_text(draw, (SIZE - 8, 227), market_time(stocks.get('updated_at') or 0, tz=tz), 1,
-               mix(HEADER_INK, .5), 'right')
-    return image
+    stamp = market_time(stocks.get('updated_at') or 0, tz=None)
+    _uni_tracked(draw, UNI_M, 231, 'LAST BOARD', foot, _dim(UNI_DIM, .62))
+    _uni_tracked(draw, SIZE - UNI_M - _uni_width(draw, stamp, foot), 231, stamp, foot, _dim(UNI_DIM, .62))
+    return _uni_flatten(image)
+
+
+def _uni_row(draw, y, row, amplitude=None):
+    """One market row: ticker and price left, percent and change right.
+
+    A missing row draws dashes, never a fabricated 0.00. The sign is carried by colour AND
+    an arrow AND the +/- on the change, so it still reads without colour vision.
+    """
+    if not row:
+        draw.text((UNI_M, y + 15), '--', fill=UNI_DIM, font=_manrope(21, 800), anchor='lm')
+        draw.text((SIZE - UNI_M, y + 17), '--', fill=UNI_DIM, font=_manrope(26, 800), anchor='rm')
+        return
+    percent = row.get('percent')
+    up = (percent or 0) >= 0
+    colour = UNI_DIM if percent is None else (UNI_RISE if percent > 0 else UNI_FALL if percent < 0 else UNI_DIM)
+
+    draw.text((UNI_M, y + 15), display_symbol(row.get('symbol'))[:6], fill=UNI_INK,
+              font=_manrope(21, 800), anchor='lm')
+    draw.text((UNI_M, y + 33), price_text(row.get('price')), fill=UNI_DIM,
+              font=_manrope(13, 600), anchor='lm')
+
+    percent_text = '--' if percent is None else f'{abs(percent):.1f}%'
+    percent_font = _manrope(26, 800)
+    draw.text((SIZE - UNI_M, y + 17), percent_text, fill=colour, font=percent_font, anchor='rm')
+    if percent is None:
+        return
+    width = draw.textlength(percent_text, font=percent_font)
+    if percent:
+        _uni_arrow(draw, SIZE - UNI_M - width - 12, y + 16, up, colour, amplitude)
+    change = row.get('change')
+    if change is not None:
+        draw.text((SIZE - UNI_M, y + 35), f"{'+' if up else '-'}{abs(change):.2f}",
+                  fill=UNI_DIM, font=_manrope(13, 600), anchor='rm')
 
 
 def render_combo_stocks(snapshot, amplitude=None):
-    """The Night Cards board: header dot, star margins, then four rounded market cards.
+    """The movers board on true black: a hairline header, then four market rows.
 
-    A closed, missing or stale market feed reads CLOSED over dim dash cards — the face still
-    occupies its panel rather than handing it back (it is the only face the clock would show).
-    `amplitude` (0..1) drives the animated variant's arrow-and-glow breathing; None draws static."""
+    Rows rather than cards. The shipped board stated each sign four times over (border
+    colour, fill tint, underline and arrow); this one states it once in colour, once in the
+    arrow and once in the change's sign, and spends the space on the numbers instead.
+
+    A closed, missing or stale feed reads CLOSED over dash rows — the face still occupies
+    its panel rather than handing it back. `amplitude` (0..1) drives the animated variant's
+    arrow breathing; None draws static.
+    """
     rows = market_rows(snapshot)
     stocks = snapshot.get('stocks') if isinstance(snapshot, dict) else None
     market = (stocks or {}).get('market') or {}
     live = rows is not None
-    image = Image.new('RGB', (SIZE, SIZE), NIGHT_BG)
+    image = Image.new('RGB', (SIZE, SIZE), UNI_BG)
     draw = ImageDraw.Draw(image)
 
-    # Star margins: twinkle's nine fixed twinkles plus the two the mockup sheet added.
-    for i, (sx, sy) in enumerate(STARS + [(150, 12), (100, 238)]):
-        draw.point((sx, sy), fill=mix(PRICE_INK, (.6 + (i * 37) % 40 / 100)))
-    # The header dot: green while a market is open, dimmed to a quiet grey otherwise.
-    draw.ellipse((6, 5, 10, 9), fill=RISE if live else mix(HEADER_INK, .35),
-                 outline=mix(RISE, .35) if live else NIGHT_BG)
-    session = str(market.get('session') or 'OPEN').upper() if live else 'CLOSED'
-    pixel_text(draw, (16, 4), ('MARKET ' + session)[:20], 1, HEADER_INK if live else mix(HEADER_INK, .5))
-    source_label = market.get('exchange') or (stocks or {}).get('source')
-    if source_label:  # no exchange or source is known without a feed: say nothing rather than FINNHUB
-        pixel_text(draw, (SIZE - 6, 4), str(source_label).upper(), 1, HEADER_INK if live else mix(HEADER_INK, .5),
-                   'right')
+    header_font = _manrope(11, 800)
+    exchange = market.get('exchange') if live else None
+    left = f"{str(exchange).upper()}  {str(market.get('session') or 'OPEN').upper()}" if exchange \
+        else ('OPEN' if live else 'CLOSED')
+    _uni_tracked(draw, UNI_M, 20, left[:22], header_font, UNI_DIM if live else _dim(UNI_DIM, .7))
+    # The right slot names the feed, not the exchange again. Nothing is known without a
+    # feed, so say nothing rather than naming one.
+    source = (stocks or {}).get('source') or market.get('exchange')
+    if source and live:
+        text = str(source).upper()
+        _uni_tracked(draw, SIZE - UNI_M - _uni_width(draw, text, header_font), 20,
+                     text, header_font, UNI_DIM)
+    draw.line((UNI_M, 28, SIZE - UNI_M, 28), fill=UNI_RULE, width=1)
+
     for index in range(MAX_ROWS):
-        _card(draw, TOP + index * PITCH, rows[index] if rows and index < len(rows) else None, amplitude=amplitude)
-    return image
+        y = UNI_TOP + index * UNI_PITCH
+        _uni_row(draw, y, rows[index] if rows and index < len(rows) else None, amplitude)
+        if index < MAX_ROWS - 1:
+            draw.line((UNI_M, y + UNI_PITCH - 6, SIZE - UNI_M, y + UNI_PITCH - 6), fill=UNI_RULE, width=1)
+    return _uni_flatten(image)
 
 
 ARROW_PHASES = (1.0, 0.5, 0.0, 0.5)  # the breathe cycle: full, mid, edge, mid — big, unmistakable swings
@@ -258,11 +386,11 @@ def render_combo_stocks_closed_gif(snapshot):
 
 
 def render_stocks_frame(snapshot, frame):
-    """One frame of the animated Night Cards board: the arrows and their glow breathe."""
+    """One frame of the animated board: the arrows breathe."""
     return render_combo_stocks(snapshot, amplitude=ARROW_PHASES[frame % ARROW_FRAMES])
 
 
 def render_combo_stocks_gif(snapshot):
-    """The Night Cards board as a GIF: the arrow-and-glow layer breathes, everything else is still."""
+    """The board as a GIF: the arrows breathe, everything else is still."""
     frames = [render_stocks_frame(snapshot, f) for f in range(ARROW_FRAMES)]
     return _gif_bytes(frames)
