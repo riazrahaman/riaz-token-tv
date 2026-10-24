@@ -125,7 +125,7 @@ def closed_schedule(snapshot):
     Honesty gates, in order: the feed must exist and say the market is shut (an open board
     that is merely stale is a frozen feed, not a quiet market); the reopen must carry a
     future stamp on a known exchange; and the clock math must exist. Consumers rest on the
-    usage screen or the dash cards when this is None rather than promising a nobody-published
+    usage screen or the dash rows when this is None rather than promising a nobody-published
     open, so the closed face only ever names a bell the feeder itself computed.
     """
     stocks = snapshot.get('stocks') if isinstance(snapshot, dict) else None

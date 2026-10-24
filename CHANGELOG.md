@@ -12,7 +12,8 @@ All notable changes to this project are documented here. The format follows
 
 - **Unified True-Black Face for White Clock (`token_tv/combo_stocks.py`)**:
   - Unified the stock movers board and overnight closed-market face on the white clock (`192.168.1.156`) with the true-black `#000000` Manrope design language established by the countdown clock.
-  - Replaced high-contrast tinted cards with clean hairline row dividers, fixed row pitch, and sign-colored percentage pills.
+  - Replaced the tinted cards with hairline row dividers and a fixed row pitch; a row's direction is now carried by the ink of its percentage alone (rise `#2ee57b`, fall `#ff4d4d`) rather than by a card tint, a border and a bar all saying it at once.
+  - A closed, missing or stale feed draws dim dash rows under a `CLOSED` heading — never a fabricated `0.00`.
   - Dedicated Manrope font loader in `combo_stocks.py` with fixed palette quantization and frame flattening, ensuring `#000000` true black survives GIF median-cut compression without color drift.
   - High-contrast overnight rest face optimized for low brightness settings (e.g. night brightness level 19).
 
@@ -27,11 +28,6 @@ All notable changes to this project are documented here. The format follows
 
 - **Editorial README Overhaul**:
   - Redesigned `README.md` following the visual structure of `agent-kanban-board`, including centered badges, full architecture layout tree, numbered quickstart guide, memory wall technical diagrams, and complete provider/endpoint reference tables.
-
-### Fixed
-
-- **Stock Ticker Dict Formatting Bug (`token_tv/combo_stocks.py`)**:
-  - `render_combo_stocks` previously passed the entire row dict to `display_symbol` rather than `row['symbol']`, causing tickers to render with leading dictionary syntax (e.g. `{'SYMB`). Fixed and covered by `test_each_row_prints_its_sanitised_ticker`.
 
 ## [0.6.0] — 2026-10-23
 
