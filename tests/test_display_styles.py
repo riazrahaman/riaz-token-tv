@@ -896,7 +896,9 @@ class CalendarLineTests(unittest.TestCase):
         now = time.time()
         open_board = {'accounts': {}, 'stocks': self._feed(now)}
         fresh = render_page(dict(open_board, calendar=self._event(now, updated=now)), style='combo')
-        stale = render_page(dict(open_board, calendar=self._event(now, updated=now - 601)),
+        from token_tv.calendar import STALE_AFTER
+        stale = render_page(dict(open_board,
+                                 calendar=self._event(now, updated=now - STALE_AFTER - 1)),
                             style='combo')
         self.assertNotEqual(fresh, stale)  # OLD rides the same row, it never silently refreshes
 

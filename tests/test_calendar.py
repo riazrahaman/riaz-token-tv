@@ -197,7 +197,10 @@ class LineRendererTests(unittest.TestCase):
             self.assertIsNone(cal.calendar_parts(snapshot, now=self.now + 1), offset)
 
     def test_a_stale_snapshot_keeps_its_line_but_ages_it_to_OLD(self):
-        snapshot = {'calendar': dict(event(self.now, offset=600), updated_at=self.now - 601)}
+        # Tied to the policy rather than to a fixed 601 s, so retuning STALE_AFTER cannot
+        # leave this test asserting a threshold the feeder no longer uses.
+        snapshot = {'calendar': dict(event(self.now, offset=600),
+                                     updated_at=self.now - cal.STALE_AFTER - 1)}
         self.assertEqual(cal.calendar_parts(snapshot, now=self.now),
                          ('Abu Dhabi Gaming Connect', 'in 10m OLD'))
         fresh = {'calendar': dict(event(self.now), updated_at=self.now - 5)}
@@ -284,6 +287,22 @@ class TimezoneTests(unittest.TestCase):
         footer = (150, 222, 236, 240)  # the LAST BOARD stamp's band
         self.assertNotEqual(here.crop(footer).tobytes(), elsewhere.crop(footer).tobytes())
         self.assertEqual(Image.open(io.BytesIO(display.encode_jpeg(here)[0])).size, (240, 240))
+
+
+class PanelSafeAreaTests(unittest.TestCase):
+    def test_the_shared_calendar_row_stays_above_the_clipped_edge(self):
+        """The combo faces draw this line too. It used to end at row 237, which a photograph of
+        the real clock showed clipped: the case overlaps the last few rows, so the frame's edge
+        is not the usable edge."""
+        from PIL import Image, ImageDraw
+        image = Image.new('RGB', (240, 240), (0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        cal.draw_calendar_parts(draw, ('Standup with the team', 'in 2h'), cal.CALENDAR_ROW,
+                                (230, 230, 230), countdown_ink=(140, 140, 140))
+        lit = [y for y in range(240)
+               if any(max(image.getpixel((x, y))) > 40 for x in range(240))]
+        self.assertTrue(lit, 'the line drew nothing')
+        self.assertLessEqual(lit[-1], 234, 'the calendar line reaches the clipped edge')
 
 
 if __name__ == '__main__':

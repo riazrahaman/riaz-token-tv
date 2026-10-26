@@ -30,12 +30,34 @@ from token_tv.display import pixel_text
 
 CALENDAR_NAME = 'riazrahaman'  # the calendar the scoped query reads; a per-calendar scope is proven fast
 QUERY_TIMEOUT = 150  # seconds; covers osascript's own 120 s AppleEvent timeout — iCloud syncs can make even a scoped scan take 1-3 min
-HORIZON_DAYS = 45  # how far ahead the query looks; recurring instances keep it well populated
-DEFAULT_INTERVAL = 300  # the line is a next appointment, not a live feed: five minutes is plenty
+HORIZON_DAYS = 21  # how far ahead the query looks; see the timings below before raising it
+# Measured on this host against the real calendar, with the query shape unchanged:
+#   7d  73 s      14d  97 s      21d  99 s      45d  over the 150 s timeout, every poll
+# The cost is the `whose` clause, not the per-event property reads -- counting alone over 7 days
+# took 46 s for 3 events -- so a shorter horizon is the only lever this query shape has. The
+# bulk shape the comment in APPLESCRIPT rules out was re-tested and still fails ("Can't get
+# start date of {event id ...}"), and EventKit through a `swift` helper is refused by TCC
+# without an interactive grant the LaunchAgent cannot obtain. 21 days keeps ~50 s of margin
+# under QUERY_TIMEOUT while still looking three weeks ahead.
+DEFAULT_INTERVAL = 1800  # see STALE_AFTER: this feed's reading is a future stamp, not a live value
+# Five minutes was the old value, and with a query that costs ~100 s it meant a Calendar scan was
+# running a third of the time -- queries then contended with each other and timed out, which is a
+# second way the row went OLD. Half an hour removes the contention and costs nothing, because what
+# the snapshot stores is `start_iso`: the countdown is computed from that stamp at draw time, so a
+# snapshot taken 25 minutes ago is exactly as correct as one taken now.
 MIN_INTERVAL = 60  # a bad config can never hammer the TCC-gated osascript
-STALE_AFTER = 600  # an update older than this ends its countdown with OLD, like every other feed
+STALE_AFTER = 5400  # an update older than this ends its countdown with OLD
+# Deliberately longer than the other feeds' 600 s, because this reading ages differently. A usage
+# percentage or a share price is only true at the instant it was read, so ten minutes of silence
+# really is a reason to doubt it. A next-event stamp stays true until the event is moved or
+# cancelled, so the only thing age costs here is that edit, and 90 minutes is three missed polls --
+# enough that one slow query cannot flag the row, and short enough that a feeder which has actually
+# stopped still says so.
 SIZE = 240
-CALENDAR_ROW = 231  # the next-event row on every face that draws one: glyphs end at 238, inside the panel
+CALENDAR_ROW = 225  # the next-event row on every face that draws one; glyphs end at 231.
+# Was 231, on the belief that ending at 238 was 'inside the panel'. A photograph of the
+# real clock showed that line clipped along its bottom edge: the case overlaps the last
+# few rows, so 240 is the frame's edge and not the usable one.
 
 APPLESCRIPT = '''on pad(n)
 	if n < 10 then return "0" & n
