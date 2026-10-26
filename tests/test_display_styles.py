@@ -917,7 +917,11 @@ class CalendarLineTests(unittest.TestCase):
             self.assertEqual(image.size, (240, 240))
             self.assertTrue(image.is_animated)
 
-    def test_the_usage_rest_face_draws_the_line_on_its_fourth_row(self):
+    def test_the_usage_rest_face_draws_the_line_in_its_footer(self):
+        # Was "on its fourth row", from the layout that stacked three provider blocks and the
+        # calendar under them. The face now lists one row per real window, so the line's home is
+        # the footer band under the hairline rather than a fixed fourth row -- same guarantee,
+        # named where the line actually lands.
         from token_tv.usage_gif import render_usage_gif
         now = time.time()
         usage = self._usage(now)
@@ -927,9 +931,11 @@ class CalendarLineTests(unittest.TestCase):
         self.assertLessEqual(len(carried), 400000)  # tokentv-usage.gif's firmware limit
         image = Image.open(io.BytesIO(carried))
         self.assertEqual(image.size, (240, 240))
-        self.assertEqual(image.n_frames, 4)
+        # One frame, not four: the shimmer was dropped, and a still rest face is byte-stable
+        # between publishes, so the overnight rest costs no flash writes beyond the first swap.
+        self.assertEqual(image.n_frames, 1)
         frame = image.convert('RGB')
-        self.assertTrue(any(max(px) > 120 for px in frame.crop((6, 229, 234, 240)).getdata()))
+        self.assertTrue(any(max(px) > 120 for px in frame.crop((6, 214, 234, 240)).getdata()))
 
     def test_a_junk_or_past_calendar_never_rewrites_the_usage_rest(self):
         # The rest face must stay byte-stable when the calendar row has nothing honest to show,
